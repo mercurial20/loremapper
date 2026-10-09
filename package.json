@@ -1,8 +1,20 @@
 {
   "name": "fantasy-cartographer",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.0-beta.1",
+  "description": "Local-first fantasy world map editor: sculpt terrain, paint biomes, place illustrated assets, draw borders and fog of war.",
+  "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mercurial20/loremapper.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mercurial20/loremapper/issues"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -33,6 +45,5 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.3"
-  },
-  "description": "Local-first fantasy world map editor: sculpt terrain, paint biomes, place illustrated assets, draw borders and fog of war."
+  }
 }

@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Lint, type-check, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Upload production build
+        uses: actions/upload-artifact@v7
+        with:
+          name: fantasy-cartographer-dist
+          path: dist
+          retention-days: 14
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          push: false
+          tags: fantasy-cartographer:ci
+      - name: Smoke test
+        run: |
+          docker run -d --name fc -p 8080:80 fantasy-cartographer:ci
+          for i in $(seq 1 20); do curl -fsS http://localhost:8080/ > /dev/null && break; sleep 1; done
+          curl -fsS http://localhost:8080/ | grep -q "<title>Fantasy Cartographer</title>"
+          curl -fsS http://localhost:8080/any/deep/link | grep -q "<title>Fantasy Cartographer</title>"
+          docker rm -f fc

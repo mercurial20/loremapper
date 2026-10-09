@@ -8,6 +8,7 @@ import { Camera } from '../render/Camera';
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import { RASTER_LAYERS, type RasterLayer } from '../terrain/TerrainModel';
+import { APP_VERSION } from '../version';
 import { editor } from './Editor';
 import { downloadBlob, encodePng, safeFileName } from './png';
 
@@ -257,6 +258,7 @@ const EXT: Record<string, string> = { 'image/png': 'png', 'image/webp': 'webp', 
 interface Manifest {
   format: 'fantasy-cartographer-project';
   formatVersion: number;
+  appVersion?: string;
   exportedAt: string;
   record: Omit<ProjectRecord, 'thumbnail'>;
   /** `shuffle` = bytes per element when stored byte-plane shuffled (better compression). */
@@ -303,6 +305,7 @@ export async function exportProject() {
     const manifest: Manifest = {
       format: 'fantasy-cartographer-project',
       formatVersion: FORMAT_VERSION,
+      appVersion: APP_VERSION,
       exportedAt: new Date().toISOString(),
       record,
       tiles,

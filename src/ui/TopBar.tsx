@@ -21,6 +21,7 @@ import { STYLE_PRESETS } from '../render/styles';
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import { Segmented, Slider, Toggle } from './controls/controls';
+import { APP_VERSION } from '../version';
 import { CompassRose } from './icons';
 
 function Popover({ button, children, align = 'left' }: { button: (open: boolean, toggle: () => void) => ReactNode; children: ReactNode; align?: 'left' | 'right' }) {
@@ -121,6 +122,7 @@ export function TopBar() {
       <div className="brand">
         <CompassRose size={26} />
         <span>Fantasy Cartographer</span>
+        <em className="beta" title={`Version ${APP_VERSION}`}>beta</em>
       </div>
       <div className="project-name">
         <input

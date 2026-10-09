@@ -119,6 +119,7 @@ class Editor {
     const seq = ++this.mountSeq;
     for (const u of this.unsubs) u();
     this.unsubs = [];
+    this.layers?.objects.dispose();
     this.renderer?.destroy();
     this.renderer = null;
     this.layers = null;

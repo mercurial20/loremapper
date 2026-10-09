@@ -1,4 +1,4 @@
-import { clamp, fbm, hash2, mulberry32, ridged, smoothstep } from '../core/math';
+import { clamp, fbm, mulberry32, ridged, smoothstep } from '../core/math';
 import { BIOME_CHANNELS } from '../core/planet';
 
 export type GenType = 'continents' | 'pangaea' | 'island' | 'archipelago';
@@ -231,55 +231,81 @@ export function generate(p: GenParams): GenResult {
     }
   }
 
-  // ---- rivers: follow terrain downhill from high ground to the sea (ported from Cartographer)
+  // ---- rivers: from a highland source, repeatedly step to the lowest
+  // unvisited neighbouring cell until the sea. Visiting each cell once lets
+  // the walk fill and spill out of small basins; a climb budget rejects
+  // sources trapped in large ones.
   const rivers: [number, number][][] = [];
   if (p.rivers > 0) {
-    const hAt = (x: number, y: number) => {
-      const xi = whole ? (((Math.floor(x) - rx0) % rw) + rw) % rw : clamp(Math.floor(x) - rx0, 0, rw - 1);
-      const yi = clamp(Math.floor(y) - ry0, 0, rh - 1);
-      return height[yi * rw + xi];
+    const idx = (x: number, y: number) => {
+      const xi = whole ? ((x % rw) + rw) % rw : x;
+      return y * rw + xi;
     };
-    let tries = 0;
-    const step = whole ? 2.2 : Math.max(1, Math.min(rw, rh) / 160);
-    while (rivers.length < p.rivers && tries < p.rivers * 60) {
-      tries++;
-      const sx = rx0 + rand() * rw;
-      const sy = ry0 + 8 + rand() * (rh - 16);
-      const h0 = hAt(sx, sy) - sea;
-      if (h0 < 900 || h0 > maxE * 0.7) continue;
-      const pts: [number, number][] = [[sx, sy]];
-      let cx = sx;
-      let cy = sy;
-      let ok = false;
-      for (let s = 0; s < 700; s++) {
-        let bx = cx;
-        let by = cy;
-        let bh = hAt(cx, cy);
-        for (let a = 0; a < 8; a++) {
-          const ang = (a / 8) * Math.PI * 2;
-          const nx = cx + Math.cos(ang) * step;
-          const ny = cy + Math.sin(ang) * step;
-          const nh = hAt(nx, ny) + (hash2(s + tries * 7, a) - 0.5) * 6;
+    const inside = (x: number, y: number) => y >= 0 && y < rh && (whole || (x >= 0 && x < rw));
+    const NB = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+      [1, 1],
+      [-1, 1],
+      [1, -1],
+      [-1, -1],
+    ];
+    const visited = new Uint32Array(rw * rh);
+    let walkId = 0;
+    for (let attempt = 0; attempt < p.rivers * 60 && rivers.length < p.rivers; attempt++) {
+      let x = Math.floor(rand() * rw);
+      let y = 8 + Math.floor(rand() * (rh - 16));
+      const rise = height[idx(x, y)] - sea;
+      if (rise < 900 || rise > maxE * 0.7) continue;
+      const sx = rx0 + x + 0.5;
+      const sy = ry0 + y + 0.5;
+      if (rivers.some((r) => Math.hypot(r[0][0] - sx, r[0][1] - sy) < 25)) continue;
+      walkId++;
+      const line: [number, number][] = [[sx, sy]];
+      let climb = 0;
+      let reachedSea = false;
+      for (let k = 0; k < 4000; k++) {
+        visited[idx(x, y)] = walkId;
+        const here = height[idx(x, y)];
+        let bx = -1;
+        let by = -1;
+        let bh = Infinity;
+        for (const [ox, oy] of NB) {
+          const nx = x + ox;
+          const ny = y + oy;
+          if (!inside(nx, ny) || visited[idx(nx, ny)] === walkId) continue;
+          // a little noise makes the course meander
+          const nh = height[idx(nx, ny)] + (rand() - 0.5) * 12;
           if (nh < bh) {
             bh = nh;
             bx = nx;
             by = ny;
           }
         }
-        if (bx === cx && by === cy) break;
-        cx = bx;
-        cy = by;
-        pts.push([cx, cy]);
-        if (bh <= sea) {
-          ok = true;
+        if (bx < 0) break;
+        climb += Math.max(0, height[idx(bx, by)] - here);
+        if (climb > 600) break;
+        x = bx;
+        y = by;
+        if (k % 2 === 1) line.push([rx0 + x + 0.5, ry0 + y + 0.5]);
+        if (height[idx(x, y)] <= sea) {
+          line.push([rx0 + x + 0.5, ry0 + y + 0.5]);
+          reachedSea = true;
           break;
         }
       }
-      if (ok && pts.length > 12) {
-        // keep rivers apart
-        if (rivers.some((r) => Math.hypot(r[0][0] - sx, r[0][1] - sy) < 25)) continue;
-        rivers.push(pts);
+      if (!reachedSea) continue;
+      // cut out loops left where the walk wandered while filling a basin
+      const clean: [number, number][] = [];
+      for (let i = 0; i < line.length; i++) {
+        let j = line.length - 1;
+        while (j > i + 2 && Math.hypot(line[j][0] - line[i][0], line[j][1] - line[i][1]) > 3) j--;
+        clean.push(line[i]);
+        if (j > i + 2) i = j - 1;
       }
+      if (clean.length > 12) rivers.push(clean);
     }
   }
 

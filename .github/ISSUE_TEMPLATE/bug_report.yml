@@ -1,0 +1,63 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing the beta! Before filing, please export a backup of important maps
+        (**Export → Editable project**) — that file is also the most useful thing you can attach.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Create a new map
+        2. Select the Raise tool and …
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Shown in the Keyboard shortcuts dialog (press `?`), e.g. 1.0.0-beta.1
+      placeholder: 1.0.0-beta.1
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How are you running it?
+      options:
+        - Docker (docker compose)
+        - npm run dev
+        - npm run build + static server
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      placeholder: e.g. Chrome on Windows 11 — include the browser version from its About page
+    validations:
+      required: true
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser console output
+      description: Open the developer tools (F12 / Cmd+Option+I) → Console, and paste any red errors.
+      render: text
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or project file
+      description: Drag images or a `.fantasymap` file here (zip it if GitHub refuses the extension).

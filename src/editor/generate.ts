@@ -23,20 +23,22 @@ export interface GenerateOptions {
   region: 'view' | 'world';
 }
 
-// medieval name generator, ported from the original Cartographer
-const NAME_A = ['Ald', 'Ash', 'Bryn', 'Cald', 'Dun', 'Elm', 'Fen', 'Grim', 'Hart', 'Iron', 'Kings', 'Lang', 'Mere', 'North', 'Oak', 'Raven', 'Stan', 'Stone', 'Thorn', 'Wolf', 'West', 'Win'];
-const NAME_B: Record<string, string[]> = {
-  town: ['ton', 'ham', 'wick', 'stead', 'field', 'worth', 'by', 'thorpe', 'ford', 'dale'],
-  castle: ['hold', 'keep', 'burg', 'gard', 'mark', 'crag'],
-  tower: ['spire', 'watch', 'fast'],
-  ruin: ['fall', 'barrow', 'hollow'],
+// place-name generator: an onset, an optional middle syllable and a suffix
+// chosen by settlement kind
+const ONSETS = ['Bel', 'Cor', 'Dra', 'Eld', 'Fal', 'Gor', 'Hal', 'Ister', 'Kel', 'Lor', 'Mar', 'Nor', 'Os', 'Pell', 'Quel', 'Ros', 'Sel', 'Tam', 'Ul', 'Var', 'Wyn', 'Yr'];
+const MIDDLES = ['a', 'en', 'i', 'o', 'ar', 'el', ''];
+const SUFFIXES: Record<string, string[]> = {
+  town: ['bridge', 'mere', 'brook', 'haven', 'vale', 'moor', 'wick', 'ley', 'stow', 'cross'],
+  castle: ['guard', 'spire', 'helm', 'rock', 'wall', 'mount'],
+  tower: ['watch', 'beacon', 'sight'],
+  ruin: ['dust', 'grave', 'shade'],
 };
-export function makeName(kind: keyof typeof NAME_B, rnd: () => number = Math.random): string {
+export function makeName(kind: keyof typeof SUFFIXES, rnd: () => number = Math.random): string {
   const pick = <T,>(a: T[]) => a[Math.floor(rnd() * a.length)];
-  const n = pick(NAME_A) + pick(NAME_B[kind] ?? NAME_B.town);
-  if (kind === 'castle' && rnd() < 0.4) return 'Castle ' + n;
-  if (kind === 'ruin' && rnd() < 0.5) return 'Ruins of ' + n;
-  return n;
+  const name = pick(ONSETS) + pick(MIDDLES) + pick(SUFFIXES[kind] ?? SUFFIXES.town);
+  if (kind === 'castle' && rnd() < 0.35) return `${name} Keep`;
+  if (kind === 'ruin' && rnd() < 0.5) return `Old ${name}`;
+  return name;
 }
 
 function runWorker(p: GenParams): Promise<GenResult> {

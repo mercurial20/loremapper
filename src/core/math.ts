@@ -5,17 +5,18 @@ export const smoothstep = (e0: number, e1: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/**
- * Deterministic integer hash → [0, 1). The original Cartographer hash was
- * strongly biased towards small values (its fbm rarely exceeded 0.45), so this
- * uses a well-mixed multiply-xorshift instead.
- */
+/** Deterministic integer hash of a lattice point → [0, 1) (multiply–xorshift mixing). */
 export function hash2(x: number, y: number): number {
   let h = Math.imul(x | 0, 0x27d4eb2d) ^ Math.imul((y | 0) + 0x9e3779b9, 0x165667b1);
   h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
   h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
   h ^= h >>> 15;
   return (h >>> 0) / 4294967296;
+}
+
+/** Lattice hash with a seed mixed in as a third coordinate. */
+function hash3(x: number, y: number, seed: number): number {
+  return hash2(x ^ Math.imul(seed | 0, 0x5bd1e995), y + (seed | 0) * 0x3c6ef372);
 }
 
 /** Seeded PRNG (mulberry32). */
@@ -39,48 +40,40 @@ export function seedFromString(s: string): number {
   return h >>> 0;
 }
 
+const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
+
 /**
- * Value noise, smooth-stepped bilinear lattice interpolation — the same
- * construction as the original Cartographer `fbm`. When `periodX` > 0 the
- * lattice wraps horizontally so noise tiles seamlessly across the antimeridian.
+ * Lattice value noise in [0, 1] with quintic interpolation. When `periodX` > 0
+ * the lattice repeats horizontally, so noise tiles seamlessly around the planet.
  */
 export function valueNoise(x: number, y: number, seed: number, periodX = 0): number {
-  const x0 = Math.floor(x);
-  const y0 = Math.floor(y);
-  const fx = x - x0;
-  const fy = y - y0;
-  const sx = fx * fx * (3 - 2 * fx);
-  const sy = fy * fy * (3 - 2 * fy);
-  let xa = x0;
-  let xb = x0 + 1;
-  if (periodX > 0) {
-    xa = ((xa % periodX) + periodX) % periodX;
-    xb = ((xb % periodX) + periodX) % periodX;
-  }
-  const s = seed * 7919;
-  const n00 = hash2(xa + s, y0);
-  const n10 = hash2(xb + s, y0);
-  const n01 = hash2(xa + s, y0 + 1);
-  const n11 = hash2(xb + s, y0 + 1);
-  return lerp(lerp(n00, n10, sx), lerp(n01, n11, sx), sy);
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const u = fade(x - ix);
+  const v = fade(y - iy);
+  const wrap = (c: number) => (periodX > 0 ? ((c % periodX) + periodX) % periodX : c);
+  const left = wrap(ix);
+  const right = wrap(ix + 1);
+  const top = lerp(hash3(left, iy, seed), hash3(right, iy, seed), u);
+  const bottom = lerp(hash3(left, iy + 1, seed), hash3(right, iy + 1, seed), u);
+  return lerp(top, bottom, v);
 }
 
 /**
- * Fractal value noise in [0, 1]. `periodX` is the horizontal period at the
- * base octave (in lattice units); each octave doubles it so wrapping holds.
+ * Fractal sum of value noise, normalised to [0, 1]. `periodX` is the
+ * horizontal period of the first octave (in lattice cells); every octave
+ * doubles the frequency and the period, so wrapping is preserved.
  */
 export function fbm(x: number, y: number, seed: number, octaves = 5, periodX = 0, gain = 0.5): number {
-  let amp = 0.55;
-  let freq = 1;
-  let sum = 0;
-  let norm = 0;
-  for (let o = 0; o < octaves; o++) {
-    sum += amp * valueNoise(x * freq, y * freq, seed + o * 31, periodX > 0 ? periodX * freq : 0);
-    norm += amp;
-    amp *= gain;
-    freq *= 2;
+  let total = 0;
+  let weight = 1;
+  let weights = 0;
+  for (let o = 0, f = 1; o < octaves; o++, f *= 2) {
+    total += weight * valueNoise(x * f, y * f, seed + o * 1013, periodX > 0 ? periodX * f : 0);
+    weights += weight;
+    weight *= gain;
   }
-  return sum / norm;
+  return total / weights;
 }
 
 /** Ridged multifractal in [0, 1] — sharp crests for mountain ranges. */

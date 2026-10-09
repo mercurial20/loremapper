@@ -865,7 +865,13 @@ export class ToolController {
     const tool = this.tool;
     if (d.moved && d.points.length >= 2) {
       // freehand stroke → simplified, editable spline
-      const pts = simplifyPath(d.points, 2.2 / editor.zoom);
+      let pts = simplifyPath(d.points, 2.2 / editor.zoom);
+      if (tool === 'territory' && pts.length > 3) {
+        // a lasso that ends where it began must not repeat its first point
+        const [fx, fy] = pts[0];
+        const near = (p: Vec2) => Math.hypot(p[0] - fx, p[1] - fy) * editor.zoom < 14;
+        while (pts.length > 3 && near(pts[pts.length - 1])) pts = pts.slice(0, -1);
+      }
       this.draft = null;
       this.commitDrawing(tool, pts);
       this.overlay().set({ draft: null });

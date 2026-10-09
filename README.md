@@ -1,152 +1,225 @@
 # Fantasy Cartographer
 
-A local-first, browser-based editor for drawing fantasy world maps. Start from an
-empty ocean planet, raise continents and mountain ranges, paint biomes, draw
-rivers, roads and borders, place illustrated assets, hide unexplored lands under
-fog of war, and export images, heightmaps or editable project files.
+A free, self-hostable fantasy map editor that runs in your browser. Sculpt
+continents and mountain ranges, paint forests and deserts, draw rivers, roads
+and borders, place illustrated assets or your own artwork, and hide unexplored
+lands under fog of war. Your maps stay on your computer.
 
-It is a manual drawing tool, not a simulator: nothing about politics, economies
-or populations is modelled.
+> **Early beta (v1.0.0-beta.1).** It works and has been tested, but expect rough
+> edges. Please back up maps you care about (see [Backups](#saving-backups-and-exports))
+> and [report problems](#reporting-bugs-and-contributing).
 
-It builds on [PaulsGameDevHub/cartographer](https://github.com/PaulsGameDevHub/cartographer).
-Its algorithms (fbm value-noise generation, falloff brushes, downhill river
-tracing, the medieval name generator and the 16-bit PNG writer) were ported and
-extended here.
+![Fantasy Cartographer showing a generated island with mountains, forests, a river, a road, settlements, a kingdom border, labels and fog of war](docs/screenshot.jpg)
 
-## Getting started
+## Features
 
-Requirements: Node 20+ and a desktop browser with WebGL 2 (current Chrome, Edge, Firefox or Safari).
+- **Terrain sculpting.** Raise, lower, smooth and flatten terrain, and build
+  mountain ranges, with adjustable radius (in km), strength, softness and edge
+  roughness. Start from an empty ocean or generate continents, islands or
+  archipelagos from a seed.
+- **Real elevation.** Heights are stored in metres (up to 10,000 m by default)
+  with a configurable sea level. Peaks are detected automatically and labelled
+  with their height; you can name them. Contour lines and a height overlay are
+  available.
+- **A real planet.** The map is a whole planet (radius 7,410 km by default) that
+  wraps around east–west. Brushes, the scale bar and the distance tool all use
+  real kilometres.
+- **Biomes.** Paint grassland, forest, farmland, desert, swamp, snow and rock
+  with soft blended edges.
+- **Rivers and roads.** Draw them freehand or point by point, then reshape them
+  by dragging control points.
+- **Objects.** Choose from 57 built-in illustrations: cities, castles, dragons,
+  monsters, mountains, farms, mines, political and cultural sites, ships and
+  more. You can also import your own PNG, WebP or SVG images. Place, stamp,
+  move, rotate, scale, layer, lock and annotate them.
+- **Political borders and labels.** Draw kingdoms, empires, republics,
+  khaganates, tribal lands and independent cities, each with its own colours and
+  border style. Add curved text labels.
+- **Fog of war.** Paint areas hidden or revealed with soft edges, preview the
+  player's view, and export a "players only" image.
+- **Styles.** Choose parchment, fantasy atlas, clean political or shaded relief.
+- **Local-first.** Maps save automatically in your browser. There's no account,
+  no server-side storage and no tracking.
+
+## Quick start with Docker
+
+Requires [Docker](https://docs.docker.com/get-docker/) with Compose.
 
 ```bash
-npm install
-npm run dev        # http://localhost:5173
-npm run build      # type-check + production build into dist/
-npm run preview    # serve the production build
-npm test           # unit tests (Vitest)
-npm run lint       # oxlint
+git clone https://github.com/mercurial20/loremapper.git
+cd loremapper
+docker compose up -d
 ```
 
-There is no backend and no account. Everything is stored in your browser's
-IndexedDB and saved automatically about a second after each change.
+Open **<http://localhost:8080>**.
 
-## What you can do
+- Use a different port: `FC_PORT=3000 docker compose up -d`
+- Stop: `docker compose down` (your maps are **not** affected; see [Where your maps live](#where-your-maps-live))
+- Update to a newer version: `git pull && docker compose up -d --build --force-recreate`
 
-| Area | Features |
+The container is a small nginx image that serves the pre-built static app. It
+binds to `127.0.0.1` only. To reach it from other devices on your network,
+change the `ports` entry in `compose.yaml` to `"8080:80"`.
+
+## Installation without Docker
+
+Requires [Node.js](https://nodejs.org) 22.12 or newer (Node 24 LTS recommended).
+
+```bash
+git clone https://github.com/mercurial20/loremapper.git
+cd loremapper
+npm ci
+npm run build      # creates the static site in dist/
+npm run preview    # serves it at http://localhost:4173
+```
+
+`dist/` is a plain static website. You can host it with any static web server
+(nginx, Caddy and so on) at the root of a domain or port; no backend is needed.
+Hosting under a sub-path such as `/maps/` is not supported in this beta.
+
+For development with live reload, run `npm run dev` (<http://localhost:5173>).
+
+## Using your own assets
+
+1. Choose the **Place objects** tool (`O`) to open the asset library.
+2. Click **Import PNG / WebP / SVG**, or drag image files onto the library panel.
+   Images go into the selected category, or **Custom** if none is selected.
+3. Click an asset and then click the map, or drag the asset onto the map.
+
+Imported images are stored permanently in the browser, alongside your maps.
+From an asset's **⋯** menu you can:
+
+- **Rename** it or move it to another category. Create your own categories with
+  the folder button.
+- **Replace image…** to swap the artwork of any asset, including built-in ones.
+  Every placed copy updates. **Restore original** undoes this for built-in assets.
+- **Delete** your own assets, or **Hide** built-in ones. Objects already placed
+  on a map are not deleted.
+
+Transparent PNGs or SVGs about 256–512 px in size work best.
+
+## Saving, backups and exports
+
+**Saving is automatic.** Every change is written to your browser's storage about
+a second later; the indicator at the top shows *Saved*. Use **Maps** to create,
+open, rename, duplicate and delete maps.
+
+**Export** offers three different things:
+
+| Export | What it is | Can you keep editing it? |
+| --- | --- | --- |
+| **Map image** | A flattened PNG of the current view or the whole planet, up to 12,288 px wide. Choose the complete map or only the areas revealed through the fog. | No, it's just a picture. |
+| **Heightmap** | A 16- or 8-bit greyscale PNG of the elevation, for game engines and 3D tools. | No. |
+| **Editable project** | A `.fantasymap` file containing the terrain, objects, borders, labels, fog and the custom images the map uses. | **Yes.** Import it from **Maps → Import project file…** in any browser. |
+
+**Back up important maps by exporting an editable project now and then.**
+Browser storage can be cleared, for example by "clear browsing data", by
+storage-saving settings, or when you uninstall the browser.
+
+## Browser support and data persistence
+
+You need a desktop browser with **WebGL 2** and a mouse or trackpad.
+
+| Browser | Status in this beta |
 | --- | --- |
-| **Terrain** | Raise, Lower, Mountain-range, Smooth and Flatten brushes (fixed or sampled height). Each has a radius in km, strength, falloff, a per-stroke cap ("opacity") and edge roughness for natural coasts. Hold still to keep building; Shift/Alt inverts. |
-| **Elevation** | Heights are metres relative to a datum (–11,000 to +10,000 m by default), with a configurable sea level. Includes contour lines with a selectable interval, a hypsometric height overlay, hill shading, and a live elevation readout under the cursor. |
-| **Peaks** | Summits are detected automatically as local maxima within about 160 km and recomputed as you sculpt. Markers show the real elevation in metres. You can name a peak, mark it as significant, designate new peaks, or remove one (Alt-click). |
-| **Biomes** | Paint grassland, forest, farmland, desert, swamp, snow and rock with soft blended edges. Forests render as painted tree crowns, farmland as a field patchwork, deserts as dunes. |
-| **Generation** | Continents, a supercontinent, an island or an archipelago (the last two in the current view), from a seed. Land share is measured by true area (29 % by default), with mountain belts, climate biomes, rivers and optional named settlements. Generation is undoable. |
-| **Geography** | Equirectangular planet (radius 7,410 km by default, about 690 million km²). Longitude wraps seamlessly. Brush radii and the scale bar are latitude-correct, and great-circle distances can be measured. Shows a lat/long grid and land/water statistics. |
-| **Rivers & roads** | Freehand or click-to-place splines. Rivers taper; roads can be dashed, solid, dotted or double. Edit by dragging control points, double-click to insert one, Alt-click to delete one. |
-| **Objects** | 57 built-in illustrated assets plus your own PNG, WebP and SVG imports. Place them one at a time or with a stamp brush that randomises scale, rotation and mirroring. Each object has position, size, scale, rotation, opacity, z-order, a layer, lock/hide, duplicate, name, description and custom key–value metadata. |
-| **Asset library** | Searchable, with categories. Import by file picker or drag-and-drop, then rename, recategorise, replace artwork, restore originals, hide built-ins, delete your own, and manage custom categories. Everything persists in IndexedDB. |
-| **Territories** | Kingdoms, khaganates, republics, empires, tribal lands and independent cities as editable polygons. Each has a fill colour and opacity, border colour, style (solid, dashed, dotted, double) and width, plus a movable name label. Shows the approximate area in km². |
-| **Labels** | Four bundled fonts, size, colour, rotation, letter spacing, arc/curve, capitals, italic, halo and opacity. |
-| **Fog of war** | Paint fog to hide or reveal areas with soft, partially transparent edges. "Cover entire map" and "Clear all fog" are available. *See through fog* shows the hidden content to the editor; *Player view* shows the map exactly as players will see it. Fog never alters what lies beneath it. |
-| **Layers** | Show/hide, set opacity and lock each system layer (elevation, biomes, territories, rivers & roads, objects, labels, peaks, fog). Add, rename, reorder, lock and delete object layers. |
-| **Styles** | Parchment, Fantasy atlas, Clean political and Shaded relief. |
-| **Projects** | Any number of maps, with thumbnails: open, rename, duplicate and delete. Autosave includes the camera position per map. |
-| **Export** | **Map image**: a flattened PNG of the current view or the whole planet, up to 12,288 px wide, as the complete map or the revealed-areas-only player map. **Heightmap**: a 16- or 8-bit greyscale PNG with the metre range in its file name and metadata. **Editable project**: a `.fantasymap` archive with tiles, document and the custom assets it uses; import it again from *Maps*. |
+| Chrome / Chromium | Tested (Chrome 154, macOS) |
+| Firefox | Tested (Firefox 157, macOS). The console shows harmless WebGL notices. |
+| Safari | Tested with the WebKit 27.2 engine (via Playwright), not with Safari itself. Reports welcome. |
+| Edge, Opera, Brave | Expected to work (Chromium-based); not tested. |
+| Phones and tablets | Not supported. |
 
-Press **?** in the app for the full shortcut list. Tool keys: V select, H pan,
-R raise, L lower, M mountains, S smooth, F flatten, B biome, E eraser, W river,
-D road, O objects, T label, G territory, X fog, P peaks, U measure.
+Testing so far has been on macOS. Windows and Linux reports are especially
+welcome.
 
-## Architecture
+### Where your maps live
+
+Maps and imported assets are stored in your **browser's IndexedDB**, not on the
+server and not in the Docker container:
+
+- Data belongs to one **browser profile** and one **address (origin)**.
+  `http://localhost:8080`, `http://localhost:5173` and `http://127.0.0.1:8080`
+  are different origins, each with its own separate list of maps.
+- Removing or rebuilding the Docker container does **not** delete maps. Changing
+  the port or hostname makes them *appear* to vanish. Go back to the old address
+  to find them, then move them with an exported project file.
+- Other browsers and other computers do not see your maps. Use
+  **Export → Editable project** to move a map.
+- Private or incognito windows usually discard their storage when closed.
+
+The app asks the browser to keep its storage persistent, but that is a request,
+not a guarantee.
+
+## Current beta limitations
+
+- **Fixed resolution.** Each map's resolution is chosen when it's created:
+  Standard (about 11 km per terrain cell) or High detail (about 5.7 km). Close
+  zoom adds visual detail, but you can't sculpt features smaller than a cell.
+  Painted biomes and fog use cells twice that size.
+- Rivers and roads are drawn on top of the terrain; they don't carve valleys.
+- Territories are independent shapes; neighbouring borders don't snap together.
+- Undo history is lost when you reload the page or switch maps.
+- Curved labels are selected using their straight outline.
+- Project files of fully generated worlds are large (about 20–25 MB), because
+  elevation is stored losslessly.
+- Very large image exports (above about 160 megapixels) are disabled.
+- Near the poles, brushes keep their true size in km, so they look very wide on
+  the flat map.
+- Desktop only; touch input is not supported.
+
+## Reporting bugs and contributing
+
+- **Bugs:** open an [issue](https://github.com/mercurial20/loremapper/issues/new/choose).
+  Include the version (press `?` in the app), your browser and OS, the steps to
+  reproduce, and any red errors from the browser console. An exported
+  `.fantasymap` file helps a lot.
+- **Ideas and questions:** feature requests are welcome. Please describe what
+  you're trying to draw.
+- **Code:** see [CONTRIBUTING.md](CONTRIBUTING.md). Before opening a pull
+  request, run `npm run lint`, `npm run typecheck`, `npm test` and
+  `npm run build`.
+
+### Architecture
+
+The app is TypeScript with React 19 for the interface, PixiJS 8 (WebGL 2) for
+the map, Zustand for state and IndexedDB for storage. Vite builds it.
 
 ```
 src/
-  core/         planet constants, projection & geodesy (Geo), noise & geometry helpers
-  terrain/      sparse TileGrid, TerrainModel (height/biome/fog rasters),
-                brush engine, peak detection, world generator (+ Web Worker)
-  model/        document types, undo/redo history, versioned serialisation
-  store/        Zustand stores: document (undoable content) and editor/UI state
-  persistence/  IndexedDB schema, project & tile storage
-  assets/       asset library (IndexedDB-backed) and the built-in SVG starter pack
-  render/       PixiJS renderer: camera, GPU terrain/fog tile layers & GLSL,
-                vector layers (paths, territories, labels, objects, peaks, overlay)
-  tools/        pointer/keyboard tool controller and hit testing
-  editor/       runtime glue (Editor), document commands, generation, export/import
-  ui/           React components: top bar, toolbar, inspector, layers, library, dialogs
+  core/         planet constants, projection & distances, noise and geometry helpers
+  terrain/      sparse tiled rasters (elevation, biomes, fog), brushes, peaks, world generator
+  model/        document types, undo/redo, versioned project format
+  store/        application state
+  persistence/  IndexedDB storage for maps, tiles, assets and settings
+  assets/       asset library and the built-in SVG asset pack
+  render/       PixiJS renderer, GLSL terrain/fog shaders, vector layers
+  tools/        mouse and keyboard handling for every tool
+  editor/       glue code, commands, generation, import/export
+  ui/           React components
 ```
 
-**Separate logical layers.** Elevation, biome weights and fog are raster layers
-in `TerrainModel`. Paths, territories, labels, peak annotations, object
-instances and object layers are plain JSON in the document store. Asset
-definitions live in the asset library, independent of any map.
+The terrain is stored in 256×256-cell tiles, and only areas you have touched use
+memory. Each tile is drawn by a shader on the GPU, and a brush stroke re-uploads
+only the tiles it changed. The saved format is versioned
+(`src/model/serialization.ts`), with a place for migrations.
 
-**Memory-efficient terrain.** Rasters are sparse 256×256-cell tiles. Untouched
-ocean is never allocated, so a new planet costs almost nothing. Elevation is
-`Float32` at full resolution: 4096×2048 (about 11 km cells) by default, or
-8192×4096 ("High detail", chosen at creation). Biome weights (8 channels) and
-fog are soft by nature and stored at half resolution.
+The built-in artwork in `src/assets/starter/` is plain SVG generated in code. To
+replace an image for yourself, use **Replace image…** in the app. To replace
+the pack in the source, edit the entries in those files (each has an id, name,
+category, tags and SVG).
 
-**Rendering.** Each tile is a quad with a custom GLSL shader. The shader reads
-heights with manual bilinear/B-spline filtering from an `r32float` texture that
-has a 4-cell apron, so shading is seamless across tiles. It computes hill
-shading, coast ink, ripples, contours, biome patterns, paper texture and
-zoom-adaptive fractal detail per pixel. A brush stroke re-uploads only the tiles
-it touched; nothing is redrawn on the CPU. All shader noise wraps exactly around
-the planet. The world is drawn once per longitude copy *per layer*, so content
-crossing the antimeridian keeps its z-order.
+## License and acknowledgements
 
-**Undo/redo** covers terrain (per-tile before/after snapshots), document edits
-(structural snapshots that merge rapid slider changes) and generation. History
-lives in memory and is bounded by size.
+Fantasy Cartographer is released under the [MIT License](LICENSE).
 
-### Storage format
+- Fonts: Cinzel, EB Garamond, IM Fell English and Inter, under the SIL Open
+  Font License 1.1, bundled via [Fontsource](https://fontsource.org).
+- Libraries: React, PixiJS, Zustand, idb, fflate and Lucide icons.
 
-IndexedDB database `fantasy-cartographer`:
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details.
 
-- `projects`: project metadata, planet settings, document JSON, raster default values, thumbnail.
-- `tiles`: `[projectId, layer, tileIndex] → ArrayBuffer`; only changed tiles are rewritten.
-- `assets`: imported images as blobs, and overrides of built-ins (rename, category, replacement art, hidden).
-- `settings`: custom categories, last opened map, saved camera per map.
-
-Projects carry a `formatVersion`. `src/model/serialization.ts` holds a migration
-table, and newer files are refused with a clear message. A `.fantasymap` export
-is a zip of `project.json` plus tile files (32-bit tiles are XOR-delta and
-byte-plane shuffled for better compression) and the custom images used.
-
-### Replacing the built-in art
-
-The starter pack in `src/assets/starter/` consists of SVG illustrations built
-from a small drawing kit (`kit.ts`). There are two ways to replace it:
-
-- **In the app:** asset menu (⋯) → *Replace image…* accepts PNG, WebP or SVG. *Restore original* undoes it.
-- **In code:** each category file exports a list of `{ id, name, category, tags, svg, aspect }`. Change an entry, or drop the pack entirely; the editor only depends on that shape (`STARTER_ASSETS`, `STARTER_CATEGORIES` in `index.ts`). Keep the `builtin:` ids stable so existing maps keep their references.
-
-## Testing performed
-
-- `npm run build` (TypeScript 7 type-check + Vite 8 production build) and `npm run lint` are clean.
-- `npm test`: 18 unit tests covering projection and great-circle distances, antimeridian wrap, sparse tile storage, brushes (falloff, stroke cap, undo, biome and fog on half-res grids), peak detection and annotations, true-area land fraction of the generator, and serialisation and migration.
-- Scripted end-to-end runs in headless Chrome, against both the dev server and the production build, covering:
-  - an empty ocean world;
-  - raising a continent and building ranges past 5–8 km;
-  - painting biomes;
-  - drawing rivers and roads, freehand and by clicks;
-  - placing, stamping, selecting, multi-selecting, moving, rotating, scaling, duplicating and erasing objects, with undo/redo;
-  - curved labels and territories, including across the antimeridian;
-  - naming and removing peaks;
-  - fog hide/reveal with player view;
-  - importing PNG and SVG assets;
-  - all four styles, contours, overlay and graticule;
-  - generating continents and islands;
-  - exporting a player PNG, a 16-bit heightmap and a project file, then re-importing it;
-  - reloading the browser and continuing with nothing lost.
-- Stress test of a High-detail planet (8192×4096): generation about 4 s, whole-planet 8192×4096 PNG export about 3 s, reload under 1 s.
-
-## Known limitations
-
-- **Grid resolution is fixed per map** (Standard or High detail at creation). Elevation cells are about 11 km (Standard). The shader adds sub-cell detail when zoomed in, but you cannot sculpt below the cell size. Biome and fog cells are twice that size.
-- **Rivers and roads are vector overlays.** They don't carve valleys into the heightmap.
-- **Territories are independent polygons.** Neighbouring realms don't share or snap to common borders.
-- **Undo history is not persisted.** It resets when you reload or switch maps. Planet settings and view toggles (style, overlays, layer visibility) are deliberately not undoable.
-- **Curved labels** are hit-tested and outlined with their straight bounding box.
-- **Very large exports:** images are limited to about 160 megapixels per file; heightmaps always cover the whole planet.
-- **Project files** are large for generated worlds (about 20–25 MB for a full Standard planet) because elevation is stored losslessly as 32-bit floats.
-- **Near the poles,** brushes keep their true radius in km, so in the equirectangular view they stretch very wide; within about 1° of a pole they are clamped.
-- **Browser storage** is subject to the browser's quota and site-data clearing. The app requests persistent storage, but export `.fantasymap` backups of important maps.
-- **Desktop only:** designed for mouse/trackpad and keyboard; touch devices are not supported.
+This project was inspired by
+[Cartographer](https://github.com/PaulsGameDevHub/cartographer) by
+PaulsGameDevHub and by tools such as [Inkarnate](https://inkarnate.com). It is
+not affiliated with either. Cartographer has no open-source license, so no code,
+data or artwork from it is included here; similar features were implemented
+independently.

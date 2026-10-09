@@ -1,7 +1,7 @@
 import { CanvasSource, Texture } from 'pixi.js';
 import { create } from 'zustand';
 import { uid } from '../core/math';
-import { db, getSetting, setSetting, type AssetRecord } from '../persistence/db';
+import { db, dehydrateAsset, getSetting, hydrateAsset, setSetting, type AssetRecord } from '../persistence/db';
 import { STARTER_ASSETS, STARTER_CATEGORIES, type StarterAsset } from './starter';
 
 export interface AssetInfo {
@@ -74,7 +74,7 @@ class AssetLibrary {
   private textureListeners = new Set<(id: string) => void>();
 
   async init() {
-    const all = await (await db()).getAll('assets');
+    const all = (await (await db()).getAll('assets')).map(hydrateAsset);
     for (const r of all) this.records.set(r.id, r);
     const custom = await getSetting<string[]>('categories', []);
     const cats = [...STARTER_CATEGORIES, ...custom.filter((c) => !STARTER_CATEGORIES.includes(c))];
@@ -160,7 +160,7 @@ class AssetLibrary {
         tags: [],
         createdAt: Date.now(),
       };
-      await d.put('assets', rec);
+      await d.put('assets', await dehydrateAsset(rec));
       this.records.set(rec.id, rec);
       ids.push(rec.id);
     }
@@ -175,7 +175,7 @@ class AssetLibrary {
     for (const r of recs) {
       const existing = this.records.get(r.id);
       if (existing && existing.kind === 'user') continue;
-      await d.put('assets', r);
+      await d.put('assets', await dehydrateAsset(r));
       this.records.set(r.id, r);
       this.invalidate(r.id);
       if (r.category && !useAssets.getState().categories.includes(r.category)) await this.addCategory(r.category);
@@ -187,7 +187,7 @@ class AssetLibrary {
     const d = await db();
     const base: AssetRecord = this.records.get(id) ?? { id, kind: 'override', createdAt: Date.now() };
     const rec = { ...base, ...patch };
-    await d.put('assets', rec);
+    await d.put('assets', await dehydrateAsset(rec));
     this.records.set(id, rec);
     this.publish();
   }
@@ -283,17 +283,20 @@ class AssetLibrary {
 
   // ---------- textures ----------
 
-  onTexture(fn: (id: string) => void) {
+  onTexture(fn: (id: string) => void): () => void {
     this.textureListeners.add(fn);
-    return () => this.textureListeners.delete(fn);
+    return () => {
+      this.textureListeners.delete(fn);
+    };
   }
 
   private invalidate(id: string) {
     const t = this.textures.get(id);
     this.textures.delete(id);
     if (t) {
-      t.then((tex) => tex.destroy(true)).catch(() => {});
+      // let users of the texture detach before it is destroyed
       for (const fn of this.textureListeners) fn(id);
+      t.then((tex) => tex.destroy(true)).catch(() => {});
     }
   }
 

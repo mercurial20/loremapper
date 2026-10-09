@@ -1,23 +1,20 @@
 /**
  * Minimal streaming PNG encoder (RGBA8 or 16-bit greyscale) using the
- * browser's CompressionStream. Avoids canvas size limits for large exports.
- * Adapted from the original Cartographer's 16-bit heightmap writer.
+ * browser's CompressionStream, written from the PNG specification. Streaming
+ * rows avoids canvas size limits for large exports.
  */
 
-const CRC_TABLE = (() => {
-  const t = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    t[n] = c >>> 0;
-  }
-  return t;
-})();
+/** CRC-32 (ISO-HDLC, reflected polynomial) as required by PNG chunks. */
+const crcTable = new Uint32Array(256).map((_, n) => {
+  let c = n;
+  for (let bit = 0; bit < 8; bit++) c = (c >>> 1) ^ (c & 1 ? 0xedb88320 : 0);
+  return c >>> 0;
+});
 
-function crc32(buf: Uint8Array, start: number, end: number): number {
-  let c = 0xffffffff;
-  for (let i = start; i < end; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
+export function crc32(bytes: Uint8Array, from: number, to: number): number {
+  let crc = ~0;
+  for (let i = from; i < to; i++) crc = crcTable[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  return ~crc >>> 0;
 }
 
 function chunk(type: string, data: Uint8Array): Uint8Array {

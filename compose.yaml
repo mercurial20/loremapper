@@ -1,0 +1,12 @@
+# One-command start:  docker compose up -d   →   http://localhost:8080
+# Change the port with FC_PORT, e.g.  FC_PORT=3000 docker compose up -d
+# Note: maps are stored in your browser for this exact address (origin);
+# opening the app on a different port shows a separate, empty set of maps.
+services:
+  fantasy-cartographer:
+    build: .
+    image: fantasy-cartographer:1.0.0-beta.1
+    container_name: fantasy-cartographer
+    ports:
+      - "127.0.0.1:${FC_PORT:-8080}:80"
+    restart: unless-stopped

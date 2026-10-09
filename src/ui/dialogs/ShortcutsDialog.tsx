@@ -1,5 +1,6 @@
 import { useEditor } from '../../store/editorStore';
 import { ALL_TOOLS } from '../toolDefs';
+import { APP_VERSION } from '../../version';
 import { Modal } from './Modal';
 
 const GENERAL: [string, string][] = [
@@ -27,7 +28,7 @@ const GENERAL: [string, string][] = [
 export function ShortcutsDialog() {
   const set = useEditor((s) => s.set);
   return (
-    <Modal title="Keyboard shortcuts" onClose={() => set({ dialog: null })} wide>
+    <Modal title="Keyboard shortcuts" onClose={() => set({ dialog: null })} wide footer={<small className="muted">Fantasy Cartographer v{APP_VERSION} · data is stored locally in this browser</small>}>
       <div className="shortcuts">
         <div>
           <h4>Tools</h4>

@@ -249,6 +249,8 @@ export class RasterTileLayer {
     this.anyDirty = false;
     const n = this.S * this.S;
     const nh = this.Sh * this.Sh;
+    // sources dropped this pass; destroyed only after no shader references them
+    const retired: BufferImageSource[] = [];
     for (const [key, t] of this.tiles) {
       if (!t.dirty) continue;
       t.dirty = false;
@@ -261,7 +263,7 @@ export class RasterTileLayer {
           t.hasOwnHeight = needH;
           if (needH) t.own.height = this.makeSource('r32float', new Float32Array(n), false);
           else {
-            t.own.height?.destroy();
+            if (t.own.height) retired.push(t.own.height);
             delete t.own.height;
           }
         }
@@ -272,8 +274,8 @@ export class RasterTileLayer {
             t.own.biomeA = this.makeSource('rgba8unorm', new Uint8Array(nh * 4), true);
             t.own.biomeB = this.makeSource('rgba8unorm', new Uint8Array(nh * 4), true);
           } else {
-            t.own.biomeA?.destroy();
-            t.own.biomeB?.destroy();
+            if (t.own.biomeA) retired.push(t.own.biomeA);
+            if (t.own.biomeB) retired.push(t.own.biomeB);
             delete t.own.biomeA;
             delete t.own.biomeB;
           }
@@ -298,7 +300,7 @@ export class RasterTileLayer {
           t.hasOwnFog = needF;
           if (needF) t.own.fog = this.makeSource('r8unorm', new Uint8Array(nh), true);
           else {
-            t.own.fog?.destroy();
+            if (t.own.fog) retired.push(t.own.fog);
             delete t.own.fog;
           }
         }
@@ -313,6 +315,7 @@ export class RasterTileLayer {
         old?.destroy(false);
       }
     }
+    for (const s of retired) s.destroy();
   }
 
   private hasContent(t: TileEntry): boolean {
@@ -331,9 +334,11 @@ export class RasterTileLayer {
   }
 
   destroy() {
+    // shaders first, so no bind group still references a texture being destroyed
     for (const t of this.tiles.values()) {
-      for (const s of Object.values(t.own)) s?.destroy();
+      t.mesh.shader?.destroy(false);
       t.mesh.destroy();
+      for (const s of Object.values(t.own)) s?.destroy();
     }
     for (const s of Object.values(this.defaults)) s?.destroy();
     this.container.destroy();

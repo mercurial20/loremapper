@@ -2,7 +2,7 @@ import { FORMAT_VERSION, migrateProject } from '../model/serialization';
 import type { MapDocument, ProjectMeta } from '../model/types';
 import { RASTER_LAYERS, TerrainModel, type RasterLayer } from '../terrain/TerrainModel';
 import type { RasterArray } from '../terrain/TileGrid';
-import { db, type ProjectRecord, type TileRecord } from './db';
+import { db, dehydrateProject, hydrateProject, type ProjectRecord, type TileRecord } from './db';
 
 export interface ProjectSummary {
   id: string;
@@ -14,7 +14,7 @@ export interface ProjectSummary {
 }
 
 export async function listProjects(): Promise<ProjectSummary[]> {
-  const all = await (await db()).getAll('projects');
+  const all = (await (await db()).getAll('projects')).map(hydrateProject);
   return all
     .map((p) => ({
       id: p.id,
@@ -29,7 +29,7 @@ export async function listProjects(): Promise<ProjectSummary[]> {
 
 export async function getProjectRecord(id: string): Promise<ProjectRecord | undefined> {
   const raw = await (await db()).get('projects', id);
-  return raw ? migrateProject(raw as unknown as Record<string, unknown>) : undefined;
+  return raw ? hydrateProject(migrateProject(raw as unknown as Record<string, unknown>)) : undefined;
 }
 
 function tileArray(layer: RasterLayer, buf: ArrayBuffer): RasterArray {
@@ -56,6 +56,7 @@ export async function putProjectRecord(meta: ProjectMeta, doc: MapDocument, mode
   const d = await db();
   const prev = await d.get('projects', meta.id);
   const rec: ProjectRecord = {
+    thumbnailPng: prev?.thumbnailPng,
     id: meta.id,
     formatVersion: FORMAT_VERSION,
     meta,
@@ -64,7 +65,7 @@ export async function putProjectRecord(meta: ProjectMeta, doc: MapDocument, mode
     thumbnail: thumbnail ?? prev?.thumbnail,
     updatedAt: Date.now(),
   };
-  await d.put('projects', rec);
+  await d.put('projects', await dehydrateProject(rec));
 }
 
 /**
@@ -152,7 +153,7 @@ export async function duplicateProject(id: string, newName: string): Promise<str
 /** Write a complete project (used by import). */
 export async function writeFullProject(record: ProjectRecord, tiles: TileRecord[]) {
   const d = await db();
-  await d.put('projects', record);
+  await d.put('projects', await dehydrateProject(record));
   const tx = d.transaction('tiles', 'readwrite');
   await Promise.all(tiles.map((t) => tx.store.put(t)));
   await tx.done;

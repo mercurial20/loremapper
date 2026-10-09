@@ -16,13 +16,25 @@ export class ObjectLayer implements WorldLayer {
   private entries = new Map<string, Entry>();
   private doc: MapDocument | null = null;
   private onDirty: () => void;
+  private unsubscribe: () => void;
 
   constructor(onDirty: () => void) {
     this.onDirty = onDirty;
-    assetLibrary.onTexture((assetId) => {
-      // artwork replaced → reload every sprite using it
-      for (const e of this.entries.values()) if (e.obj.assetId === assetId) this.loadTexture(e);
+    this.unsubscribe = assetLibrary.onTexture((assetId) => {
+      // artwork replaced → detach the old texture now, then reload
+      for (const e of this.entries.values())
+        if (e.obj.assetId === assetId) {
+          e.sprite.texture = Texture.WHITE;
+          e.loaded = false;
+          this.loadTexture(e);
+        }
     });
+  }
+
+  /** Stop listening for artwork changes (call before the renderer is torn down). */
+  dispose() {
+    this.unsubscribe();
+    this.entries.clear();
   }
 
   private group(layerId: string): Container {
