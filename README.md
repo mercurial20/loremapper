@@ -12,11 +12,12 @@ drop in castles and dragons, and hide the unexplored under fog of war.
 
 [![Version](https://img.shields.io/badge/version-1.0.0--beta.1-e6a94f)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-3f8f5a)](LICENSE)
-[![Self-hosted](https://img.shields.io/badge/self--hosted-docker%20compose%20up-2f5d9a)](#-quick-start)
+[![Try it online](https://img.shields.io/badge/try%20it-online-e6a94f?logo=github)](https://mercurial20.github.io/loremapper/)
+[![Self-hosted](https://img.shields.io/badge/self--hosted-docker%20compose%20up-2f5d9a)](#b-docker)
 [![Local-first](https://img.shields.io/badge/your%20maps-stay%20on%20your%20computer-6b4f9a)](#-where-your-maps-live)
 [![Non-commercial](https://img.shields.io/badge/non--commercial-hobby%20project-8f3a5c)](#-a-non-commercial-project)
 
-[Quick start](#-quick-start) · [First map in 5 minutes](#-your-first-map-in-5-minutes) · [Features](#-features) · [Saving & export](#-saving-backups-and-export) · [Report a bug](https://github.com/mercurial20/loremapper/issues/new/choose)
+**[▶ Open the app](https://mercurial20.github.io/loremapper/)** · [Quick start](#-quick-start) · [First map in 5 minutes](#-your-first-map-in-5-minutes) · [Features](#-features) · [Saving & export](#-saving-backups-and-export) · [Report a bug](https://github.com/mercurial20/loremapper/issues/new/choose)
 
 <br/>
 
@@ -30,7 +31,7 @@ drop in castles and dragons, and hide the unexplored under fog of war.
 - **Start from an empty ocean or a seed.** Sculpt by hand, or type a seed like `amber-drake-7` and get continents, rivers and climates in seconds. Then keep editing everything by hand.
 - **Your art is welcome.** It ships with 57 illustrated map icons, and you can drop in your own PNG, WebP or SVG files. They stay in your library.
 - **Built for game masters.** Paint fog of war over unexplored lands and export a player-safe version of the map.
-- **Nothing leaves your computer.** There's no account and no cloud. Maps are saved automatically in your browser, and you can run the whole app yourself with one command.
+- **Nothing leaves your computer.** There's no account and no cloud. Maps are saved automatically in your browser. Use it [online](https://mercurial20.github.io/loremapper/) with nothing to install, or run your own copy with one command.
 
 <p align="center">
   <img src="docs/images/sculpting.gif" width="680" alt="Animation: raising an island from the ocean, building a mountain range, painting a forest and drawing a river" /><br/>
@@ -56,12 +57,26 @@ with the editor open.
 
 | | Path | Good for | Time | You need |
 |:-:|---|---|---|---|
-| 🟢 | **[A. Docker](#a-docker--easiest)** | Most people. One command, nothing else to install. | ~3 min | Docker Desktop |
-| 🟡 | **[B. Node.js](#b-nodejs-without-docker)** | You'd rather not install Docker. | ~3 min | Node.js 22+ |
-| 🔵 | **[C. Developer mode](#c-developer-mode)** | You want to change the code. | ~2 min | Node.js 22+, Git |
-| ⚫ | **[D. Your own server](#d-host-it-on-your-own-server)** | You want it on your NAS, home server or website. | ~10 min | A web server |
+| ⚡ | **[A. Open it online](#a-open-it-online--easiest)** | Trying it right now, or just using it. Nothing to install. | 0 min | A browser |
+| 🟢 | **[B. Docker](#b-docker)** | Running your own copy offline with one command. | ~3 min | Docker Desktop |
+| 🟡 | **[C. Node.js](#c-nodejs-without-docker)** | Your own copy without Docker. | ~3 min | Node.js 22+ |
+| 🔵 | **[D. Developer mode](#d-developer-mode)** | Changing the code. | ~2 min | Node.js 22+, Git |
+| ⚫ | **[E. Host it yourself](#e-host-it-yourself)** | Your own GitHub Pages site, NAS, home server or website. | ~10 min | A GitHub account or a web server |
 
-### A. Docker — easiest
+### A. Open it online — easiest
+
+### 👉 **[mercurial20.github.io/loremapper](https://mercurial20.github.io/loremapper/)**
+
+That's it. The editor loads and runs **entirely in your browser**, and your maps
+are saved in your browser too. This online copy is published automatically from
+the `main` branch, so it always has the latest version.
+
+> GitHub only delivers the app's files, like any website host. Your maps, images
+> and edits are never uploaded anywhere.
+
+### B. Docker
+
+Use this if you want your own copy that works offline.
 
 **1. Install Docker Desktop** (one time) from [docker.com](https://www.docker.com/products/docker-desktop/) for Windows or macOS. On Linux, install [Docker Engine](https://docs.docker.com/engine/install/). Start it and wait until it says it's running.
 
@@ -105,10 +120,10 @@ to `"8080:80"`.
 
 </details>
 
-### B. Node.js (without Docker)
+### C. Node.js (without Docker)
 
 **1.** Install [Node.js](https://nodejs.org) **22.12 or newer** (the LTS version is fine).<br/>
-**2.** Download the project (ZIP or `git clone`, as in path A).<br/>
+**2.** Download the project (ZIP or `git clone`, as in path B).<br/>
 **3.** In a terminal inside the folder:
 
 ```bash
@@ -119,7 +134,7 @@ npm run preview   # serve it
 
 Open **<http://localhost:4173>**. Stop it with <kbd>Ctrl</kbd>+<kbd>C</kbd>.
 
-### C. Developer mode
+### D. Developer mode
 
 ```bash
 git clone https://github.com/mercurial20/loremapper.git
@@ -131,15 +146,22 @@ npm run dev       # live-reloading editor at http://localhost:5173
 Useful scripts: `npm test` (unit tests), `npm run lint`, `npm run typecheck` and
 `npm run build`. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-### D. Host it on your own server
+### E. Host it yourself
 
-`npm run build` produces a **static website** in `dist/`. There's no backend and
-no database on the server. Copy `dist/` to the **root** of any static web server
-(nginx, Caddy, Apache…). [`docker/nginx.conf`](docker/nginx.conf) is a working
-example with caching and the single-page-app fallback. Or reuse the Docker image
-behind your reverse proxy.
+**Your own free copy on GitHub Pages**, updated every time you push:
 
-> Serving from a sub-path such as `example.com/maps/` is not supported in this beta. Use a domain, subdomain or port of its own.
+1. Click **Fork** at the top of this page.
+2. In your fork, open **Settings → Pages** and set **Source** to **GitHub Actions**.
+3. Open the **Actions** tab and allow workflows to run.
+4. Run **Deploy to GitHub Pages** (or push any change to `main`).
+   After a minute or two your copy is live at `https://<your-name>.github.io/loremapper/`.
+
+**On your own server.** `npm run build` produces a **static website** in
+`dist/`; there's no backend and no database on the server. Copy `dist/` to any
+static web server (nginx, Caddy, Apache…).
+[`docker/nginx.conf`](docker/nginx.conf) is a working example with caching and
+the single-page-app fallback. To serve from a sub-path such as
+`example.com/maps/`, build with `BASE_PATH=/maps/ npm run build`.
 
 <details>
 <summary><b>🛠 Troubleshooting</b></summary>
@@ -151,9 +173,10 @@ behind your reverse proxy.
 | `Cannot connect to the Docker daemon` | Docker Desktop isn't running. Start it, wait a moment, and try again. |
 | `port is already allocated` | Something else uses port 8080. Start with another port (see the table above). |
 | The page is empty or grey, or says WebGL is unavailable | Loremapper needs **WebGL 2**. Turn on hardware acceleration in your browser settings and update your graphics drivers. You can check your browser at [get.webgl.org/webgl2](https://get.webgl.org/webgl2/). |
-| "My maps are gone!" | Open the **same browser** at the **exact same address** you used before (for example `http://localhost:8080`, not `127.0.0.1:8080`). See [Where your maps live](#-where-your-maps-live). |
+| "My maps are gone!" | Open the **same browser** at the **exact same address** you used before (for example `http://localhost:8080`, not `127.0.0.1:8080`). The online version and your local copies keep separate maps. See [Where your maps live](#-where-your-maps-live). |
 | "Saving failed" message | The browser storage may be full or disabled (private windows). Export your map right away with **Export → Editable project**. |
 | `npm ci` fails | Check `node --version`. You need 22.12 or newer. |
+| My fork's Pages site shows a 404 | Check that **Settings → Pages → Source** is **GitHub Actions** and that the **Deploy to GitHub Pages** workflow ran successfully. |
 
 </details>
 
@@ -307,8 +330,8 @@ Maps and imported images are stored in **your browser** (IndexedDB), not on the
 server and not inside the Docker container.
 
 - Each **browser** and each **address** keeps its own maps.
-  `http://localhost:8080`, `http://127.0.0.1:8080` and `http://localhost:4173`
-  are three separate places.
+  The online version (`mercurial20.github.io`), `http://localhost:8080`,
+  `http://127.0.0.1:8080` and `http://localhost:4173` are four separate places.
 - Rebuilding, updating or deleting the container does **not** touch your maps.
 - To move a map to another browser or computer, export it as an editable project
   and import it there.
@@ -343,7 +366,7 @@ So far testing has been on macOS. Windows and Linux reports are very welcome.
 ## ✅ Testing done for this beta
 
 - A clean install from a fresh clone, with lint, type-check, 20 unit tests and the production build all passing.
-- `docker compose up -d` starts the app on `localhost:8080`.
+- `docker compose up -d` starts the app on `localhost:8080`, and a build served from the GitHub Pages sub-path (`/loremapper/`) passes the same checks.
 - Automated browser runs in Chrome, Firefox and WebKit covered:
   - painting terrain and biomes;
   - placing and editing objects;

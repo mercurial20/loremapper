@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Automatic deployment to GitHub Pages on every push to `main`
+  (<https://mercurial20.github.io/loremapper/>), via `.github/workflows/pages.yml`.
+- `BASE_PATH` build variable for serving the app from a sub-path
+  (e.g. `BASE_PATH=/maps/ npm run build`).
+
 ## [1.0.0-beta.1] — 2026-10-09
 
 First public beta.
@@ -25,4 +34,5 @@ First public beta.
 - Export to PNG (current view or whole planet, complete map or revealed areas only), 16/8-bit heightmap PNG, and `.loremap` project archives with re-import.
 - Docker image (nginx) and `compose.yaml` for one-command self-hosting.
 
+[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.0.0-beta.1...HEAD
 [1.0.0-beta.1]: https://github.com/mercurial20/loremapper/releases/tag/v1.0.0-beta.1

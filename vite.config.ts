@@ -5,7 +5,11 @@ import { defineConfig } from 'vite'
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }
 
 // https://vite.dev/config/
+// Serve from a sub-path (e.g. GitHub Pages: /loremapper/) by building with BASE_PATH.
+const base = process.env.BASE_PATH ? `/${process.env.BASE_PATH.replace(/^\/+|\/+$/g, '')}/`.replace('//', '/') : '/'
+
 export default defineConfig({
+  base,
   plugins: [react()],
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   worker: { format: 'es' },
