@@ -29,6 +29,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Self-hosted builds ship no analytics
+        run: if grep -q cloudflareinsights dist/index.html; then echo "unexpected analytics beacon"; exit 1; fi
       - name: Upload production build
         uses: actions/upload-artifact@v7
         with:
@@ -53,6 +55,7 @@ jobs:
         run: |
           docker run -d --name fc -p 8080:80 loremapper:ci
           for i in $(seq 1 20); do curl -fsS http://localhost:8080/ > /dev/null && break; sleep 1; done
-          curl -fsS http://localhost:8080/ | grep -q "<title>Loremapper</title>"
-          curl -fsS http://localhost:8080/any/deep/link | grep -q "<title>Loremapper</title>"
+          curl -fsS http://localhost:8080/ | grep -q "<title>Loremapper"
+          curl -fsS http://localhost:8080/any/deep/link | grep -q "<title>Loremapper"
+          if curl -fsS http://localhost:8080/ | grep -q cloudflareinsights; then echo "unexpected analytics beacon"; exit 1; fi
           docker rm -f fc

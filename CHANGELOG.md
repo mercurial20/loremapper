@@ -12,6 +12,12 @@ All notable changes to this project are documented here. The format follows
   (<https://mercurial20.github.io/loremapper/>), via `.github/workflows/pages.yml`.
 - `BASE_PATH` build variable for serving the app from a sub-path
   (e.g. `BASE_PATH=/maps/ npm run build`).
+- Search and link-preview metadata: page title and description, canonical URL,
+  Open Graph and Twitter/X cards with a 1200×630 preview image, Schema.org
+  `WebApplication` data, Apple touch icon, `robots.txt` and `sitemap.xml`.
+- Cloudflare Web Analytics on the official GitHub Pages site only, enabled by the
+  `CF_BEACON_TOKEN` build variable. Docker, npm and fork builds include no
+  analytics. Map data is never sent.
 
 ## [1.0.0-beta.1] — 2026-10-09
 

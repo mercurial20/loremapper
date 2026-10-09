@@ -42,7 +42,7 @@ drop in castles and dragons, and hide the unexplored under fog of war.
 
 Loremapper is a hobby project made for the worldbuilding and tabletop community.
 It is **not developed for commercial purposes**: there is no paid version, no
-premium features, no ads, no tracking and no plans to monetise it. The code is
+premium features, no ads, no tracking of you or your maps, and no plans to monetise it. The code is
 open under the [MIT License](LICENSE).
 
 > **Early beta.** Loremapper works and has been tested (see [Testing](#-testing-done-for-this-beta)), but expect rough edges.
@@ -72,7 +72,8 @@ are saved in your browser too. This online copy is published automatically from
 the `main` branch, so it always has the latest version.
 
 > GitHub only delivers the app's files, like any website host. Your maps, images
-> and edits are never uploaded anywhere.
+> and edits are never uploaded anywhere. The online copy counts anonymous visits
+> with Cloudflare Web Analytics; see [Privacy and analytics](#-privacy-and-analytics).
 
 ### B. Docker
 
@@ -162,6 +163,11 @@ static web server (nginx, Caddy, Apache…).
 [`docker/nginx.conf`](docker/nginx.conf) is a working example with caching and
 the single-page-app fallback. To serve from a sub-path such as
 `example.com/maps/`, build with `BASE_PATH=/maps/ npm run build`.
+
+Self-hosted copies and forks ship **without analytics**. If you want
+[Cloudflare Web Analytics](https://developers.cloudflare.com/web-analytics/) on
+your own copy, build with `CF_BEACON_TOKEN=<your site token>`, or set it as an
+Actions variable named `CF_BEACON_TOKEN` in your fork.
 
 <details>
 <summary><b>🛠 Troubleshooting</b></summary>
@@ -336,6 +342,22 @@ server and not inside the Docker container.
 - To move a map to another browser or computer, export it as an editable project
   and import it there.
 - Private or incognito windows usually forget everything when they close.
+
+## 📊 Privacy and analytics
+
+The official online version at
+[mercurial20.github.io/loremapper](https://mercurial20.github.io/loremapper/)
+uses [Cloudflare Web Analytics](https://www.cloudflare.com/web-analytics/) to
+count visits, see where visitors come from (referrers, countries) and measure page
+load speed. It doesn't use cookies or local storage. This is only so we can see
+whether people find the project useful.
+
+- Analytics only sees that the page was opened. Your maps, map names, drawings,
+  imported images, tool usage and projects are **never sent** anywhere. They stay
+  in your browser.
+- If the analytics script is blocked (for example by an ad blocker), Loremapper
+  works exactly the same.
+- Docker, Node.js and self-hosted copies, and forks, include **no analytics** at all.
 
 ## 🌐 Browser support
 

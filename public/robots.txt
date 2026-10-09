@@ -1,0 +1,6 @@
+# Loremapper is a single-page app; the only public page is the editor itself.
+# Maps and assets live in each visitor's browser and are never served from here.
+User-agent: *
+Allow: /
+
+Sitemap: https://mercurial20.github.io/loremapper/sitemap.xml

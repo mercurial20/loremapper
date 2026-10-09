@@ -34,6 +34,17 @@ jobs:
         run: npm run build
         env:
           BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          # Cloudflare Web Analytics site token (public), from Settings → Secrets and variables
+          # → Actions → Variables. Forks don't inherit it, so their copies ship no analytics.
+          CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN }}
+      - name: Check SEO files and analytics beacon
+        run: |
+          for f in robots.txt sitemap.xml social-preview.jpg apple-touch-icon.png; do test -s "dist/$f"; done
+          n=$( (grep -o 'static.cloudflareinsights.com/beacon.min.js' dist/index.html || true) | wc -l)
+          echo "Cloudflare beacon tags: $n"
+          if [ -n "$CF_BEACON_TOKEN" ]; then [ "$n" -eq 1 ]; else [ "$n" -eq 0 ]; fi
+        env:
+          CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN }}
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
