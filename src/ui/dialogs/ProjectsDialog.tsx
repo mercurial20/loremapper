@@ -94,7 +94,7 @@ export function ProjectsDialog() {
           ref={fileRef}
           type="file"
           hidden
-          accept=".fantasymap,.zip,application/zip"
+          accept=".loremap,.fantasymap,.zip,application/zip"
           onChange={async (e) => {
             const f = e.target.files?.[0];
             e.target.value = '';

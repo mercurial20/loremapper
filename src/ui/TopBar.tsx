@@ -121,7 +121,7 @@ export function TopBar() {
     <header className="topbar">
       <div className="brand">
         <CompassRose size={26} />
-        <span>Fantasy Cartographer</span>
+        <span>Loremapper</span>
         <em className="beta" title={`Version ${APP_VERSION}`}>beta</em>
       </div>
       <div className="project-name">

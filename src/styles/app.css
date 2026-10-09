@@ -1203,11 +1203,9 @@ input[type='range']::-moz-range-thumb {
   opacity: 1;
 }
 .tile-menu {
-  position: absolute;
-  top: 28px;
-  right: 2px;
-  z-index: 20;
-  min-width: 170px;
+  position: fixed;
+  z-index: 60;
+  width: 180px;
   background: #0e1014;
   border: 1px solid var(--border-2);
   border-radius: var(--radius-sm);

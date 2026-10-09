@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping with Fantasy Cartographer! This is an early beta, so bug
+Thanks for helping with Loremapper! This is an early beta, so bug
 reports with clear reproduction steps are the most valuable contribution right
 now.
 
@@ -8,7 +8,7 @@ now.
 
 Use the [bug report form](../../issues/new?template=bug_report.yml). Please include
 the app version (press `?` in the app), your browser and OS, and anything red
-from the browser console. A `.fantasymap` project export that shows the problem
+from the browser console. A `.loremap` project export that shows the problem
 helps a lot.
 
 ## Suggesting features
@@ -39,7 +39,7 @@ Code layout and architecture notes are in the [README](README.md#architecture).
 ### Ground rules
 
 - **Saved data is precious.** Anything that changes what is stored in IndexedDB or
-  in `.fantasymap` files must bump `FORMAT_VERSION` and add a migration in
+  in `.loremap` files must bump `FORMAT_VERSION` and add a migration in
   `src/model/serialization.ts`.
 - Keep the editor local-first: no required server, account or network access.
 - Don't add third-party code, artwork or fonts unless their license is

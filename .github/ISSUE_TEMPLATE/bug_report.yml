@@ -60,4 +60,4 @@ body:
     id: extra
     attributes:
       label: Screenshots or project file
-      description: Drag images or a `.fantasymap` file here (zip it if GitHub refuses the extension).
+      description: Drag images or a `.loremap` file here (zip it if GitHub refuses the extension).

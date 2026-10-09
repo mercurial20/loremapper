@@ -47,18 +47,23 @@ export interface SettingRecord {
   value: unknown;
 }
 
-interface CartographerDB extends DBSchema {
+interface LoremapperDB extends DBSchema {
   projects: { key: string; value: ProjectRecord };
   tiles: { key: [string, string, number]; value: TileRecord; indexes: { byProject: string } };
   assets: { key: string; value: AssetRecord };
   settings: { key: string; value: SettingRecord };
 }
 
-let dbPromise: Promise<IDBPDatabase<CartographerDB>> | null = null;
+const DB_NAME = 'loremapper';
+/** Database name used before the project was renamed to Loremapper. */
+const LEGACY_DB_NAME = 'fantasy-cartographer';
+const STORES = ['projects', 'tiles', 'assets', 'settings'] as const;
 
-export function db(): Promise<IDBPDatabase<CartographerDB>> {
+let dbPromise: Promise<IDBPDatabase<LoremapperDB>> | null = null;
+
+export function db(): Promise<IDBPDatabase<LoremapperDB>> {
   if (!dbPromise) {
-    dbPromise = openDB<CartographerDB>('fantasy-cartographer', 1, {
+    dbPromise = openDB<LoremapperDB>(DB_NAME, 1, {
       upgrade(d) {
         d.createObjectStore('projects', { keyPath: 'id' });
         const tiles = d.createObjectStore('tiles', { keyPath: ['projectId', 'layer', 'index'] });
@@ -66,9 +71,35 @@ export function db(): Promise<IDBPDatabase<CartographerDB>> {
         d.createObjectStore('assets', { keyPath: 'id' });
         d.createObjectStore('settings', { keyPath: 'key' });
       },
+    }).then(async (d) => {
+      await migrateLegacyDatabase(d).catch((e) => console.warn('Could not copy maps from the old database', e));
+      return d;
     });
   }
   return dbPromise;
+}
+
+/**
+ * One-time copy of maps and assets saved under the pre-rename database name.
+ * Runs only while the new database is still empty; the old one is left intact.
+ */
+async function migrateLegacyDatabase(target: IDBPDatabase<LoremapperDB>) {
+  if (typeof indexedDB.databases !== 'function') return;
+  const existing = await indexedDB.databases();
+  if (!existing.some((x) => x.name === LEGACY_DB_NAME)) return;
+  if ((await target.count('projects')) > 0 || (await target.count('assets')) > 0) return;
+  const legacy = await openDB(LEGACY_DB_NAME);
+  try {
+    for (const store of STORES) {
+      if (!legacy.objectStoreNames.contains(store)) continue;
+      const rows = await legacy.getAll(store);
+      const tx = target.transaction(store, 'readwrite');
+      await Promise.all(rows.map((r) => tx.store.put(r as never)));
+      await tx.done;
+    }
+  } finally {
+    legacy.close();
+  }
 }
 
 /*

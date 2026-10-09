@@ -137,7 +137,9 @@ export class Stroke {
     const smoothK = Math.max(1, Math.round(ry / 10));
     const ridgeScale = Math.max(2, ry * 0.42);
     const rough = op === 'raise' || op === 'lower' ? clamp(this.params.roughness ?? 0, 0, 1) : 0;
-    const roughScale = Math.max(1.5, ry * 0.45);
+    // noise periods divide the planet's width so brushes stay seamless across the antimeridian
+    const roughPeriod = Math.max(1, Math.round(W / Math.max(1.5, ry * 0.45)));
+    const roughCell = W / roughPeriod;
     // finest octave should stay ≥ ~1.5 cells or it aliases on the grid
     const ridgeOctaves = Math.max(1, Math.min(5, Math.floor(Math.log2(ridgeScale / 1.5)) + 1));
     const ridgePeriod = Math.max(1, Math.round(W / ridgeScale));
@@ -203,8 +205,10 @@ export class Stroke {
               let ww = w;
               if (rough > 0) {
                 // coherent world-space noise ragged-ises the edge so coasts look natural
-                const n = fbm(x / roughScale, y / roughScale, seed + 17, 4, 0) * 2 - 1;
-                ww = clamp(w + n * rough * 1.1 * Math.min(1, d * 1.6), 0, 1);
+                const n = fbm(x / roughCell, y / roughCell, seed + 17, 4, roughPeriod) * 2 - 1;
+                // only the outer rim is ragged, so the interior never keeps stray pits
+                const rim = clamp((d - 0.45) / 0.5, 0, 1);
+                ww = clamp(w + n * rough * 1.1 * rim * rim * (3 - 2 * rim), 0, 1);
               }
               delta = (op === 'raise' ? rate : -rate) * ww;
             }

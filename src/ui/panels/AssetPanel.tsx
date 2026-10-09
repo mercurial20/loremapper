@@ -1,5 +1,5 @@
 import { Ellipsis, FolderPlus, ImagePlus, Pencil, RotateCcw, Search, Trash2, Upload, X, Eye } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ACCEPTED_TYPES, assetLibrary, useAssets, type AssetInfo } from '../../assets/library';
 import { STARTER_CATEGORIES } from '../../assets/starter';
 import { useEditor } from '../../store/editorStore';
@@ -7,7 +7,25 @@ import { useEditor } from '../../store/editorStore';
 export const ASSET_DRAG_TYPE = 'application/x-fantasy-asset';
 
 function AssetTile({ a, selected, categories }: { a: AssetInfo; selected: boolean; categories: string[] }) {
-  const [menu, setMenu] = useState(false);
+  // menu anchor in viewport coordinates; the menu is fixed-positioned so the
+  // scrolling panel can't clip it
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const menu = menuAt !== null;
+  const setMenu = (open: boolean) => setMenuAt(open ? menuAt : null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuAt) return;
+    const close = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuAt(null);
+    };
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setMenuAt(null);
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('keydown', esc);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', esc);
+    };
+  }, [menuAt]);
   const [renaming, setRenaming] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const notify = useEditor((s) => s.notify);
@@ -51,16 +69,19 @@ function AssetTile({ a, selected, categories }: { a: AssetInfo; selected: boolea
       )}
       <button
         className="tile-menu-btn"
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
-          setMenu(!menu);
+          if (menu) return setMenuAt(null);
+          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          setMenuAt({ x: Math.max(8, Math.min(r.left - 4, window.innerWidth - 188)), y: r.bottom + 4 });
         }}
         aria-label="Asset options"
       >
         <Ellipsis size={14} />
       </button>
       {menu && (
-        <div className="tile-menu" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setMenu(false)}>
+        <div className="tile-menu" ref={menuRef} style={{ left: menuAt!.x, top: menuAt!.y }} onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => {
               setRenaming(true);

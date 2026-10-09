@@ -111,7 +111,7 @@ export function ExportDialog() {
       {tab === 'project' && (
         <div className="export-body">
           <p>
-            Saves <b>{meta?.name}</b> as a single <code>.fantasymap</code> file (a zip archive) containing the elevation, biome and fog tiles, every object, path,
+            Saves <b>{meta?.name}</b> as a single <code>.loremap</code> file (a zip archive) containing the elevation, biome and fog tiles, every object, path,
             territory, label and peak, plus the image files of custom assets it uses. Import it from <i>Maps → Import project file</i> on any browser.
           </p>
           <p className="hint">Your work is already saved automatically in this browser — use this for backups and moving between computers.</p>

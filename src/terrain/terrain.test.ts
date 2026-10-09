@@ -133,3 +133,22 @@ describe('generator', () => {
     expect(res.biome!.length).toBe((W / 2) * (H / 2) * 8);
   });
 });
+
+describe('antimeridian', () => {
+  it('raise brushes with rough edges stay continuous across x = 0', () => {
+    const m = small();
+    const s = new Stroke(m, 'raise', { radiusKm: 1500, strength: 1, falloff: 0.7, opacity: 1, roughness: 1 }, { seed: 5 });
+    for (let i = 0; i < 6; i++) s.dab(0, 128);
+    s.finish();
+    for (let y = 110; y < 146; y += 2) {
+      const across = Math.abs(m.height.get(0, y) - m.height.get(m.W - 1, y));
+      let nearby = 0;
+      for (let k = 1; k <= 4; k++) {
+        nearby = Math.max(nearby, Math.abs(m.height.get(k, y) - m.height.get(k - 1, y)));
+        nearby = Math.max(nearby, Math.abs(m.height.get(m.W - k, y) - m.height.get(m.W - k - 1, y)));
+      }
+      // the seam must look like any other step between neighbouring cells
+      expect(across).toBeLessThanOrEqual(nearby * 1.5 + 1);
+    }
+  });
+});

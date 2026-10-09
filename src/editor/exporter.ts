@@ -143,7 +143,7 @@ export async function exportImage(o: ImageExportOptions) {
   try {
     const blob = await renderToPng(x0, y0, x1, y1, width, height, o, {
       Title: meta.name,
-      Software: 'Fantasy Cartographer',
+      Software: 'Loremapper',
       Description: o.fog === 'revealed' ? 'Player map (revealed areas only)' : 'Complete map',
     });
     downloadBlob(blob, `${safeFileName(meta.name)}${o.fog === 'revealed' ? '-player' : ''}-${width}x${height}.png`);
@@ -256,7 +256,8 @@ function unshuffleBytes(src: Uint8Array, size: number): Uint8Array {
 const EXT: Record<string, string> = { 'image/png': 'png', 'image/webp': 'webp', 'image/svg+xml': 'svg' };
 
 interface Manifest {
-  format: 'fantasy-cartographer-project';
+  /** `fantasy-cartographer-project` was written by builds before the rename. */
+  format: 'loremapper-project' | 'fantasy-cartographer-project';
   formatVersion: number;
   appVersion?: string;
   exportedAt: string;
@@ -303,7 +304,7 @@ export async function exportProject() {
     const { thumbnail, ...record } = rec;
     if (thumbnail) files['thumbnail.png'] = new Uint8Array(await thumbnail.arrayBuffer());
     const manifest: Manifest = {
-      format: 'fantasy-cartographer-project',
+      format: 'loremapper-project',
       formatVersion: FORMAT_VERSION,
       appVersion: APP_VERSION,
       exportedAt: new Date().toISOString(),
@@ -313,13 +314,13 @@ export async function exportProject() {
     };
     files['project.json'] = strToU8(JSON.stringify(manifest));
     const zipped = zipSync(files, { level: 6 });
-    downloadBlob(new Blob([zipped as BlobPart], { type: 'application/zip' }), `${safeFileName(meta.name)}.fantasymap`);
+    downloadBlob(new Blob([zipped as BlobPart], { type: 'application/zip' }), `${safeFileName(meta.name)}.loremap`);
   } finally {
     useEditor.getState().set({ busy: null });
   }
 }
 
-/** Import a `.fantasymap` archive as a new project and open it. */
+/** Import a `.loremap` archive (or a pre-rename `.fantasymap`) as a new project and open it. */
 export async function importProject(file: File) {
   useEditor.getState().set({ busy: 'Importing project…' });
   try {
@@ -328,12 +329,12 @@ export async function importProject(file: File) {
     try {
       files = unzipSync(buf);
     } catch {
-      throw new Error('This file is not a Fantasy Cartographer project (.fantasymap).');
+      throw new Error('This file is not a Loremapper project (.loremap).');
     }
     const mf = files['project.json'];
     if (!mf) throw new Error('project.json missing from archive');
     const manifest = JSON.parse(strFromU8(mf)) as Manifest;
-    if (manifest.format !== 'fantasy-cartographer-project') throw new Error('Unknown project format');
+    if (manifest.format !== 'loremapper-project' && manifest.format !== 'fantasy-cartographer-project') throw new Error('Unknown project format');
     const record = migrateProject({ ...manifest.record, formatVersion: manifest.formatVersion } as unknown as Record<string, unknown>);
     // always import as a new project so nothing is overwritten
     const id = crypto.randomUUID();

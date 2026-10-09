@@ -22,7 +22,7 @@ First public beta.
 - Object placement and stamp brush; per-object size, rotation, opacity, layer, z-order, lock, hide, name, description and metadata.
 - Fog of war with hide/reveal brushes and an editor “see through fog” toggle.
 - Layers panel, undo/redo, keyboard shortcuts, automatic saving, multiple maps.
-- Export to PNG (current view or whole planet, complete map or revealed areas only), 16/8-bit heightmap PNG, and `.fantasymap` project archives with re-import.
+- Export to PNG (current view or whole planet, complete map or revealed areas only), 16/8-bit heightmap PNG, and `.loremap` project archives with re-import.
 - Docker image (nginx) and `compose.yaml` for one-command self-hosting.
 
 [1.0.0-beta.1]: https://github.com/mercurial20/loremapper/releases/tag/v1.0.0-beta.1

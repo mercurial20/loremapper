@@ -1,6 +1,6 @@
 # Third-party notices
 
-Fantasy Cartographer is released under the [MIT License](LICENSE). The
+Loremapper is released under the [MIT License](LICENSE). The
 production build bundles the following third-party software and fonts. Their
 licenses permit redistribution; full license texts ship inside each package in
 `node_modules/<package>/LICENSE`.

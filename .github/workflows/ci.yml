@@ -32,7 +32,7 @@ jobs:
       - name: Upload production build
         uses: actions/upload-artifact@v7
         with:
-          name: fantasy-cartographer-dist
+          name: loremapper-dist
           path: dist
           retention-days: 14
 
@@ -48,11 +48,11 @@ jobs:
           context: .
           load: true
           push: false
-          tags: fantasy-cartographer:ci
+          tags: loremapper:ci
       - name: Smoke test
         run: |
-          docker run -d --name fc -p 8080:80 fantasy-cartographer:ci
+          docker run -d --name fc -p 8080:80 loremapper:ci
           for i in $(seq 1 20); do curl -fsS http://localhost:8080/ > /dev/null && break; sleep 1; done
-          curl -fsS http://localhost:8080/ | grep -q "<title>Fantasy Cartographer</title>"
-          curl -fsS http://localhost:8080/any/deep/link | grep -q "<title>Fantasy Cartographer</title>"
+          curl -fsS http://localhost:8080/ | grep -q "<title>Loremapper</title>"
+          curl -fsS http://localhost:8080/any/deep/link | grep -q "<title>Loremapper</title>"
           docker rm -f fc
