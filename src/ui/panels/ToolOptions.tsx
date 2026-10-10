@@ -1,6 +1,7 @@
 import { CloudFog, Eye, Sun } from 'lucide-react';
 import { useAssets } from '../../assets/library';
-import { formatKm } from '../../core/geo';
+import { formatHeight, formatLength } from '../../core/units';
+import { brushRange } from '../format';
 import { BIOMES } from '../../core/planet';
 import { restoreSuppressedPeaks } from '../../editor/commands';
 import { editor } from '../../editor/Editor';
@@ -12,7 +13,7 @@ import { brushGroupOf, useEditor, type BrushGroup } from '../../store/editorStor
 import { raiseRate } from '../../terrain/brushes';
 import { pushTileChange } from '../../tools/ToolController';
 import { ALL_TOOLS } from '../toolDefs';
-import { ColorField, Hint, NumberField, Segmented, Select, Slider, Toggle } from '../controls/controls';
+import { ColorField, Hint, MeasureField, Segmented, Select, Slider, Toggle } from '../controls/controls';
 
 const SWATCHES = ['#b5452f', '#2f5d9a', '#3f8f5a', '#c79a2e', '#7a4aa0', '#2a8a8a', '#8f3a5c', '#5a5a5a'];
 const PATH_SWATCHES = ['#4f86ad', '#2e5f86', '#6aa5c8', '#7a5532', '#4b3a2a', '#9a7b52', '#8a2e2e', '#2b2016'];
@@ -21,16 +22,28 @@ function BrushControls({ group, showOpacity = true }: { group: BrushGroup; showO
   const b = useEditor((s) => s.brushes[group]);
   const setBrush = useEditor((s) => s.setBrush);
   const tool = useEditor((s) => s.tool);
+  const units = useEditor((s) => s.units);
+  useDoc((s) => s.meta);
+  const range = editor.model ? brushRange(editor.model.geo) : { min: 5, max: 6000 };
   return (
     <>
-      <Slider label="Radius" value={b.radiusKm} min={5} max={6000} log onChange={(v) => setBrush(group, { radiusKm: v })} format={(v) => formatKm(v)} hint="[ and ] keys, or Alt + mouse wheel" />
+      <Slider
+        label="Radius"
+        value={Math.min(range.max, Math.max(range.min, b.radiusKm))}
+        min={range.min}
+        max={range.max}
+        log
+        onChange={(v) => setBrush(group, { radiusKm: v })}
+        format={(v) => formatLength(v, units)}
+        hint="[ and ] keys, or Alt + mouse wheel"
+      />
       <Slider
         label="Strength"
         value={b.strength}
         min={0.01}
         max={1}
         onChange={(v) => setBrush(group, { strength: v })}
-        format={(v) => (tool === 'raise' || tool === 'lower' || tool === 'ridge' ? `${Math.round(raiseRate(v))} m / dab` : `${Math.round(v * 100)}%`)}
+        format={(v) => (tool === 'raise' || tool === 'lower' || tool === 'ridge' ? `${formatHeight(raiseRate(v), units)} / dab` : `${Math.round(v * 100)}%`)}
         hint="Shift + [ / ]"
       />
       <Slider label="Falloff (softness)" value={b.falloff} min={0} max={1} onChange={(v) => setBrush(group, { falloff: v })} format={(v) => `${Math.round(v * 100)}%`} />
@@ -52,7 +65,7 @@ function BrushControls({ group, showOpacity = true }: { group: BrushGroup; showO
           min={0.02}
           max={1}
           onChange={(v) => setBrush(group, { opacity: v })}
-          format={(v) => (tool === 'raise' || tool === 'lower' || tool === 'ridge' ? (v >= 0.99 ? 'none' : `±${Math.round(v * 21000).toLocaleString()} m`) : `${Math.round(v * 100)}%`)}
+          format={(v) => (tool === 'raise' || tool === 'lower' || tool === 'ridge' ? (v >= 0.99 ? 'none' : `±${formatHeight(v * 21000, units)}`) : `${Math.round(v * 100)}%`)}
           hint="The most a single stroke can change: build plateaus with a low cap."
         />
       )}
@@ -181,7 +194,7 @@ export function ToolOptions() {
             ]}
           />
           {st.flattenMode === 'fixed' && (
-            <NumberField label="Height above sea level" value={st.flattenHeight} min={-11000} max={10000} step={50} suffix="m" onChange={(v) => st.set({ flattenHeight: v })} />
+            <MeasureField label="Height above sea level" kind="height" value={st.flattenHeight} min={-11000} max={10000} step={{ metric: 50, imperial: 100 }} onChange={(v) => st.set({ flattenHeight: v })} />
           )}
         </>
       )}
@@ -267,7 +280,7 @@ export function ToolOptions() {
       )}
       {tool === 'peak' && (
         <>
-          <Hint>Peaks are detected automatically as the highest point within ~160 km and update as you sculpt.</Hint>
+          <Hint>Peaks are detected automatically as the highest point within ~{formatLength(160, st.units)} and update as you sculpt.</Hint>
           {suppressed > 0 && (
             <button className="btn" onClick={() => restoreSuppressedPeaks()}>
               Restore {suppressed} removed peak{suppressed > 1 ? 's' : ''}

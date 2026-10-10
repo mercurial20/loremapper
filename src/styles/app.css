@@ -1885,3 +1885,184 @@ input[type='range']::-moz-range-thumb {
   color: var(--muted);
   white-space: nowrap;
 }
+
+/* ------------------------------------------------------------ header: units & community */
+
+.units-switch {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+.units-switch button {
+  min-width: 30px;
+  padding: 3px 7px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.units-switch button.on {
+  background: var(--panel-3);
+  color: var(--accent-2);
+}
+.community-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 260px;
+}
+.community-menu h4 {
+  margin: 0 0 4px;
+}
+.community-menu a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  color: var(--text);
+  text-decoration: none;
+}
+.community-menu a:hover,
+.community-menu a:focus-visible {
+  background: var(--panel-3);
+}
+.community-menu a span {
+  display: flex;
+  flex-direction: column;
+}
+.community-menu small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.community-menu svg {
+  color: var(--muted);
+  flex: none;
+}
+
+/* ------------------------------------------------------------ welcome & new map */
+
+.welcome-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  overflow-y: auto;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(230, 169, 79, 0.08), transparent 60%),
+    var(--bg);
+}
+.welcome-card {
+  width: min(880px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+  border-radius: 16px;
+  padding: 26px 26px 20px;
+  box-shadow: var(--shadow);
+}
+.welcome-card header h1 {
+  margin: 0 0 6px;
+  font: 600 26px/1.15 var(--display);
+  letter-spacing: 0.04em;
+  color: var(--accent-2);
+}
+.welcome-card header p {
+  margin: 0 0 18px;
+  color: var(--muted);
+}
+.new-map {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.start-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.start-cards.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.start-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.start-card:hover {
+  border-color: var(--border-2);
+  background: var(--panel-3);
+}
+.start-card.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.start-card b {
+  font-size: 14px;
+}
+.start-card small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.start-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+.new-map-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.new-map-foot > :last-child:not(:first-child) {
+  margin-left: auto;
+}
+.earth-intro {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  color: var(--accent-2);
+}
+.earth-intro h3 {
+  margin: 0 0 4px;
+  color: var(--text);
+}
+.earth-intro .hint.small {
+  font-size: 11px;
+  margin-top: 6px;
+}
+.form-error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--danger);
+  color: #ffc7c0;
+  font-size: 12.5px;
+}
+@media (max-width: 720px) {
+  .start-cards,
+  .start-cards.two {
+    grid-template-columns: 1fr;
+  }
+}

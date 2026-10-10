@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { Units } from '../core/units';
 import type { RegionInfo } from '../terrain/geography';
 import type { BrushParams } from '../terrain/brushes';
 import type { ResolvedPeak } from '../terrain/peaks';
@@ -98,6 +99,8 @@ interface EditorState {
   busy: string | null;
   /** When set, the busy overlay offers a Cancel button that calls it. */
   busyCancel: (() => void) | null;
+  /** First launch (no maps in this browser): show the welcome screen. */
+  welcome: boolean;
   /** Landmass or water body shown in the inspector (found again by its anchor after edits). */
   inspect: { land: boolean; id: number; anchorX: number; anchorY: number } | null;
   /** Landmasses and water bodies of the current terrain (null until first measured). */
@@ -105,7 +108,7 @@ interface EditorState {
   geoBusy: boolean;
   geoListOpen: boolean;
   /** Units for areas and distances in the geography panels. */
-  units: 'metric' | 'imperial';
+  units: Units;
 
   setTool(t: ToolId): void;
   setBrush(g: BrushGroup, p: Partial<BrushParams>): void;
@@ -114,7 +117,17 @@ interface EditorState {
   notify(text: string, kind?: 'info' | 'error'): void;
 }
 
-function storedUnits(): 'metric' | 'imperial' {
+/** Switch display units everywhere (and remember the choice in this browser). */
+export function setUnits(units: Units) {
+  useEditor.getState().set({ units });
+  try {
+    localStorage.setItem('loremapper.units', units);
+  } catch {
+    // remembering the choice is a convenience only
+  }
+}
+
+function storedUnits(): Units {
   try {
     return localStorage.getItem('loremapper.units') === 'imperial' ? 'imperial' : 'metric';
   } catch {
@@ -164,6 +177,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   landStats: null,
   busy: null,
   busyCancel: null,
+  welcome: false,
   inspect: null,
   geography: null,
   geoBusy: false,

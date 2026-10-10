@@ -237,9 +237,9 @@ function chooseContinents(layout: Layout, plates: Plate[], target: number, rnd: 
  * Plate tectonics on a whole-world grid: plates, which of them carry
  * continents, how they move, and what forms where they meet.
  */
-export function tectonics(g: Grid, seed: number, layout: Layout, landFraction: number, base: PlateBase): Tectonics {
+export function tectonics(g: Grid, seed: number, layout: Layout, landFraction: number, base: PlateBase, plateScale = 1): Tectonics {
   const rnd = mulberry32(subSeed(seed, 1));
-  const nPlates = PLATES[layout];
+  const nPlates = Math.round(PLATES[layout] * plateScale);
   const seeds: V3[] = [];
   const weights: number[] = [];
   for (let p = 0; p < nPlates; p++) {

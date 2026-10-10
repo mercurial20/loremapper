@@ -185,7 +185,8 @@ export class RasterTileLayer {
     const ty1 = Math.min(NY - 1, Math.floor(Math.min(H - 1, rect.y1 + A) / TS));
     for (let ty = ty0; ty <= ty1; ty++)
       for (let tx = tx0; tx <= tx1; tx++) {
-        const wx = ((tx % NX) + NX) % NX;
+        const wx = this.model.height.wrap ? ((tx % NX) + NX) % NX : tx;
+        if (wx < 0 || wx >= NX) continue;
         const t = this.tiles.get(ty * NX + wx);
         if (t) t.dirty = true;
       }
@@ -195,7 +196,10 @@ export class RasterTileLayer {
     for (let oy = -1; oy <= 1; oy++) {
       const y = ty + oy;
       if (y < 0 || y >= grid.NY) continue;
-      for (let ox = -1; ox <= 1; ox++) if (grid.tiles.has(grid.key(grid.wrapTileX(tx + ox), y))) return true;
+      for (let ox = -1; ox <= 1; ox++) {
+        if (!grid.wrap && (tx + ox < 0 || tx + ox >= grid.NX)) continue;
+        if (grid.tiles.has(grid.key(grid.wrapTileX(tx + ox), y))) return true;
+      }
     }
     return false;
   }
@@ -218,6 +222,21 @@ export class RasterTileLayer {
       const sty = (y / TS) | 0;
       const ly = y - sty * TS;
       for (const [dx, tdx, lx0, count] of parts) {
+        // past the edge of a map that doesn't wrap, repeat the edge column
+        const edge = !grid.wrap && (tx + tdx < 0 || tx + tdx >= grid.NX);
+        if (edge) {
+          const src = grid.tiles.get(grid.key(tx, sty));
+          const elx = tdx < 0 ? 0 : TS - 1;
+          for (const seg of segs) {
+            const oc = seg.chCount;
+            let o = (j * S + dx) * oc;
+            for (let k = 0; k < count; k++) {
+              for (let c = 0; c < oc; c++) seg.out[o + c] = src ? src[(ly * TS + elx) * C + seg.chFrom + c] : seg.chFrom + c >= C ? 0 : def;
+              o += oc;
+            }
+          }
+          continue;
+        }
         const src = grid.tiles.get(grid.key(grid.wrapTileX(tx + tdx), sty));
         for (const seg of segs) {
           const oc = seg.chCount;

@@ -1,4 +1,6 @@
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { displayToKm, displayToM, heightUnit, kmToDisplay, lengthUnit, mToDisplay } from '../../core/units';
+import { useEditor } from '../../store/editorStore';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
 export function Slider(props: {
@@ -57,6 +59,8 @@ export function NumberField(props: {
     if (!focused.current) setText(String(round(props.value)));
   }, [props.value]);
   const commit = () => {
+    // untouched: keep the stored value exactly (no rounding drift through unit conversions)
+    if (text === String(round(props.value))) return;
     const v = parseFloat(text);
     if (Number.isFinite(v)) {
       const c = Math.min(props.max ?? Infinity, Math.max(props.min ?? -Infinity, v));
@@ -91,6 +95,38 @@ export function NumberField(props: {
 
 function round(v: number) {
   return Math.round(v * 1000) / 1000;
+}
+
+/**
+ * A number field for a ground length (stored in km) or a height (stored in
+ * metres), shown and typed in the current display units.
+ */
+export function MeasureField(props: {
+  label: string;
+  kind: 'length' | 'height';
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  step?: { metric: number; imperial: number };
+  disabled?: boolean;
+}) {
+  const units = useEditor((s) => s.units);
+  const to = props.kind === 'length' ? kmToDisplay : mToDisplay;
+  const from = props.kind === 'length' ? displayToKm : displayToM;
+  const conv = (v: number | undefined) => (v === undefined ? undefined : to(v, units));
+  return (
+    <NumberField
+      label={props.label}
+      value={to(props.value, units)}
+      min={conv(props.min)}
+      max={conv(props.max)}
+      step={props.step?.[units]}
+      suffix={props.kind === 'length' ? lengthUnit(units) : heightUnit(units)}
+      disabled={props.disabled}
+      onChange={(v) => props.onChange(from(v, units))}
+    />
+  );
 }
 
 export function TextField({

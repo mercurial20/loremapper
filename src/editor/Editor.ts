@@ -1,6 +1,7 @@
 import { assetLibrary } from '../assets/library';
 import { refreshGeographyIfShown, resetGeography } from './geography';
-import { defaultPlanet, type GridPreset } from '../core/planet';
+import { brushRange } from '../ui/format';
+import { defaultPlanet, surfaceAreaKm2, type GridPreset } from '../core/planet';
 import { history } from '../model/history';
 import { normalizeDoc, normalizeMeta } from '../model/serialization';
 import { emptyDocument, type MapDocument, type ProjectMeta } from '../model/types';
@@ -65,8 +66,9 @@ class Editor {
     const last = await getSetting<string | null>('lastProject', null);
     const projects = await listProjects();
     const target = projects.find((p) => p.id === last) ?? projects[0];
+    // first launch: no maps yet, so the welcome screen offers how to begin
     if (target) await this.openProject(target.id);
-    else await this.createProject('My World', 'standard');
+    else useEditor.getState().set({ welcome: true });
     useEditor.getState().set({ busy: null });
     window.addEventListener('pagehide', () => void this.saveNow());
     // warn before closing while the last edits are still being written
@@ -103,6 +105,33 @@ class Editor {
     return meta.id;
   }
 
+  /**
+   * Create and open a new map with the given settings. `heights` (full
+   * resolution, metres) fills the terrain, e.g. for Earth. Never touches
+   * other maps.
+   */
+  async createMap(name: string, planet: ProjectMeta['planet'], opts: { heights?: Float32Array; source?: string } = {}) {
+    await this.saveNow();
+    const now = Date.now();
+    const meta: ProjectMeta = normalizeMeta({
+      id: crypto.randomUUID(),
+      name,
+      createdAt: now,
+      updatedAt: now,
+      seed: Math.floor(Math.random() * 1e9),
+      planet,
+      source: opts.source,
+    });
+    const model = new TerrainModel(meta.planet);
+    if (opts.heights) model.height.loadFull(opts.heights);
+    const doc = emptyDocument();
+    await putProjectRecord(meta, doc, model);
+    useEditor.getState().set({ welcome: false });
+    await this.mount(model, meta, doc);
+    await setSetting('lastProject', meta.id);
+    return meta.id;
+  }
+
   async openProject(id: string) {
     await this.saveNow();
     useEditor.getState().set({ busy: 'Opening map…' });
@@ -116,8 +145,16 @@ class Editor {
     }
   }
 
-  private async mount(model: TerrainModel, meta: ProjectMeta, doc: MapDocument) {
-    const seq = ++this.mountSeq;
+  /** Close the open map without opening another (the last map was deleted): back to the welcome screen. */
+  closeMap() {
+    this.teardown();
+    this.model = null;
+    resetGeography();
+    useDoc.setState({ meta: null });
+    useEditor.getState().set({ selection: [], peaks: [], landStats: null, cursor: null, welcome: true });
+  }
+
+  private teardown() {
     for (const u of this.unsubs) u();
     this.unsubs = [];
     this.layers?.objects.dispose();
@@ -127,8 +164,14 @@ class Editor {
     history.clear();
     clearTimeout(this.peakTimer);
     this.detected = [];
+  }
+
+  private async mount(model: TerrainModel, meta: ProjectMeta, doc: MapDocument) {
+    const seq = ++this.mountSeq;
+    this.teardown();
     this.model = model;
     resetGeography();
+    fitBrushesToMap(model);
     useEditor.getState().set({ selection: [], peaks: [], saveStatus: 'saved', lastSavedAt: Date.now() });
     useDoc.getState().load(meta, doc);
 
@@ -175,6 +218,10 @@ class Editor {
         }
         if (s.fogPreview !== prev.fogPreview) renderer.setFogPreview(s.fogPreview);
         if (s.peaks !== prev.peaks) this.pushPeaks();
+        if (s.units !== prev.units) {
+          this.layers?.peaks.invalidate();
+          renderer.requestRender();
+        }
       }),
       model.subscribe((layer) => {
         this.scheduleSave();
@@ -222,6 +269,12 @@ class Editor {
     const { doc, meta } = useDoc.getState();
     if (!r || !L || !meta) return;
     r.applyStyle(doc, meta, useEditor.getState().fogPreview);
+    // flat maps never repeat; planets repeat unless the view turns it off
+    const wrap = !!this.model?.geo.wraps && doc.view.repeat !== false;
+    if (r.camera.wrap !== wrap) {
+      r.camera.setWrap(wrap);
+      r.viewChanged();
+    }
     const style = STYLE_PRESETS[doc.view.style] ?? STYLE_PRESETS.parchment;
     L.paths.setStyle(style);
     L.territories.setStyle(style);
@@ -263,7 +316,7 @@ class Editor {
     const g = model.height;
     const sea = model.seaLevel;
     const geo = model.geo;
-    const total = 4 * Math.PI * geo.R * geo.R;
+    const total = surfaceAreaKm2(model.planet);
     let land = 0;
     let highest = -Infinity;
     const defaultLand = g.defaultValue > sea;
@@ -364,3 +417,15 @@ class Editor {
 export const editor = new Editor();
 // handy for debugging & automated smoke tests
 Object.assign(window as object, { __editor: editor, __doc: useDoc, __ui: useEditor });
+
+/** Brush sizes that suit the map: a flat 500 km map needs much smaller brushes than a planet. */
+function fitBrushesToMap(model: TerrainModel) {
+  const st = useEditor.getState();
+  const geo = model.geo;
+  const r = brushRange(geo);
+  const typical = geo.flat ? (geo.W * geo.cellKm) / 14 : 260;
+  for (const g of Object.keys(st.brushes) as (keyof typeof st.brushes)[]) {
+    const b = st.brushes[g];
+    if (b.radiusKm < r.min || b.radiusKm > r.max || (geo.flat && b.radiusKm > typical * 3)) st.setBrush(g, { radiusKm: Math.min(r.max, Math.max(r.min, typical)) });
+  }
+}

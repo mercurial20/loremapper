@@ -1,6 +1,8 @@
 import { ChevronDown, Clock, Dices, LayoutGrid, LoaderCircle, WandSparkles } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { seedFromString } from '../../core/math';
+import { surfaceAreaKm2 } from '../../core/planet';
+import { formatArea, formatHeight } from '../../core/units';
 import { generateWorld, genParams, PreviewWorker, type GenerateOptions, type RiverAmount } from '../../editor/generate';
 import type { GenType, Realism, Template } from '../../terrain/generator';
 import { useDoc } from '../../store/docStore';
@@ -20,6 +22,8 @@ interface Preset {
   view?: boolean;
   /** default land share for this preset (planet setting when omitted) */
   land?: number;
+  /** only meaningful on a planet (poles, opposite hemispheres) */
+  planetOnly?: boolean;
   glyph: Blob[];
 }
 
@@ -28,9 +32,9 @@ const dots = (pts: [number, number, number][]): Blob[] => pts.map(([x, y, r]) =>
 const PRESETS: Preset[] = [
   { id: 'continents', label: 'Continents', desc: 'Three to six landmasses separated by oceans.', type: 'continents', template: 'none', glyph: [[20, 17, 13, 8], [52, 31, 11, 9], [82, 16, 11, 7], [80, 39, 6, 4]] },
   { id: 'pangaea', label: 'Supercontinent', desc: 'Almost all land joined in one huge continent.', type: 'pangaea', template: 'none', glyph: [[46, 25, 31, 15], [88, 40, 3, 2]] },
-  { id: 'twoWorlds', label: 'Old & New World', desc: 'Two great landmasses on opposite sides of the planet.', type: 'continents', template: 'twoWorlds', glyph: [[24, 24, 13, 17], [76, 26, 13, 16]] },
+  { id: 'twoWorlds', label: 'Old & New World', desc: 'Two great landmasses on opposite sides of the planet.', type: 'continents', template: 'twoWorlds', planetOnly: true, glyph: [[24, 24, 13, 17], [76, 26, 13, 16]] },
   { id: 'innerSea', label: 'Inner sea', desc: 'Lands ringing a large sea in the middle, like the Mediterranean.', type: 'continents', template: 'innerSea', glyph: [[50, 25, 34, 18], [50, 26, 17, 9, true], [92, 12, 4, 3]] },
-  { id: 'polar', label: 'Polar continent', desc: 'A frozen continent over one pole and smaller lands elsewhere.', type: 'continents', template: 'polar', glyph: [[50, 3, 50, 8], [28, 33, 10, 7], [70, 36, 9, 6]] },
+  { id: 'polar', label: 'Polar continent', desc: 'A frozen continent over one pole and smaller lands elsewhere.', type: 'continents', template: 'polar', planetOnly: true, glyph: [[50, 3, 50, 8], [28, 33, 10, 7], [70, 36, 9, 6]] },
   { id: 'shattered', label: 'Shattered continent', desc: 'A supercontinent breaking apart along rifts and narrow seas.', type: 'continents', template: 'shattered', glyph: [[38, 19, 11, 8], [55, 27, 9, 8], [42, 35, 8, 6], [62, 13, 7, 5], [24, 30, 6, 5]] },
   { id: 'mainland', label: 'Mainland & isles', desc: 'One large continent with island chains around it.', type: 'continents', template: 'mainland', glyph: [[38, 25, 24, 14], ...dots([[72, 12, 2.5], [78, 18, 2], [82, 26, 3], [79, 35, 2], [86, 40, 2.5], [14, 42, 2]])] },
   {
@@ -62,6 +66,15 @@ const REALISM: { value: Realism; label: string; seconds: number; desc: string }[
   { value: 'ultra', label: 'Ultra', seconds: 12, desc: 'Also carves fine valleys at full resolution. The slowest option.' },
 ];
 
+/** Flat maps: the climate at the map's centre, as a latitude on an Earth-like world. */
+const CLIMATE_ZONES = [
+  { value: '10', label: 'Tropical' },
+  { value: '27', label: 'Dry belt' },
+  { value: '45', label: 'Temperate' },
+  { value: '60', label: 'Cold' },
+  { value: '72', label: 'Polar' },
+];
+
 const describe = (v: number, labels: string[]) => labels[Math.min(labels.length - 1, Math.floor(((v + 1) / 2) * labels.length))];
 
 function Glyph({ blobs, view }: { blobs: Blob[]; view?: boolean }) {
@@ -83,7 +96,7 @@ function randomSeed() {
 }
 const seedNumber = (s: string) => (/^\d+$/.test(s.trim()) ? Number(s.trim()) >>> 0 : seedFromString(s));
 
-function PreviewCanvas({ image, busy, className }: { image: ImageData | null; busy: boolean; className?: string }) {
+function PreviewCanvas({ image, busy, className, aspect }: { image: ImageData | null; busy: boolean; className?: string; aspect?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current;
@@ -93,7 +106,7 @@ function PreviewCanvas({ image, busy, className }: { image: ImageData | null; bu
     c.getContext('2d')!.putImageData(image, 0, 0);
   }, [image]);
   return (
-    <div className={'gen-preview ' + (className ?? '')}>
+    <div className={'gen-preview ' + (className ?? '')} style={aspect ? { aspectRatio: aspect } : undefined}>
       <canvas ref={ref} />
       {busy && (
         <span className="gen-preview-busy">
@@ -106,6 +119,7 @@ function PreviewCanvas({ image, busy, className }: { image: ImageData | null; bu
 
 export function GenerateDialog() {
   const set = useEditor((s) => s.set);
+  const units = useEditor((s) => s.units);
   const planet = useDoc((s) => s.meta?.planet);
   const [presetId, setPresetId] = useState('continents');
   const preset = PRESETS.find((p) => p.id === presetId)!;
@@ -120,6 +134,8 @@ export function GenerateDialog() {
   const [biomes, setBiomes] = useState(true);
   const [settlements, setSettlements] = useState(false);
   const [advanced, setAdvanced] = useState(false);
+  const flat = planet?.mapType === 'flat';
+  const [climateLat, setClimateLat] = useState('45');
   const [variants, setVariants] = useState<{ seed: string; image: ImageData | null }[] | null>(null);
   const [preview, setPreview] = useState<ImageData | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
@@ -151,6 +167,7 @@ export function GenerateDialog() {
     rivers,
     settlements,
     region: preset.view ? 'view' : 'world',
+    climateLat: Number(climateLat),
   });
 
   // live preview of exactly this seed and these settings (shape and climate; rivers and erosion are added on generate)
@@ -158,8 +175,8 @@ export function GenerateDialog() {
     () =>
       preset.view
         ? null
-        : { type: preset.type, template: preset.template, realism: 'easy', seed: seedNumber(seed), landFraction: land, mountains, roughness: rough, warmth, wetness, biomes, rivers: 'none', settlements: false, region: 'world' },
-    [preset, seed, land, mountains, rough, warmth, wetness, biomes],
+        : { type: preset.type, template: preset.template, realism: 'easy', seed: seedNumber(seed), landFraction: land, mountains, roughness: rough, warmth, wetness, biomes, rivers: 'none', settlements: false, region: 'world', climateLat: Number(climateLat) },
+    [preset, seed, land, mountains, rough, warmth, wetness, biomes, climateLat],
   );
   useEffect(() => {
     if (!previewOptions) return;
@@ -200,8 +217,9 @@ export function GenerateDialog() {
     const s = x * sizeFactor;
     return s < 60 ? `≈ ${Math.max(1, Math.round(s))} s` : `≈ ${Math.round(s / 60)} min`;
   };
-  const planetKm2 = planet ? 4 * Math.PI * planet.radiusKm ** 2 : 690e6;
-  const world = PRESETS.filter((p) => !p.view);
+  const mapKm2 = planet ? surfaceAreaKm2(planet) : 510e6;
+  const world = PRESETS.filter((p) => !p.view && !(flat && p.planetOnly));
+  const aspect = flat && planet ? `${planet.gridWidth} / ${planet.gridHeight}` : '2 / 1';
   const inView = PRESETS.filter((p) => p.view);
   const card = (p: Preset) => (
     <button key={p.id} className={'preset-card' + (p.id === presetId ? ' on' : '')} onClick={() => choosePreset(p)} title={p.desc}>
@@ -231,12 +249,20 @@ export function GenerateDialog() {
     >
       <div className="gen-layout">
         <div className="gen-left">
-          <h3 className="gen-h">Whole planet <small>replaces the map</small></h3>
+          <h3 className="gen-h">
+            {flat ? 'Whole map' : 'Whole planet'} <small>replaces the map</small>
+          </h3>
           <div className="preset-grid">{world.map(card)}</div>
           <h3 className="gen-h">In the current view <small>adds to the map</small></h3>
           <div className="preset-grid two">{inView.map(card)}</div>
           <p className="hint">{preset.desc}</p>
 
+          {flat && (
+            <>
+              <h3 className="gen-h">Climate</h3>
+              <Segmented value={climateLat} onChange={setClimateLat} options={CLIMATE_ZONES} />
+            </>
+          )}
           <h3 className="gen-h">Realism</h3>
           <Segmented value={realism} onChange={setRealism} options={REALISM.map((x) => ({ value: x.value, label: x.label, title: `${x.desc} (${secs(x.seconds)})` }))} />
           <p className="hint">
@@ -252,7 +278,7 @@ export function GenerateDialog() {
               <p className="hint">Land is generated inside what you see on the map now. Zoom or pan first to choose where it goes.</p>
             </div>
           ) : (
-            <PreviewCanvas image={preview} busy={previewBusy} />
+            <PreviewCanvas image={preview} busy={previewBusy} aspect={aspect} />
           )}
           <div className="seed-row">
             <TextField label="Seed" value={seed} onChange={setSeed} />
@@ -269,7 +295,7 @@ export function GenerateDialog() {
             <div className="variant-grid">
               {variants.map((v) => (
                 <button key={v.seed} className={'variant' + (v.seed === seed ? ' on' : '')} onClick={() => setSeed(v.seed)} title={`Seed ${v.seed}`}>
-                  <PreviewCanvas image={v.image} busy={!v.image} />
+                  <PreviewCanvas image={v.image} busy={!v.image} aspect={aspect} />
                 </button>
               ))}
             </div>
@@ -286,9 +312,9 @@ export function GenerateDialog() {
           {preset.view ? (
             <Slider label="Land in view" value={land} min={0.05} max={0.7} onChange={setLand} format={(v) => `${Math.round(v * 100)}%`} />
           ) : (
-            <Slider label="Land (true surface area)" value={land} min={0.03} max={0.7} onChange={setLand} format={(v) => `${Math.round(v * 100)}% · ${((v * planetKm2) / 1e6).toFixed(0)}M km²`} />
+            <Slider label={flat ? 'Land' : 'Land (true surface area)'} value={land} min={0.03} max={0.7} onChange={setLand} format={(v) => `${Math.round(v * 100)}% · ${formatArea(v * mapKm2, units)}`} />
           )}
-          <Slider label="Mountain height" value={mountains} min={0} max={1} onChange={setMountains} format={(v) => `up to ${Math.round(v * (planet?.maxElevation ?? 10000) * 0.95).toLocaleString()} m`} />
+          <Slider label="Mountain height" value={mountains} min={0} max={1} onChange={setMountains} format={(v) => `up to ${formatHeight(v * (planet?.maxElevation ?? 10000) * 0.95, units)}`} />
           <Slider label="Hills" value={rough} min={0} max={1} onChange={setRough} format={(v) => describe(v * 2 - 1, ['Flat plains', 'Gentle', 'Hilly', 'Rugged'])} />
           <Slider label="Temperature" value={warmth} min={-1} max={1} onChange={setWarmth} format={(v) => describe(v, ['Ice age', 'Cool', 'Earth-like', 'Earth-like', 'Warm', 'Hothouse'])} />
           <Slider label="Rainfall" value={wetness} min={-1} max={1} onChange={setWetness} format={(v) => describe(v, ['Arid', 'Dry', 'Earth-like', 'Earth-like', 'Wet', 'Lush'])} />

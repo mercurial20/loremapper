@@ -62,10 +62,9 @@ export function brushExtents(model: TerrainModel, cy: number, radiusKm: number):
   const ry = Math.max(0.5, radiusKm / geo.kmPerCellY);
   const yTop = clamp(cy - ry, 0, model.H);
   const yBot = clamp(cy + ry, 0, model.H);
-  // widest row is the one nearest the pole
-  const latMax = Math.max(Math.abs(geo.lat(yTop)), Math.abs(geo.lat(yBot)));
-  const cosMin = Math.max(0.02, Math.cos((latMax * Math.PI) / 180));
-  const rx = Math.min(model.W / 2, Math.max(0.5, radiusKm / ((2 * Math.PI * geo.R) / geo.W) / cosMin));
+  // widest row is the one nearest the pole (all rows are alike on flat maps)
+  const kmX = Math.max(0.02 * geo.kmPerCellX(model.H / 2), Math.min(geo.kmPerCellX(yTop), geo.kmPerCellX(yBot)));
+  const rx = Math.min(model.W / 2, Math.max(0.5, radiusKm / kmX));
   return { rx, ry };
 }
 
@@ -127,7 +126,6 @@ export class Stroke {
     const maxH = sea + model.planet.maxElevation;
     const minH = model.planet.minElevation;
     const kmY = geo.kmPerCellY;
-    const kmXEq = (2 * Math.PI * geo.R) / W;
 
     if (op === 'flatten' && this.flattenTarget === undefined) this.flattenTarget = model.heightAt(cx, cy);
 
@@ -156,7 +154,7 @@ export class Stroke {
     for (let y = y0; y <= y1; y++) {
       const wy = (y + 0.5) * gs;
       const dyKm = (wy - cy) * kmY;
-      const kmX = kmXEq * Math.cos((geo.lat(wy) * Math.PI) / 180);
+      const kmX = geo.kmPerCellX(wy);
       const ty = (y / TS) | 0;
       const ly = y - ty * TS;
       for (let xu = x0; xu <= x1; xu++) {
@@ -165,8 +163,11 @@ export class Stroke {
         if (d >= 1) continue;
         const w = brushWeight(d, falloff);
         if (w <= 0) continue;
-        let x = xu % GW;
-        if (x < 0) x += GW;
+        let x = xu;
+        if (grid.wrap) {
+          x %= GW;
+          if (x < 0) x += GW;
+        } else if (x < 0 || x >= GW) continue;
         const tx = (x / TS) | 0;
         const key = ty * NX + tx;
         if (key !== lastKey) {

@@ -53,8 +53,8 @@ export function detectPeaks(model: TerrainModel, minElevation = 400, radiusKm = 
           }
         if (!isMax) continue;
         // radius test, ellipse widened with latitude
-        const cosLat = Math.max(0.05, Math.cos((geo.lat(y + 0.5) * Math.PI) / 180));
-        const rx = Math.min(model.W / 4, Math.round(ry / cosLat));
+        const stretch = Math.min(20, geo.kmPerCellY / Math.max(1e-9, geo.kmPerCellX(y + 0.5)));
+        const rx = Math.min(model.W / 4, Math.round(ry * stretch));
         let ok = true;
         for (let oy = -ry; oy <= ry && ok; oy++) {
           const yy = y + oy;

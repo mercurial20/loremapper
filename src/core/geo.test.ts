@@ -6,8 +6,9 @@ const planet = defaultPlanet();
 const geo = new Geo(planet);
 
 describe('planet defaults', () => {
-  it('has ≈690 million km² of surface for a 7,410 km radius', () => {
-    expect(surfaceAreaKm2(planet) / 1e6).toBeCloseTo(690, 0);
+  it('defaults to an Earth-sized planet (≈510 million km²)', () => {
+    expect(planet.radiusKm).toBe(6371);
+    expect(surfaceAreaKm2(planet) / 1e6).toBeCloseTo(510, 0);
   });
   it('targets 29 % land and 10 km peaks', () => {
     expect(planet.landFraction).toBe(0.29);

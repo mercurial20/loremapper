@@ -6,13 +6,19 @@ import { defaultView, emptyDocument, type MapDocument, type ProjectMeta } from '
  * Project serialisation version. Bump when the stored shape changes and add a
  * step to `MIGRATIONS` that upgrades records from the previous version.
  */
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 2;
 
 type Migration = (rec: Record<string, unknown>) => Record<string, unknown>;
 
 /** MIGRATIONS[n] upgrades a record from version n to n + 1. */
 const MIGRATIONS: Record<number, Migration> = {
-  // 1: (rec) => ({ ...rec, formatVersion: 2, ... }),
+  // 1 → 2 (v1.1): map types. Everything saved before is a planet; keep the
+  // radius it was made with (7,410 km was the default before v1.1).
+  1: (rec) => {
+    const meta = (rec.meta ?? {}) as Record<string, unknown>;
+    const planet = (meta.planet ?? {}) as Record<string, unknown>;
+    return { ...rec, formatVersion: 2, meta: { ...meta, planet: { radiusKm: 7410, ...planet, mapType: 'planet' } } };
+  },
 };
 
 export function migrateProject(raw: Record<string, unknown>): ProjectRecord {
@@ -38,6 +44,7 @@ export function normalizeMeta(m: Partial<ProjectMeta> | undefined): ProjectMeta 
     updatedAt: m?.updatedAt ?? Date.now(),
     seed: m?.seed ?? Math.floor(Math.random() * 1e9),
     planet: { ...base, ...(m?.planet ?? {}) },
+    ...(m?.source ? { source: m.source } : {}),
   };
 }
 

@@ -1,6 +1,6 @@
 import { smoothstep } from '../../core/math';
 import { Simplex3 } from '../../core/noise3';
-import { blurKm, dxKm, rowLat, sphereTables, type Grid } from './grid';
+import { blurKm, dxKm, rowLat as gridRowLat, sphereTables, type Grid } from './grid';
 
 export interface Climate {
   /** mean temperature, °C */
@@ -17,6 +17,8 @@ export interface ClimateOptions {
   /** carry moisture with prevailing winds (rain shadows); otherwise distance to the sea */
   winds: boolean;
   seed: number;
+  /** Flat maps: the climate latitude (radians) for a latitude on the virtual sphere. */
+  climateLat?: (lat: number) => number;
 }
 
 /** Zonal rainfall pattern: wet equator and mid-latitudes, dry subtropics and poles. */
@@ -38,6 +40,7 @@ export function climate(g: Grid, h: Float32Array, coastKm: Float32Array, o: Clim
   const rain = new Float32Array(N);
   const n = new Simplex3(o.seed);
   const T = sphereTables(g);
+  const rowLat = (gg: Grid, j: number) => (o.climateLat ? o.climateLat(gridRowLat(gg, j)) : gridRowLat(gg, j));
   for (let j = 0; j < g.h; j++) {
     const lat = (rowLat(g, j) * 180) / Math.PI;
     const s = Math.sin(rowLat(g, j));

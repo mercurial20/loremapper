@@ -179,7 +179,7 @@ function stepKm(g: Grid, a: number, b: number): number {
   const jb = (b / g.w) | 0;
   const di = Math.abs((a % g.w) - (b % g.w));
   const dx = di === 0 ? 0 : dxKm(g, ja);
-  return ja === jb ? dx : Math.hypot(dx, dyKm(g));
+  return ja === jb ? dx : Math.hypot(dx, dyKm(g, ja));
 }
 
 /**

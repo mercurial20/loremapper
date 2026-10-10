@@ -14,6 +14,8 @@ export class Camera {
 
   private worldW: number;
   private worldH: number;
+  /** Show the world repeating east–west; otherwise x is kept on the map like y. */
+  wrap = true;
 
   constructor(worldW: number, worldH: number) {
     this.worldW = worldW;
@@ -46,9 +48,12 @@ export class Camera {
 
   worldToScreen(wx: number, wy: number): [number, number] {
     // nearest wrapped copy to the camera
-    let dx = (wx - this.x) % this.worldW;
-    if (dx > this.worldW / 2) dx -= this.worldW;
-    if (dx < -this.worldW / 2) dx += this.worldW;
+    let dx = wx - this.x;
+    if (this.wrap) {
+      dx %= this.worldW;
+      if (dx > this.worldW / 2) dx -= this.worldW;
+      if (dx < -this.worldW / 2) dx += this.worldW;
+    }
     return [dx * this.zoom + this.viewW / 2, (wy - this.y) * this.zoom + this.viewH / 2];
   }
 
@@ -107,8 +112,18 @@ export class Camera {
   }
 
   private normalize() {
-    this.x = ((this.x % this.worldW) + this.worldW) % this.worldW;
+    if (this.wrap) this.x = ((this.x % this.worldW) + this.worldW) % this.worldW;
+    else {
+      const half = this.viewW / 2 / this.zoom;
+      if (half * 2 >= this.worldW) this.x = this.worldW / 2;
+      else this.x = clamp(this.x, half * 0.3, this.worldW - half * 0.3);
+    }
     this.clampY();
+  }
+
+  setWrap(wrap: boolean) {
+    this.wrap = wrap;
+    this.normalize();
   }
 
   private clampY() {

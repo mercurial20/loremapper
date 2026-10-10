@@ -46,11 +46,12 @@ export class TerrainModel {
     this.planet = { ...planet };
     this.geo = new Geo(planet);
     const { gridWidth: W, gridHeight: H, tileSize: TS } = planet;
-    this.height = new TileGrid(W, H, TS, 1, (n) => new Float32Array(n), planet.oceanFloor);
+    const wrap = this.geo.wraps;
+    this.height = new TileGrid(W, H, TS, 1, (n) => new Float32Array(n), planet.oceanFloor, 1, wrap);
     // biome weights and fog are soft by nature, so they live at half resolution
     // (a quarter of the memory); their tiles still line up 1:1 with height tiles
-    this.biome = new TileGrid(W / 2, H / 2, TS / 2, BIOME_CHANNELS, (n) => new Uint8Array(n), 0, 2);
-    this.fog = new TileGrid(W / 2, H / 2, TS / 2, 1, (n) => new Uint8Array(n), 0, 2);
+    this.biome = new TileGrid(W / 2, H / 2, TS / 2, BIOME_CHANNELS, (n) => new Uint8Array(n), 0, 2, wrap);
+    this.fog = new TileGrid(W / 2, H / 2, TS / 2, 1, (n) => new Uint8Array(n), 0, 2, wrap);
   }
 
   get W() {

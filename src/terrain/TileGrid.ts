@@ -18,8 +18,12 @@ export class TileGrid<T extends RasterArray> {
   defaultValue: number;
   private readonly make: (n: number) => T;
 
-  constructor(W: number, H: number, TS: number, channels: number, make: (n: number) => T, defaultValue: number, scale = 1) {
+  /** x wraps around (planets); otherwise it clamps to the edge (flat maps). */
+  readonly wrap: boolean;
+
+  constructor(W: number, H: number, TS: number, channels: number, make: (n: number) => T, defaultValue: number, scale = 1, wrap = true) {
     this.scale = scale;
+    this.wrap = wrap;
     this.W = W;
     this.H = H;
     this.TS = TS;
@@ -43,6 +47,7 @@ export class TileGrid<T extends RasterArray> {
   }
 
   wrapTileX(tx: number): number {
+    if (!this.wrap) return tx < 0 ? 0 : tx >= this.NX ? this.NX - 1 : tx;
     return ((tx % this.NX) + this.NX) % this.NX;
   }
 
@@ -66,12 +71,15 @@ export class TileGrid<T extends RasterArray> {
     return t;
   }
 
-  /** Read cell (x, y) channel c. x wraps, y clamps. Integer coordinates. */
+  /** Read cell (x, y) channel c. x wraps (or clamps on flat maps), y clamps. Integer coordinates. */
   get(x: number, y: number, c = 0): number {
     if (y < 0) y = 0;
     else if (y >= this.H) y = this.H - 1;
-    x %= this.W;
-    if (x < 0) x += this.W;
+    if (this.wrap) {
+      x %= this.W;
+      if (x < 0) x += this.W;
+    } else if (x < 0) x = 0;
+    else if (x >= this.W) x = this.W - 1;
     const TS = this.TS;
     const tx = (x / TS) | 0;
     const ty = (y / TS) | 0;

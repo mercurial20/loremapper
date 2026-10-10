@@ -87,6 +87,8 @@ export class MapRenderer {
       uContourInterval: { value: 500, type: 'f32' },
       uOverlay: { value: 0, type: 'f32' },
       uGraticule: { value: 0, type: 'f32' },
+      uFlat: { value: 0, type: 'f32' },
+      uGridStep: { value: 256, type: 'f32' },
       uRipples: { value: 1, type: 'f32' },
       uBiomeOpacity: { value: 1, type: 'f32' },
       uBiomePattern: { value: 1, type: 'f32' },
@@ -194,6 +196,10 @@ export class MapRenderer {
     u.uContourInterval = doc.view.contourInterval;
     u.uOverlay = doc.view.heightOverlay ? 0.82 : 0;
     u.uGraticule = doc.view.graticule ? 1 : 0;
+    const geo = this.model.geo;
+    u.uFlat = geo.flat ? 1 : 0;
+    // flat maps: a km grid at a round spacing, about eight squares across
+    u.uGridStep = geo.flat ? niceKm((geo.W * geo.cellKm) / 8) / geo.cellKm : 256;
     u.uRipples = doc.view.coastRipples ? 1 : 0;
     u.uBiomeOpacity = doc.systemLayers.biomes.visible ? doc.systemLayers.biomes.opacity : 0;
     u.uBiomePattern = style.biomePattern;
@@ -266,8 +272,9 @@ export class MapRenderer {
     const x1 = cx + vw / 2 / zoom;
     const y0 = cy - vh / 2 / zoom;
     const y1 = cy + vh / 2 / zoom;
-    const k0 = Math.floor(x0 / W);
-    const k1 = Math.floor(x1 / W);
+    // one copy when the map doesn't repeat (flat maps, or planets with repeat off)
+    const k0 = this.camera.wrap ? Math.floor(x0 / W) : 0;
+    const k1 = this.camera.wrap ? Math.floor(x1 / W) : 0;
     const copies: { m: Matrix; ox: number }[] = [];
     for (let k = k0; k <= k1; k++) {
       const ox = k * W;
@@ -296,4 +303,11 @@ export class MapRenderer {
       this.renderer.destroy({ removeView: true });
     }
   }
+}
+
+/** A round distance (1, 2 or 5 × 10ⁿ km) close to `km`. */
+function niceKm(km: number): number {
+  const p = Math.pow(10, Math.floor(Math.log10(Math.max(1e-6, km))));
+  const m = km / p;
+  return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p;
 }

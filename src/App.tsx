@@ -1,5 +1,7 @@
 import { LoaderCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { surfaceAreaKm2 } from './core/planet';
+import { formatArea } from './core/units';
 import { STYLE_PRESETS } from './render/styles';
 import { useDoc } from './store/docStore';
 import { useEditor } from './store/editorStore';
@@ -11,6 +13,8 @@ import { ShortcutsDialog } from './ui/dialogs/ShortcutsDialog';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { CompassRose } from './ui/icons';
 import { MapView } from './ui/MapView';
+import { NewMapFlow, WelcomeScreen } from './ui/NewMap';
+import { Modal } from './ui/dialogs/Modal';
 import { AssetPanel } from './ui/panels/AssetPanel';
 import { RightPanel } from './ui/RightPanel';
 import { ScaleBar, StatusBar } from './ui/StatusBar';
@@ -40,15 +44,17 @@ function Welcome() {
   const set = useEditor((s) => s.set);
   const setTool = useEditor((s) => s.setTool);
   const objects = useDoc((s) => Object.keys(s.doc.objects).length);
-  const radius = useDoc((s) => s.meta?.planet.radiusKm ?? 7410);
+  const planet = useDoc((s) => s.meta?.planet);
+  const units = useEditor((s) => s.units);
   const [dismissed, setDismissed] = useState(false);
-  if (dismissed || busy || !stats || stats.areaKm2 > 0 || objects > 0) return null;
-  const areaM = Math.round((4 * Math.PI * radius * radius) / 1e6);
+  if (dismissed || busy || !stats || !planet || stats.areaKm2 > 0 || objects > 0) return null;
+  const flat = planet.mapType === 'flat';
   return (
     <div className="welcome">
-      <h3>An empty ocean world</h3>
+      <h3>{flat ? 'An empty map' : 'An empty ocean world'}</h3>
       <p>
-        A planet of {areaM} million km², all water. Sculpt land by hand or let the generator draft one for you — everything stays editable.
+        {flat ? 'A flat map' : 'A planet'} of {formatArea(surfaceAreaKm2(planet), units)}, all water. Sculpt land by hand or let the generator draft it for you — everything
+        stays editable.
       </p>
       <div className="btn-row">
         <button
@@ -88,6 +94,16 @@ function Busy() {
   );
 }
 
+function NewMapDialog() {
+  const set = useEditor((s) => s.set);
+  const close = () => set({ dialog: null });
+  return (
+    <Modal title="New map" wide onClose={close}>
+      <NewMapFlow onCancel={close} onCreated={close} />
+    </Modal>
+  );
+}
+
 function Dialogs() {
   const dialog = useEditor((s) => s.dialog);
   switch (dialog) {
@@ -101,6 +117,8 @@ function Dialogs() {
       return <PlanetDialog />;
     case 'shortcuts':
       return <ShortcutsDialog />;
+    case 'newProject':
+      return <NewMapDialog />;
     default:
       return null;
   }
@@ -108,6 +126,7 @@ function Dialogs() {
 
 export default function App() {
   const assetPanelOpen = useEditor((s) => s.assetPanelOpen);
+  const welcome = useEditor((s) => s.welcome);
   const style = useDoc((s) => s.doc.view.style);
   const preset = STYLE_PRESETS[style] ?? STYLE_PRESETS.parchment;
   return (
@@ -145,6 +164,11 @@ export default function App() {
       <ErrorBoundary label="Dialog">
         <Dialogs />
       </ErrorBoundary>
+      {welcome && (
+        <ErrorBoundary label="Welcome">
+          <WelcomeScreen />
+        </ErrorBoundary>
+      )}
     </div>
   );
 }

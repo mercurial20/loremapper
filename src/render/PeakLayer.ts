@@ -1,5 +1,6 @@
 import { Container, Graphics, Text, TextStyle } from 'pixi.js';
-import { formatMeters } from '../core/geo';
+import { formatHeight } from '../core/units';
+import { useEditor } from '../store/editorStore';
 import type { ResolvedPeak } from '../terrain/peaks';
 import type { Camera } from './Camera';
 import { FONT_FAMILY } from './fonts';
@@ -59,6 +60,11 @@ export class PeakLayer implements WorldLayer {
     this.dirty = true;
   }
 
+  /** Redraw labels (e.g. after the display units changed). */
+  invalidate() {
+    this.dirty = true;
+  }
+
   setPeaks(peaks: ResolvedPeak[], minElevation: number, selected: string | null) {
     this.selected = selected;
     this.ranked = peaks
@@ -81,7 +87,7 @@ export class PeakLayer implements WorldLayer {
       if (n >= MAX_MARKERS) break;
       const [sx, sy] = cam.worldToScreen(p.x, p.y);
       if (sx < -60 || sy < -40 || sx > cam.viewW + 60 || sy > cam.viewH + 40) continue;
-      const label = (p.name ? p.name + '\n' : '') + formatMeters(p.elevation);
+      const label = (p.name ? p.name + '\n' : '') + formatHeight(p.elevation, useEditor.getState().units);
       // generous boxes keep markers well spaced at every zoom
       const w = Math.max(96, label.split('\n').reduce((m, l) => Math.max(m, l.length), 0) * 6.6 + 24);
       const h = (p.name ? 34 : 22) + 30;

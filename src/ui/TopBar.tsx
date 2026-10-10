@@ -12,6 +12,8 @@ import {
   Redo2,
   SlidersHorizontal,
   Undo2,
+  Users,
+  ExternalLink,
   WandSparkles,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -19,7 +21,10 @@ import { history } from '../model/history';
 import type { StylePresetId } from '../model/types';
 import { STYLE_PRESETS } from '../render/styles';
 import { useDoc } from '../store/docStore';
-import { useEditor } from '../store/editorStore';
+import { setUnits, useEditor } from '../store/editorStore';
+import { formatHeight } from '../core/units';
+import { COMMUNITY_LINKS } from '../community';
+import { editor } from '../editor/Editor';
 import { Segmented, Slider, Toggle } from './controls/controls';
 import { APP_VERSION } from '../version';
 import { CompassRose } from './icons';
@@ -67,6 +72,9 @@ function SaveIndicator() {
 function ViewMenu() {
   const view = useDoc((s) => s.doc.view);
   const setView = useDoc((s) => s.setView);
+  const units = useEditor((s) => s.units);
+  useDoc((s) => s.meta);
+  const flat = !!editor.model?.geo.flat;
   return (
     <div className="view-menu">
       <h4>Map style</h4>
@@ -96,17 +104,40 @@ function ViewMenu() {
         <Segmented
           label="Interval"
           value={String(view.contourInterval)}
-          options={['100', '250', '500', '1000', '2000'].map((v) => ({ value: v, label: `${Number(v) >= 1000 ? Number(v) / 1000 + 'k' : v}` }))}
+          options={['100', '250', '500', '1000', '2000'].map((v) => ({ value: v, label: units === 'imperial' ? formatHeight(Number(v), units) : `${Number(v) >= 1000 ? Number(v) / 1000 + 'k' : v}` }))}
           onChange={(v) => setView({ contourInterval: Number(v) })}
         />
       )}
       <Toggle label="Height overlay (hypsometric)" checked={view.heightOverlay} onChange={(v) => setView({ heightOverlay: v })} />
       <Toggle label="Peak markers" checked={view.showPeaks} onChange={(v) => setView({ showPeaks: v })} />
       {view.showPeaks && (
-        <Slider label="Show peaks above" value={view.peakMinElevation} min={300} max={9000} step={100} onChange={(v) => setView({ peakMinElevation: v })} format={(v) => `${v.toLocaleString()} m`} />
+        <Slider label="Show peaks above" value={view.peakMinElevation} min={300} max={9000} step={100} onChange={(v) => setView({ peakMinElevation: v })} format={(v) => formatHeight(v, units)} />
       )}
-      <h4>Geography</h4>
-      <Toggle label="Latitude / longitude grid" checked={view.graticule} onChange={(v) => setView({ graticule: v })} />
+      <h4>{flat ? 'Map' : 'Geography'}</h4>
+      <Toggle label={flat ? 'Distance grid' : 'Latitude / longitude grid'} checked={view.graticule} onChange={(v) => setView({ graticule: v })} />
+      {!flat && (
+        <Toggle
+          label="Repeat map horizontally"
+          checked={view.repeat !== false}
+          onChange={(v) => setView({ repeat: v })}
+          hint="Only changes how the map is shown: the planet itself stays round and continuous."
+        />
+      )}
+    </div>
+  );
+}
+
+/** Global display units: kilometres and metres, or miles and feet. */
+function UnitsSwitch() {
+  const units = useEditor((s) => s.units);
+  return (
+    <div className="units-switch" role="group" aria-label="Units">
+      <button className={units === 'metric' ? 'on' : ''} onClick={() => setUnits('metric')} title="Metric: km, km², m" aria-pressed={units === 'metric'}>
+        km
+      </button>
+      <button className={units === 'imperial' ? 'on' : ''} onClick={() => setUnits('imperial')} title="Imperial: mi, mi², ft" aria-pressed={units === 'imperial'}>
+        mi
+      </button>
     </div>
   );
 }
@@ -174,7 +205,29 @@ export function TopBar() {
       </div>
       <div className="spacer" />
       <SaveIndicator />
-      <button className="icon-btn" onClick={() => set({ dialog: 'planet' })} title="Planet settings">
+      <UnitsSwitch />
+      <Popover
+        align="right"
+        button={(open, toggle) => (
+          <button className={'icon-btn' + (open ? ' on' : '')} onClick={toggle} title="Community" aria-label="Community links">
+            <Users size={18} />
+          </button>
+        )}
+      >
+        <nav className="community-menu" aria-label="Community">
+          <h4>Community</h4>
+          {COMMUNITY_LINKS.map((l) => (
+            <a key={l.id} href={l.href} target="_blank" rel="noopener noreferrer">
+              <span>
+                <b>{l.label}</b>
+                <small>{l.detail}</small>
+              </span>
+              <ExternalLink size={13} aria-hidden />
+            </a>
+          ))}
+        </nav>
+      </Popover>
+      <button className="icon-btn" onClick={() => set({ dialog: 'planet' })} title="Map settings">
         <Globe size={18} />
       </button>
       <button className="icon-btn" onClick={() => set({ dialog: 'shortcuts' })} title="Keyboard shortcuts (?)">

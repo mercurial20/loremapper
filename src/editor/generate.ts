@@ -29,12 +29,20 @@ export interface GenerateOptions {
   settlements: boolean;
   /** island / archipelago: generate into the visible area */
   region: 'view' | 'world';
+  /** Flat maps: latitude (degrees) of the climate at the map's centre. */
+  climateLat?: number;
 }
+
+/** Flat maps are generated as a 90°-wide patch of a virtual planet (enough room for several landmasses). */
+const FLAT_SPAN_LON = 90;
 
 /** Generator parameters for options on the current map (`size` overrides the grid, for previews). */
 export function genParams(o: GenerateOptions, size?: { W: number; H: number }): GenParams {
   const model = editor.model!;
   const p = model.planet;
+  const geo = model.geo;
+  // flat maps: the climate band is as tall as the map is on the ground (≈111 km per degree)
+  const flat = geo.flat ? { spanLonDeg: FLAT_SPAN_LON, climateLatDeg: o.climateLat ?? 45, climateSpanDeg: Math.min(60, Math.max(2, (geo.H * geo.cellKm) / 111.2)) } : undefined;
   const whole = o.type === 'continents' || o.type === 'pangaea' || o.region === 'world';
   let region: GenParams['region'] = null;
   if (!whole && !size) {
@@ -47,7 +55,8 @@ export function genParams(o: GenerateOptions, size?: { W: number; H: number }): 
     realism: size ? 'easy' : o.realism,
     seed: o.seed,
     W: size?.W ?? model.W,
-    H: size?.H ?? model.H,
+    // previews of flat maps keep the map's proportions
+    H: size ? (geo.flat ? Math.max(64, Math.round((size.W * model.H) / model.W / 2) * 2) : size.H) : model.H,
     radiusKm: p.radiusKm,
     landFraction: o.landFraction,
     mountains: o.mountains,
@@ -61,6 +70,7 @@ export function genParams(o: GenerateOptions, size?: { W: number; H: number }): 
     region,
     biomes: o.biomes,
     rivers: size ? 0 : RIVERS[o.rivers][whole ? 0 : 1],
+    flat,
   };
 }
 
@@ -217,7 +227,6 @@ export async function generateWorld(o: GenerateOptions) {
     const before = useDoc.getState().doc;
     const paths = whole ? Object.fromEntries(Object.entries(before.paths).filter(([, f]) => f.kind !== 'river')) : { ...before.paths };
     const objects = { ...before.objects };
-    const cellKm = model.geo.kmPerCellY;
     for (const river of res.rivers) {
       const simp = evenSpacing(simplifyPath(chaikin(river.points, 2), 0.6), 5);
       if (simp.length < 2) continue;
@@ -226,7 +235,7 @@ export async function generateWorld(o: GenerateOptions) {
         id: uid('path-'),
         kind: 'river',
         points: simp.map(([x, y]) => [x + shift, y]),
-        width: Math.max(0.6, river.widthKm / cellKm),
+        width: Math.max(0.6, river.widthCells),
         color: st.pathDefaults.river.color,
         style: 'solid',
         taper: true,

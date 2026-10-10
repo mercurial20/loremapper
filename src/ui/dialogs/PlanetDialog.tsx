@@ -1,59 +1,76 @@
+import { surfaceAreaKm2 } from '../../core/planet';
+import { formatArea, formatLength } from '../../core/units';
 import { useDoc } from '../../store/docStore';
 import { useEditor } from '../../store/editorStore';
-import { NumberField } from '../controls/controls';
+import { MeasureField, NumberField } from '../controls/controls';
 import { Modal } from './Modal';
 
+/** Settings of the open map: a planet or a flat map. */
 export function PlanetDialog() {
   const set = useEditor((s) => s.set);
   const meta = useDoc((s) => s.meta);
   const setMeta = useDoc((s) => s.setMeta);
   const stats = useEditor((s) => s.landStats);
+  const units = useEditor((s) => s.units);
   if (!meta) return null;
   const p = meta.planet;
-  const area = 4 * Math.PI * p.radiusKm * p.radiusKm;
+  const flat = p.mapType === 'flat';
+  const area = surfaceAreaKm2(p);
   const upd = (patch: Partial<typeof p>) => setMeta({ planet: { ...p, ...patch } });
-  const cellKm = (Math.PI * p.radiusKm) / p.gridHeight;
+  const cellKm = flat ? (p.cellKm ?? 1) : (Math.PI * p.radiusKm) / p.gridHeight;
+  const share = (km2: number, f: number) => `${formatArea(km2, units)} (${(f * 100).toFixed(1)}%)`;
   return (
-    <Modal title="Planet" onClose={() => set({ dialog: null })}>
+    <Modal title={flat ? 'Flat map' : 'Planet'} onClose={() => set({ dialog: null })}>
       <div className="planet-stats">
+        {flat ? (
+          <div>
+            <span>Size</span>
+            <b>
+              {formatLength(p.gridWidth * cellKm, units)} × {formatLength(p.gridHeight * cellKm, units)}
+            </b>
+          </div>
+        ) : (
+          <div>
+            <span>Circumference</span>
+            <b>{formatLength(2 * Math.PI * p.radiusKm, units)}</b>
+          </div>
+        )}
         <div>
-          <span>Surface area</span>
-          <b>{(area / 1e6).toFixed(1)}M km²</b>
+          <span>{flat ? 'Area' : 'Surface area'}</span>
+          <b>{formatArea(area, units)}</b>
         </div>
         <div>
           <span>Land</span>
-          <b>{stats ? `${(stats.areaKm2 / 1e6).toFixed(1)}M km² (${(stats.fraction * 100).toFixed(1)}%)` : '—'}</b>
+          <b>{stats ? share(stats.areaKm2, stats.fraction) : '—'}</b>
         </div>
         <div>
           <span>Water</span>
-          <b>{stats ? `${((area - stats.areaKm2) / 1e6).toFixed(1)}M km² (${(100 - stats.fraction * 100).toFixed(1)}%)` : '—'}</b>
-        </div>
-        <div>
-          <span>Circumference</span>
-          <b>{Math.round(2 * Math.PI * p.radiusKm).toLocaleString()} km</b>
+          <b>{stats ? share(area - stats.areaKm2, 1 - stats.fraction) : '—'}</b>
         </div>
         <div>
           <span>Grid</span>
           <b>
-            {p.gridWidth} × {p.gridHeight} · {cellKm.toFixed(1)} km cells
+            {p.gridWidth} × {p.gridHeight} · {formatLength(cellKm, units)} cells
           </b>
         </div>
         <div>
-          <span>Projection</span>
-          <b>Equirectangular (plate carrée)</b>
+          <span>Geometry</span>
+          <b>{flat ? 'Flat: uniform scale, no wrapping' : 'Sphere, equirectangular map'}</b>
         </div>
       </div>
       <div className="grid2">
-        <NumberField label="Radius" value={p.radiusKm} min={500} max={70000} step={10} suffix="km" onChange={(v) => upd({ radiusKm: v })} />
-        <NumberField label="Gravity" value={p.gravity} min={0.05} max={10} step={0.05} suffix="g" onChange={(v) => upd({ gravity: v })} />
-        <NumberField label="Sea level" value={p.seaLevel} min={-5000} max={5000} step={10} suffix="m" onChange={(v) => upd({ seaLevel: v })} />
-        <NumberField label="Max elevation (a.s.l.)" value={p.maxElevation} min={500} max={30000} step={100} suffix="m" onChange={(v) => upd({ maxElevation: v })} />
-        <NumberField label="Deepest ocean" value={p.minElevation} min={-30000} max={-100} step={100} suffix="m" onChange={(v) => upd({ minElevation: v })} />
+        {!flat && <MeasureField label="Radius" kind="length" value={p.radiusKm} min={500} max={70000} step={{ metric: 10, imperial: 10 }} onChange={(v) => upd({ radiusKm: v })} />}
+        {!flat && <NumberField label="Gravity" value={p.gravity} min={0.05} max={10} step={0.05} suffix="g" onChange={(v) => upd({ gravity: v })} />}
+        <MeasureField label="Sea level" kind="height" value={p.seaLevel} min={-5000} max={5000} step={{ metric: 10, imperial: 50 }} onChange={(v) => upd({ seaLevel: v })} />
+        <MeasureField label="Max elevation (a.s.l.)" kind="height" value={p.maxElevation} min={500} max={30000} step={{ metric: 100, imperial: 500 }} onChange={(v) => upd({ maxElevation: v })} />
+        <MeasureField label={flat ? 'Deepest water' : 'Deepest ocean'} kind="height" value={p.minElevation} min={-30000} max={-100} step={{ metric: 100, imperial: 500 }} onChange={(v) => upd({ minElevation: v })} />
         <NumberField label="Generator land share" value={Math.round(p.landFraction * 100)} min={5} max={70} step={1} suffix="%" onChange={(v) => upd({ landFraction: v / 100 })} />
       </div>
       <p className="hint">
-        Raising the sea level floods coasts without changing stored elevations — heights are kept in metres relative to a fixed datum. The radius sets every distance, scale bar and
-        area. Gravity is recorded for reference.
+        Raising the sea level floods coasts without changing stored elevations: heights are kept relative to a fixed datum.{' '}
+        {flat
+          ? 'The size of a flat map is fixed when it is created; switching units never changes it.'
+          : 'The radius sets every distance, scale bar and area. Gravity is recorded for reference.'}
       </p>
     </Modal>
   );

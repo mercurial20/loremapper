@@ -1,7 +1,8 @@
 import { ArrowDown, ArrowUp, BringToFront, Copy, FlipHorizontal2, Lock, LockOpen, Plus, SendToBack, Trash2, Eye, EyeOff, X } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import { useAssets } from '../../assets/library';
-import { formatKm, formatLatLon, formatMeters } from '../../core/geo';
+import { formatHeight, formatLength } from '../../core/units';
+import { formatPlace } from '../format';
 import {
   annotatePeak,
   deleteRefs,
@@ -29,7 +30,7 @@ import { FONT_LABEL } from '../../render/fonts';
 import { useDoc } from '../../store/docStore';
 import { useEditor, useViewInfo } from '../../store/editorStore';
 import { sampleSpline } from '../../render/vectorGeometry';
-import { ColorField, Hint, NumberField, Select, Slider, TextField, Toggle } from '../controls/controls';
+import { ColorField, Hint, MeasureField, NumberField, Select, Slider, TextField, Toggle } from '../controls/controls';
 
 const SWATCHES = ['#b5452f', '#2f5d9a', '#3f8f5a', '#c79a2e', '#7a4aa0', '#2a8a8a', '#8f3a5c', '#5a5a5a'];
 
@@ -106,6 +107,7 @@ function MetaEditor({ o }: { o: MapObject }) {
 }
 
 function ObjectInspector({ o }: { o: MapObject }) {
+  const units = useEditor((s) => s.units);
   const assets = useAssets((s) => s.assets);
   const a = assets.find((x) => x.id === o.assetId);
   const layers = useDoc((s) => s.doc.objectLayers);
@@ -131,10 +133,10 @@ function ObjectInspector({ o }: { o: MapObject }) {
       <TextField label="Description" value={o.description} multiline onChange={(v) => upd({ description: v }, 'desc')} />
       <div className="kv">
         <span>Location</span>
-        <b>{formatLatLon(g.lat(o.y), g.lon(o.x))}</b>
+        <b>{formatPlace(g, o.x, o.y, units)}</b>
       </div>
       <div className="grid2">
-        <NumberField label="Width" value={Math.round(sizeKm)} suffix="km" min={0.1} onChange={(v) => upd({ size: v / g.kmPerCellY / o.scale }, 'size')} />
+        <MeasureField label="Width" kind="length" value={sizeKm} min={0.01} step={{ metric: 1, imperial: 1 }} onChange={(v) => upd({ size: v / g.kmPerCellY / o.scale }, 'size')} />
         <NumberField label="Rotation" value={o.rotation} suffix="°" step={5} onChange={(v) => upd({ rotation: v }, 'rot')} />
       </div>
       <Slider label="Scale" value={o.scale} min={0.05} max={20} log onChange={(v) => upd({ scale: v }, 'scale')} format={(v) => `${v.toFixed(2)}×`} />
@@ -202,6 +204,7 @@ function MultiObjectInspector({ ids }: { ids: string[] }) {
 }
 
 function PathInspector({ p }: { p: PathFeature }) {
+  const units = useEditor((s) => s.units);
   const zoom = useViewInfo((s) => s.zoom);
   const upd = (patch: Partial<PathFeature>, key: string) => updateFeature('path', p.id, patch, 'Edit path', `${key}:${p.id}`);
   const g = geo();
@@ -213,9 +216,9 @@ function PathInspector({ p }: { p: PathFeature }) {
       <TextField label="Name" value={p.name} placeholder={p.kind === 'river' ? 'e.g. River Ael' : 'e.g. King’s Road'} onChange={(v) => upd({ name: v }, 'name')} />
       <div className="kv">
         <span>Length</span>
-        <b>{formatKm(len)}</b>
+        <b>{formatLength(len, units)}</b>
       </div>
-      <Slider label="Width" value={p.width * zoom} min={0.3} max={60} log onChange={(v) => upd({ width: v / zoom }, 'width')} format={(v) => `${v.toFixed(1)} px · ${formatKm((v / zoom) * g.kmPerCellY)}`} />
+      <Slider label="Width" value={p.width * zoom} min={0.3} max={60} log onChange={(v) => upd({ width: v / zoom }, 'width')} format={(v) => `${v.toFixed(1)} px · ${formatLength((v / zoom) * g.kmPerCellY, units)}`} />
       <ColorField label="Colour" value={p.color} swatches={['#4f86ad', '#2e5f86', '#6aa5c8', '#7a5532', '#4b3a2a', '#9a7b52', '#8a2e2e']} onChange={(v) => upd({ color: v }, 'color')} />
       {p.kind === 'road' ? (
         <Select<RoadStyle>
@@ -367,6 +370,7 @@ function LabelInspector({ l }: { l: MapLabel }) {
 }
 
 function PeakInspector({ id }: { id: string }) {
+  const units = useEditor((s) => s.units);
   const peak = useEditor((s) => s.peaks.find((p) => p.id === id));
   if (!peak) return <Hint>This peak no longer exists — the terrain changed.</Hint>;
   const g = geo();
@@ -378,11 +382,11 @@ function PeakInspector({ id }: { id: string }) {
       }} />
       <div className="kv">
         <span>Elevation</span>
-        <b>{formatMeters(peak.elevation)}</b>
+        <b>{formatHeight(peak.elevation, units)}</b>
       </div>
       <div className="kv">
         <span>Location</span>
-        <b>{formatLatLon(g.lat(peak.y), g.lon(peak.x))}</b>
+        <b>{formatPlace(g, peak.x, peak.y, units)}</b>
       </div>
       <div className="kv">
         <span>Status</span>

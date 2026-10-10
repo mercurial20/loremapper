@@ -2,8 +2,14 @@
  * Planet description. Elevations are stored in metres relative to a fixed
  * datum (0 m); "above sea level" values subtract the configurable sea level.
  */
+export type MapType = 'planet' | 'flat';
+
 export interface PlanetSettings {
-  /** Planetary radius in km. 7,410 km gives ≈690 million km² of surface. */
+  /** 'planet' (equirectangular sphere, the default for older maps) or 'flat' (a rectangle with square cells). */
+  mapType?: MapType;
+  /** Flat maps: ground size of one cell, km. */
+  cellKm?: number;
+  /** Planetary radius in km (planets only). */
   radiusKm: number;
   /** Surface gravity in g. Informational only. */
   gravity: number;
@@ -32,7 +38,8 @@ export type GridPreset = keyof typeof GRID_PRESETS;
 
 export function defaultPlanet(preset: GridPreset = 'standard'): PlanetSettings {
   return {
-    radiusKm: 7410,
+    mapType: 'planet',
+    radiusKm: 6371,
     gravity: 1,
     gridWidth: GRID_PRESETS[preset].gridWidth,
     gridHeight: GRID_PRESETS[preset].gridHeight,
@@ -45,7 +52,31 @@ export function defaultPlanet(preset: GridPreset = 'standard'): PlanetSettings {
   };
 }
 
+/** Flat map detail presets: cells along the longer side. */
+export const FLAT_PRESETS = {
+  standard: { cells: 2048, label: 'Standard — 2048 cells on the long side' },
+  high: { cells: 4096, label: 'High detail — 4096 cells on the long side' },
+} as const;
+
+/**
+ * Settings for a flat rectangular map of the given ground size. The grid
+ * snaps to whole tiles, so the short side may differ slightly from the
+ * request; the long side is exact.
+ */
+export function flatMap(widthKm: number, heightKm: number, preset: GridPreset = 'standard'): PlanetSettings {
+  const base = defaultPlanet(preset);
+  const cells = FLAT_PRESETS[preset].cells;
+  const long = Math.max(widthKm, heightKm);
+  const cellKm = long / cells;
+  const snap = (km: number) => Math.max(1, Math.round(km / cellKm / base.tileSize)) * base.tileSize;
+  return { ...base, mapType: 'flat', cellKm, gridWidth: snap(widthKm), gridHeight: snap(heightKm), landFraction: 0.35 };
+}
+
+export const isFlat = (p: Pick<PlanetSettings, 'mapType'>) => p.mapType === 'flat';
+
+/** Total ground area of the map, km². */
 export function surfaceAreaKm2(p: PlanetSettings): number {
+  if (isFlat(p)) return p.gridWidth * p.gridHeight * (p.cellKm ?? 1) ** 2;
   return 4 * Math.PI * p.radiusKm * p.radiusKm;
 }
 

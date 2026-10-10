@@ -1,12 +1,10 @@
 import { Copy, FolderOpen, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { GRID_PRESETS, type GridPreset } from '../../core/planet';
 import { editor } from '../../editor/Editor';
 import { importProject } from '../../editor/exporter';
 import { deleteProject, duplicateProject, estimateStorage, listProjects, renameProject, type ProjectSummary } from '../../persistence/projects';
 import { useDoc } from '../../store/docStore';
 import { useEditor } from '../../store/editorStore';
-import { NumberField, Select, TextField } from '../controls/controls';
 import { Modal } from './Modal';
 
 function Thumb({ blob }: { blob?: Blob }) {
@@ -20,45 +18,12 @@ function Thumb({ blob }: { blob?: Blob }) {
   return url ? <img src={url} alt="" /> : <div className="thumb-empty" />;
 }
 
-export function NewProjectForm({ onDone }: { onDone: () => void }) {
-  const [name, setName] = useState('New world');
-  const [grid, setGrid] = useState<GridPreset>('standard');
-  const [radius, setRadius] = useState(7410);
-  const [maxE, setMaxE] = useState(10000);
-  const area = 4 * Math.PI * radius * radius;
-  return (
-    <div className="new-project">
-      <TextField label="Name" value={name} onChange={setName} autoFocus />
-      <Select<GridPreset> label="Detail" value={grid} options={(Object.keys(GRID_PRESETS) as GridPreset[]).map((g) => ({ value: g, label: GRID_PRESETS[g].label }))} onChange={setGrid} />
-      <div className="grid2">
-        <NumberField label="Planet radius" value={radius} min={500} max={70000} step={10} suffix="km" onChange={setRadius} />
-        <NumberField label="Highest peaks" value={maxE} min={500} max={30000} step={100} suffix="m" onChange={setMaxE} />
-      </div>
-      <p className="hint">
-        Surface ≈ {(area / 1e6).toFixed(0)} million km². The map starts as open ocean; raise land by hand or use Generate. Only edited tiles use memory.
-      </p>
-      <div className="btn-row end">
-        <button
-          className="btn primary"
-          onClick={async () => {
-            onDone();
-            await editor.createProject(name.trim() || 'New world', grid, { radiusKm: radius, maxElevation: maxE });
-          }}
-        >
-          <Plus size={14} /> Create ocean world
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export function ProjectsDialog() {
   const set = useEditor((s) => s.set);
   const notify = useEditor((s) => s.notify);
   const current = useDoc((s) => s.meta?.id);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [storage, setStorage] = useState<{ usage: number; quota: number } | null>(null);
-  const [creating, setCreating] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const close = () => set({ dialog: null });
   const refresh = async () => {
@@ -84,7 +49,7 @@ export function ProjectsDialog() {
   return (
     <Modal title="Your maps" onClose={close} wide>
       <div className="projects-head">
-        <button className="btn primary" onClick={() => setCreating(!creating)}>
+        <button className="btn primary" onClick={() => set({ dialog: 'newProject' })}>
           <Plus size={14} /> New map
         </button>
         <button className="btn" onClick={() => fileRef.current?.click()}>
@@ -114,7 +79,6 @@ export function ProjectsDialog() {
           </small>
         )}
       </div>
-      {creating && <NewProjectForm onDone={close} />}
       <div className="project-grid">
         {projects.map((p) => (
           <div key={p.id} className={'project-card' + (p.id === current ? ' current' : '')}>
@@ -177,7 +141,11 @@ export function ProjectsDialog() {
                   if (p.id === current) {
                     const rest = (await listProjects()).filter((x) => x.id !== p.id);
                     if (rest[0]) await editor.openProject(rest[0].id);
-                    else await editor.createProject('My World', 'standard');
+                    else {
+                      close();
+                      editor.closeMap();
+                      return;
+                    }
                   }
                   await refresh();
                 }}

@@ -1,6 +1,7 @@
 import { assetLibrary } from '../assets/library';
 import { clearInspect, inspectAt } from '../editor/geography';
-import { formatKm } from '../core/geo';
+import { formatLength } from '../core/units';
+import { brushRange } from '../ui/format';
 import { clamp, simplifyPath, uid } from '../core/math';
 import { BIOMES } from '../core/planet';
 import {
@@ -429,7 +430,7 @@ export class ToolController {
     if (e.altKey && brushGroupOf(this.tool)) {
       const g = brushGroupOf(this.tool)!;
       const b = useEditor.getState().brushes[g];
-      useEditor.getState().setBrush(g, { radiusKm: clamp(b.radiusKm * Math.exp(-dy * 0.002), 5, 6000) });
+      useEditor.getState().setBrush(g, { radiusKm: clampRadius(b.radiusKm * Math.exp(-dy * 0.002)) });
       return;
     }
     const rect = this.canvas!.getBoundingClientRect();
@@ -974,6 +975,11 @@ export class ToolController {
     this.showMeasure(null);
   }
 
+  /** Re-label the measurement (e.g. after the display units changed). */
+  refreshMeasure() {
+    if (this.measure.length && editor.model) this.showMeasure(null);
+  }
+
   private showMeasure(cursor: Vec2 | null) {
     const geo = editor.model!.geo;
     const pts = cursor && this.measure.length ? [...this.measure, [nearX(geo, this.measure[this.measure.length - 1][0], cursor[0]), cursor[1]] as Vec2] : this.measure;
@@ -988,11 +994,11 @@ export class ToolController {
       const arc = geo.greatCircle(ax, ay, bx, by, 64);
       arcs.push(arc);
       const mid = arc[Math.floor(arc.length / 2)];
-      if (pts.length > 2) labels.push({ x: mid[0], y: mid[1], text: formatKm(km) });
+      if (pts.length > 2) labels.push({ x: mid[0], y: mid[1], text: formatLength(km, useEditor.getState().units) });
     }
     if (pts.length >= 2) {
       const last = pts[pts.length - 1];
-      labels.push({ x: last[0], y: last[1] - 6 / editor.zoom, text: (pts.length > 2 ? 'Total ' : '') + formatKm(total) });
+      labels.push({ x: last[0], y: last[1] - 6 / editor.zoom, text: (pts.length > 2 ? 'Total ' : '') + formatLength(total, useEditor.getState().units) });
     }
     this.overlay().set({ measure: pts.length ? { points: pts, arcs, labels } : null });
     editor.requestRender();
@@ -1103,7 +1109,7 @@ export class ToolController {
       if (g) {
         const b = st.brushes[g];
         if (e.shiftKey) st.setBrush(g, { strength: clamp(b.strength + (up ? 0.05 : -0.05), 0.01, 1) });
-        else st.setBrush(g, { radiusKm: clamp(b.radiusKm * (up ? 1.15 : 1 / 1.15), 5, 6000) });
+        else st.setBrush(g, { radiusKm: clampRadius(b.radiusKm * (up ? 1.15 : 1 / 1.15)) });
       } else if (st.tool === 'object') {
         st.set({ stamp: { ...st.stamp, sizePx: clamp(st.stamp.sizePx * (up ? 1.15 : 1 / 1.15), 8, 600) } });
         this.updateStampPreview();
@@ -1176,3 +1182,14 @@ export function pushTileChange(change: TileChange, label: string, model = editor
 
 export const tools = new ToolController();
 Object.assign(window as object, { __tools: tools });
+
+// measurement labels follow the display units
+useEditor.subscribe((s, prev) => {
+  if (s.units !== prev.units) tools.refreshMeasure();
+});
+
+/** Keep a brush radius within what makes sense for the open map. */
+function clampRadius(km: number): number {
+  const r = editor.model ? brushRange(editor.model.geo) : { min: 5, max: 6000 };
+  return clamp(km, r.min, r.max);
+}

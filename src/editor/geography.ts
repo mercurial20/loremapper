@@ -51,7 +51,7 @@ export function ensureGeography(): Promise<Geography | null> {
     };
     const g = model.height;
     const tiles = [...g.tiles.entries()].map(([k, data]) => ({ tx: k % g.NX, ty: Math.floor(k / g.NX), data: data as Float32Array }));
-    const req: GeographyRequest = { tiles, tileSize: g.TS, defaultHeight: g.defaultValue, W: model.W, H: model.H, surface: { kind: 'planet', radiusKm: model.planet.radiusKm }, seaLevel: sea };
+    const req: GeographyRequest = { tiles, tileSize: g.TS, defaultHeight: g.defaultValue, W: model.W, H: model.H, surface: model.geo.flat ? { kind: 'flat', cellKm: model.geo.cellKm } : { kind: 'planet', radiusKm: model.planet.radiusKm }, seaLevel: sea };
     // tiles are copied by structured clone (a fast memory copy); the editor keeps its own
     w.postMessage(req);
   }).then((geo) => {
@@ -273,34 +273,6 @@ export function realmsOn(g: Geography, r: RegionInfo): string[] {
   return out;
 }
 
-// ---------------------------------------------------------------- units
-
-const MI2 = 0.386102;
-const MI = 0.621371;
-
-export function formatArea(km2: number, units: 'metric' | 'imperial'): string {
-  const v = units === 'imperial' ? km2 * MI2 : km2;
-  const u = units === 'imperial' ? 'mi²' : 'km²';
-  if (v >= 1e6) return `${(v / 1e6).toFixed(v >= 1e7 ? 1 : 2)}M ${u}`;
-  if (v >= 100) return `${Math.round(v).toLocaleString('en-US')} ${u}`;
-  return `${v.toFixed(1)} ${u}`;
-}
-
-export function formatDistance(km: number, units: 'metric' | 'imperial'): string {
-  const v = units === 'imperial' ? km * MI : km;
-  return `${Math.round(v).toLocaleString('en-US')} ${units === 'imperial' ? 'mi' : 'km'}`;
-}
-
-/** Heights and depths: metres, or feet in imperial units. */
-export function formatHeight(m: number, units: 'metric' | 'imperial'): string {
-  return units === 'imperial' ? `${Math.round(m * 3.28084).toLocaleString('en-US')} ft` : `${Math.round(m).toLocaleString('en-US')} m`;
-}
-
-export function setUnits(units: 'metric' | 'imperial') {
-  useEditor.getState().set({ units });
-  try {
-    localStorage.setItem('loremapper.units', units);
-  } catch {
-    // remembering the choice is a convenience only
-  }
-}
+// display helpers used by the geography panels
+export { formatArea, formatHeight, formatLength as formatDistance } from '../core/units';
+export { setUnits } from '../store/editorStore';

@@ -39,6 +39,21 @@ OFL allows bundling with software; the fonts may not be sold on their own.
 All built-in map assets (`src/assets/starter/`) were drawn for this project as
 SVG code and are covered by the project's MIT License.
 
+## Earth elevation data
+
+`public/data/earth-etopo1-4096x2048.v1.bin.gz`, used by **Start from Earth**, is derived from the
+**ETOPO1 Global Relief Model (ice surface)** of the NOAA National Centers for Environmental
+Information (formerly NGDC). It is a work of the US Government and in the public domain. NOAA asks
+users to cite it:
+
+> Amante, C. and B.W. Eakins, 2009. ETOPO1 1 Arc-Minute Global Relief Model: Procedures, Data
+> Sources and Analysis. NOAA Technical Memorandum NESDIS NGDC-24. National Geophysical Data Center,
+> NOAA. doi:10.7289/V5C8276M
+
+It was downloaded at a 2-arc-minute stride through NOAA's ERDDAP service (`etopo180`). It was then
+averaged onto the 4096 × 2048 equirectangular grid, rounded to whole metres on land and 10 m steps
+below sea level, and delta-encoded with gzip.
+
 ## Inspiration
 
 The editor was inspired by [Cartographer](https://github.com/PaulsGameDevHub/cartographer)

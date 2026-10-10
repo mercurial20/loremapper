@@ -1,29 +1,46 @@
 import type { PlanetSettings } from './planet';
 
 /**
- * Equirectangular (plate carrée) projection.
- * World coordinates are raster cell units: x ∈ [0, W) wraps around the
- * antimeridian, y ∈ [0, H] runs from the north pole (0) to the south pole (H).
- * Cell (i, j) covers [i, i+1) × [j, j+1); its sample sits at its centre.
+ * World geometry. World coordinates are raster cell units; cell (i, j) covers
+ * [i, i+1) × [j, j+1) and its sample sits at its centre.
+ *
+ * - Planet maps are equirectangular (plate carrée): x ∈ [0, W) wraps around
+ *   the antimeridian, y ∈ [0, H] runs from the north pole (0) to the south
+ *   pole (H); distances and areas are on the sphere.
+ * - Flat maps are plain rectangles: square cells of `cellKm`, no wrapping, no
+ *   poles, planar distances and areas.
  */
 export class Geo {
   readonly W: number;
   readonly H: number;
   readonly R: number;
+  /** a flat rectangular map rather than a planet */
+  readonly flat: boolean;
+  /** flat maps: km per cell */
+  readonly cellKm: number;
 
-  constructor(p: Pick<PlanetSettings, 'gridWidth' | 'gridHeight' | 'radiusKm'>) {
+  constructor(p: Pick<PlanetSettings, 'gridWidth' | 'gridHeight' | 'radiusKm' | 'mapType' | 'cellKm'>) {
     this.W = p.gridWidth;
     this.H = p.gridHeight;
     this.R = p.radiusKm;
+    this.flat = p.mapType === 'flat';
+    this.cellKm = p.cellKm ?? 1;
+  }
+
+  /** Does the world itself wrap east–west? (Planets do; flat maps never.) */
+  get wraps(): boolean {
+    return !this.flat;
   }
 
   wrapX(x: number): number {
+    if (this.flat) return x;
     const w = x % this.W;
     return w < 0 ? w + this.W : w;
   }
 
   /** Signed shortest horizontal offset from a to b, honouring wrap. */
   deltaX(a: number, b: number): number {
+    if (this.flat) return b - a;
     let d = (b - a) % this.W;
     if (d > this.W / 2) d -= this.W;
     if (d < -this.W / 2) d += this.W;
@@ -48,16 +65,24 @@ export class Geo {
 
   /** km spanned by one cell along a meridian (constant). */
   get kmPerCellY(): number {
+    if (this.flat) return this.cellKm;
     return (Math.PI * this.R) / this.H;
   }
 
   /** km spanned by one cell along a parallel at world row y. */
   kmPerCellX(y: number): number {
+    if (this.flat) return this.cellKm;
     return ((2 * Math.PI * this.R) / this.W) * Math.cos((this.lat(y) * Math.PI) / 180);
   }
 
-  /** Great-circle distance in km between two world points. */
+  /** Ground position in km from the map's top-left corner (flat maps). */
+  posKm(x: number, y: number): [number, number] {
+    return [x * this.cellKm, y * this.cellKm];
+  }
+
+  /** Great-circle (planet) or straight-line (flat) distance in km between two world points. */
   distanceKm(x1: number, y1: number, x2: number, y2: number): number {
+    if (this.flat) return Math.hypot(x2 - x1, y2 - y1) * this.cellKm;
     const toR = Math.PI / 180;
     const p1 = this.lat(y1) * toR;
     const p2 = this.lat(y2) * toR;
@@ -72,6 +97,7 @@ export class Geo {
    * (unwrapped) world coordinates starting at (x1, y1). Used for measuring.
    */
   greatCircle(x1: number, y1: number, x2: number, y2: number, steps = 48): [number, number][] {
+    if (this.flat) return [[x1, y1], [x2, y2]];
     const toR = Math.PI / 180;
     const la1 = this.lat(y1) * toR;
     const lo1 = this.lon(x1) * toR;
@@ -104,23 +130,7 @@ export class Geo {
 
   /** Area of one cell at row y in km². */
   cellAreaKm2(y: number): number {
+    if (this.flat) return this.cellKm * this.cellKm;
     return this.kmPerCellY * Math.abs(this.kmPerCellX(y + 0.5));
   }
-}
-
-export function formatLatLon(lat: number, lon: number): string {
-  const ns = lat >= 0 ? 'N' : 'S';
-  const ew = lon >= 0 ? 'E' : 'W';
-  return `${Math.abs(lat).toFixed(2)}° ${ns}, ${Math.abs(lon).toFixed(2)}° ${ew}`;
-}
-
-export function formatKm(km: number): string {
-  if (km >= 1000) return `${Math.round(km).toLocaleString('en-US')} km`;
-  if (km >= 10) return `${km.toFixed(0)} km`;
-  if (km >= 1) return `${km.toFixed(1)} km`;
-  return `${Math.round(km * 1000)} m`;
-}
-
-export function formatMeters(m: number): string {
-  return `${Math.round(m).toLocaleString('en-US')} m`;
 }

@@ -121,6 +121,8 @@ uniform float uContours;
 uniform float uContourInterval;
 uniform float uOverlay;
 uniform float uGraticule;
+uniform float uFlat;
+uniform float uGridStep;
 uniform float uRipples;
 uniform float uBiomeOpacity;
 uniform float uBiomePattern;
@@ -464,11 +466,12 @@ void main() {
 
   // ---------- graticule ----------
   if (uGraticule > 0.5) {
-    vec2 g = vec2(w.x / (uWorldSize.x / 24.0), w.y / (uWorldSize.y / 12.0));
+    // planets: meridians and parallels every 15° with a stronger equator; flat maps: a km grid
+    vec2 g = uFlat > 0.5 ? w / uGridStep : vec2(w.x / (uWorldSize.x / 24.0), w.y / (uWorldSize.y / 12.0));
     vec2 gw = max(fwidth(g), vec2(1e-5));
     vec2 gd = abs(fract(g + 0.5) - 0.5) / gw;
     float l = 1.0 - smoothstep(0.3, 1.1, min(gd.x, gd.y));
-    float eq = 1.0 - smoothstep(0.5, 1.6, abs(w.y - uWorldSize.y * 0.5) / (px));
+    float eq = uFlat > 0.5 ? 0.0 : 1.0 - smoothstep(0.5, 1.6, abs(w.y - uWorldSize.y * 0.5) / (px));
     col = mix(col, uCoastInk, max(l * 0.28, eq * 0.45));
   }
 

@@ -1,7 +1,12 @@
 /**
- * Raster helpers for the world generator. A Grid samples the equirectangular
- * world at some step (world cells per grid cell); fields are row-major
- * Float32Arrays. Distances and areas are true kilometres on the sphere.
+ * Raster helpers for the world generator. A Grid samples the world at some
+ * step (world cells per grid cell); fields are row-major Float32Arrays.
+ * Distances and areas are true kilometres on the (virtual) sphere.
+ *
+ * Planet grids sample the equirectangular world. Flat maps are generated as a
+ * patch of a virtual planet: their grids carry a `proj` that maps flat map
+ * cells to longitude / latitude (a conformal Mercator patch), so the same
+ * tectonics, climate and rivers apply without a second generator.
  */
 export interface Grid {
   w: number;
@@ -18,22 +23,63 @@ export interface Grid {
   H: number;
   /** Planet radius in km. */
   R: number;
+  /** Flat maps: how world cells map onto the virtual sphere. */
+  proj?: Projection;
 }
 
-export function makeGrid(W: number, H: number, R: number, step: number, region?: { x0: number; y0: number; w: number; h: number }): Grid {
-  if (!region) return { w: Math.max(1, Math.round(W / step)), h: Math.max(1, Math.round(H / step)), x0: 0, y0: 0, step, wrap: true, W, H, R };
-  return { w: Math.max(4, Math.ceil(region.w / step)), h: Math.max(4, Math.ceil(region.h / step)), x0: region.x0, y0: region.y0, step, wrap: false, W, H, R };
+/** Map from world cells (x right, y down) to the sphere and back; conformal, so a cell is square on the ground. */
+export interface Projection {
+  lon(x: number): number;
+  lat(y: number): number;
+  x(lon: number): number;
+  y(lat: number): number;
+  /** ground km per world cell at row y */
+  km(y: number): number;
+  /** longitude radians per world cell */
+  radPerCell: number;
 }
 
+/**
+ * A Mercator patch centred on the equator: `spanLon` radians across the
+ * W × H map. Shapes keep their proportions; features grow slightly toward
+ * the top and bottom edges.
+ */
+export function mercatorPatch(W: number, H: number, R: number, spanLon: number): Projection {
+  const k = spanLon / W;
+  const cx = W / 2;
+  const cy = H / 2;
+  return {
+    lon: (x) => (x - cx) * k,
+    lat: (y) => Math.atan(Math.sinh((cy - y) * k)),
+    x: (lon) => cx + lon / k,
+    y: (lat) => cy - Math.asinh(Math.tan(lat)) / k,
+    km: (y) => (R * k) / Math.cosh((cy - y) * k),
+    radPerCell: k,
+  };
+}
+
+export function makeGrid(W: number, H: number, R: number, step: number, region?: { x0: number; y0: number; w: number; h: number }, proj?: Projection): Grid {
+  if (!region) return { w: Math.max(1, Math.round(W / step)), h: Math.max(1, Math.round(H / step)), x0: 0, y0: 0, step, wrap: true, W, H, R, proj };
+  return { w: Math.max(4, Math.ceil(region.w / step)), h: Math.max(4, Math.ceil(region.h / step)), x0: region.x0, y0: region.y0, step, wrap: false, W, H, R, proj };
+}
+
+/** Longitude radians per world cell. */
+export const radPerCell = (g: Grid) => (g.proj ? g.proj.radPerCell : (2 * Math.PI) / g.W);
 /** Latitude (radians) of a world y coordinate (cells). */
-export const latOf = (g: Grid, y: number) => Math.PI / 2 - (y / g.H) * Math.PI;
+export const latOf = (g: Grid, y: number) => (g.proj ? g.proj.lat(y) : Math.PI / 2 - (y / g.H) * Math.PI);
+/** Longitude (radians) of a world x coordinate (cells). */
+export const lonOf = (g: Grid, x: number) => (g.proj ? g.proj.lon(x) : (x / g.W) * 2 * Math.PI);
 /** Latitude (radians) at the centre of grid row j. */
 export const rowLat = (g: Grid, j: number) => latOf(g, g.y0 + (j + 0.5) * g.step);
-export const dyKm = (g: Grid) => (g.step * Math.PI * g.R) / g.H;
-export const dxKm = (g: Grid, j: number) => Math.max(1e-3, ((g.step * 2 * Math.PI * g.R) / g.W) * Math.cos(rowLat(g, j)));
+const rowY = (g: Grid, j: number) => g.y0 + (j + 0.5) * g.step;
+/** North–south size of a cell in row j, km. */
+export const dyKm = (g: Grid, j = g.h >> 1) => (g.proj ? g.step * g.proj.km(rowY(g, j)) : (g.step * Math.PI * g.R) / g.H);
+/** East–west size of a cell in row j, km. */
+export const dxKm = (g: Grid, j: number) => Math.max(1e-3, g.proj ? g.step * g.proj.km(rowY(g, j)) : ((g.step * 2 * Math.PI * g.R) / g.W) * Math.cos(rowLat(g, j)));
 
 /** Exact surface area (km²) of one cell in grid row j. */
 export function cellAreaKm2(g: Grid, j: number): number {
+  if (g.proj) return (g.step * g.proj.km(rowY(g, j))) ** 2;
   const top = Math.min(Math.PI / 2, latOf(g, g.y0 + j * g.step));
   const bottom = Math.max(-Math.PI / 2, latOf(g, g.y0 + (j + 1) * g.step));
   return g.R * g.R * ((g.step * 2 * Math.PI) / g.W) * (Math.sin(top) - Math.sin(bottom));
@@ -51,7 +97,7 @@ export function sphereTables(g: Grid) {
     sinLat[j] = Math.sin(la);
   }
   for (let i = 0; i < g.w; i++) {
-    const lo = ((g.x0 + (i + 0.5) * g.step) / g.W) * 2 * Math.PI;
+    const lo = lonOf(g, g.x0 + (i + 0.5) * g.step);
     cosLon[i] = Math.cos(lo);
     sinLon[i] = Math.sin(lo);
   }
@@ -122,6 +168,41 @@ export function resample(src: Float32Array, sg: Grid, dg: Grid, kind: 'bspline' 
     for (let i = 0; i < dg.w; i++) dst[o + i] = tmp[r[0] + i] * wt[0] + tmp[r[1] + i] * wt[1] + tmp[r[2] + i] * wt[2] + tmp[r[3] + i] * wt[3];
   }
   return dst;
+}
+
+/**
+ * Sample a whole-planet (equirectangular, wrapping) field onto a projected
+ * grid, by longitude and latitude, with a smooth cubic B-spline.
+ */
+export function resampleFromSphere(src: Float32Array, sg: Grid, dg: Grid): Float32Array {
+  const proj = dg.proj!;
+  const out = new Float32Array(dg.w * dg.h);
+  const wx = new Float64Array(4);
+  const wy = new Float64Array(4);
+  for (let j = 0; j < dg.h; j++) {
+    const lat = proj.lat(dg.y0 + (j + 0.5) * dg.step);
+    const v = ((Math.PI / 2 - lat) / Math.PI) * sg.H / sg.step - 0.5;
+    const j0 = Math.floor(v);
+    bsplineW(v - j0, wy);
+    for (let i = 0; i < dg.w; i++) {
+      const lon = proj.lon(dg.x0 + (i + 0.5) * dg.step);
+      const u = ((lon / (2 * Math.PI)) * sg.W) / sg.step - 0.5;
+      const i0 = Math.floor(u);
+      bsplineW(u - i0, wx);
+      let s = 0;
+      for (let b = 0; b < 4; b++) {
+        const jj = Math.min(sg.h - 1, Math.max(0, j0 - 1 + b));
+        let row = 0;
+        for (let a = 0; a < 4; a++) {
+          const ii = (((i0 - 1 + a) % sg.w) + sg.w) % sg.w;
+          row += wx[a] * src[jj * sg.w + ii];
+        }
+        s += wy[b] * row;
+      }
+      out[j * dg.w + i] = s;
+    }
+  }
+  return out;
 }
 
 /** Bilinear sample of a grid field at a world position (cells). */
@@ -207,9 +288,12 @@ export function distanceField(g: Grid, isSource: Uint8Array, maxKm = Infinity): 
     dist[k] = 0;
     near[k] = k;
   }
-  const dy = dyKm(g);
   const dx = new Float64Array(h);
-  for (let j = 0; j < h; j++) dx[j] = dxKm(g, j);
+  const dyRow = new Float64Array(h);
+  for (let j = 0; j < h; j++) {
+    dx[j] = dxKm(g, j);
+    dyRow[j] = dyKm(g, j);
+  }
   const relax = (k: number, n: number, cost: number) => {
     const d = dist[n] + cost;
     if (d < dist[k]) {
@@ -220,6 +304,7 @@ export function distanceField(g: Grid, isSource: Uint8Array, maxKm = Infinity): 
   const nx = (i: number) => (g.wrap ? (i + w) % w : i);
   for (let rep = 0; rep < (g.wrap ? 2 : 1); rep++) {
     for (let j = 0; j < h; j++) {
+      const dy = dyRow[j];
       const diag = Math.hypot(dy, (dx[j] + (j > 0 ? dx[j - 1] : dx[j])) / 2);
       for (let i = 0; i < w; i++) {
         const k = j * w + i;
@@ -234,6 +319,7 @@ export function distanceField(g: Grid, isSource: Uint8Array, maxKm = Infinity): 
       }
     }
     for (let j = h - 1; j >= 0; j--) {
+      const dy = dyRow[j];
       const diag = Math.hypot(dy, (dx[j] + (j < h - 1 ? dx[j + 1] : dx[j])) / 2);
       for (let i = w - 1; i >= 0; i--) {
         const k = j * w + i;

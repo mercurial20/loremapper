@@ -95,7 +95,7 @@ describe('world generator', () => {
     const g = makeGrid(256, 128, 7410, 1);
     const h = new Float32Array(256 * 128).fill(180);
     for (let i = 0; i < 256 * 8; i++) h[i] = -100; // sea along the top edge
-    const river = { points: Array.from({ length: 100 }, (_, k): [number, number] => [40 + k, 100 - k * 0.9]), widthKm: 10 };
+    const river = { points: Array.from({ length: 100 }, (_, k): [number, number] => [40 + k, 100 - k * 0.9]), widthKm: 10, widthCells: 0.6 };
     carveRivers(g, h, [river], (2 * Math.PI * 7410) / 256);
     const mid = sampleAt(h, g, 90, 55);
     expect(mid).toBeGreaterThan(150);
@@ -117,5 +117,20 @@ describe('world generator', () => {
         if (sum < 100) bare++;
       }
     expect(bare / land).toBeLessThan(0.01);
+  });
+
+  it('generates flat maps on a rectangle, without wrapping, surrounded by water', () => {
+    const p = params({ W: 768, H: 512, landFraction: 0.35, flat: { spanLonDeg: 90, climateLatDeg: 45, climateSpanDeg: 5 } });
+    const r = generate(p);
+    expect(r.height.length).toBe(768 * 512);
+    let land = 0;
+    for (const v of r.height) if (v > 0) land++;
+    expect(land / r.height.length).toBeGreaterThan(0.3);
+    expect(land / r.height.length).toBeLessThan(0.4);
+    // the map's edges are sea, so nothing is cut off at the border
+    let edgeLand = 0;
+    for (let i = 0; i < 768; i++) edgeLand += (r.height[i] > 0 ? 1 : 0) + (r.height[511 * 768 + i] > 0 ? 1 : 0);
+    expect(edgeLand).toBe(0);
+    for (const rv of r.rivers) for (const [x] of rv.points) expect(x).toBeGreaterThanOrEqual(0);
   });
 });

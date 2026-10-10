@@ -16,6 +16,7 @@ import {
   setUnits,
   showRegion,
 } from '../../editor/geography';
+import { formatLength } from '../../core/units';
 import { useDoc } from '../../store/docStore';
 import { useEditor } from '../../store/editorStore';
 import type { RegionInfo } from '../../terrain/geography';
@@ -55,6 +56,8 @@ export function RegionInspector({ r }: { r: RegionInfo }) {
   const share = r.land ? r.areaKm2 / Math.max(1, geography.landKm2) : r.areaKm2 / geography.mapKm2;
   const peak = r.land ? peaks.find((p) => p.name && Math.hypot(p.x - r.extremeX, p.y - r.extremeY) < 6) : undefined;
   const W = editor.model?.W ?? 1;
+  const flat = !!editor.model?.geo.flat;
+  const cellKm = editor.model?.geo.cellKm ?? 1;
   const lonSpan = Math.min(360, ((r.x1 - r.x0) / W) * 360);
   const realms = g && r.land ? realmsOn(g, r) : [];
   return (
@@ -88,9 +91,11 @@ export function RegionInspector({ r }: { r: RegionInfo }) {
       </div>
       {r.kind !== 'ocean' && (
         <div className="kv">
-          <span>Spans</span>
+          <span>{flat ? 'Extent' : 'Spans'}</span>
           <b>
-            {lat(r.y0)} – {lat(r.y1)} · {lonSpan.toFixed(0)}° of longitude
+            {flat
+              ? `${formatLength((r.x1 - r.x0) * cellKm, units)} × ${formatLength((r.y1 - r.y0) * cellKm, units)}`
+              : `${lat(r.y0)} – ${lat(r.y1)} · ${lonSpan.toFixed(0)}° of longitude`}
           </b>
         </div>
       )}

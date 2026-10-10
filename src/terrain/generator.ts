@@ -2,7 +2,7 @@ import { clamp, mulberry32, smoothstep } from '../core/math';
 import { Simplex3, subSeed } from '../core/noise3';
 import { BIOME_CHANNELS } from '../core/planet';
 import { biomeWeights, climate, type Climate } from './gen/climate';
-import { components, distanceField, makeGrid, resample, sampleAt, sphereTables, thresholdForFraction, type Grid } from './gen/grid';
+import { components, distanceField, dyKm, latOf, lonOf, makeGrid, mercatorPatch, radPerCell, resample, resampleFromSphere, sampleAt, sphereTables, thresholdForFraction, type Grid } from './gen/grid';
 import { accumulate, diffuse, drain, erode, traceRivers, type Drainage } from './gen/hydrology';
 import { layoutMismatch, plateBase, tectonics, type Layout, type Tectonics } from './gen/plates';
 
@@ -45,12 +45,20 @@ export interface GenParams {
   warmth?: number;
   /** −1 drier … +1 wetter */
   wetness?: number;
+  /**
+   * Flat maps: W × H is the flat map, generated as a patch of a virtual planet
+   * `spanLonDeg` wide; climate follows `climateLatDeg` (the map's centre) over a
+   * band of `climateSpanDeg` from top to bottom.
+   */
+  flat?: { spanLonDeg: number; climateLatDeg: number; climateSpanDeg: number };
 }
 
 export interface GenRiver {
   points: [number, number][];
-  /** width at the mouth, km */
+  /** width at the mouth, km (on the virtual planet for flat maps) */
   widthKm: number;
+  /** width at the mouth in map cells */
+  widthCells: number;
 }
 
 export interface GenResult {
@@ -109,10 +117,18 @@ function splatHotspots(g: Grid, t: Tectonics): Float32Array {
     const lat = Math.asin(s.p[2]);
     const lon = Math.atan2(s.p[1], s.p[0]);
     const rr = (s.radiusKm * 2.6) / g.R;
-    const yc = ((Math.PI / 2 - lat) / Math.PI) * g.H;
-    const xc = ((((lon / (2 * Math.PI)) % 1) + 1) % 1) * g.W;
-    const dy = (rr / Math.PI) * g.H;
-    const dx = Math.min(g.W / 2, ((rr / (2 * Math.PI)) * g.W) / Math.max(0.05, Math.cos(lat)));
+    let yc: number, xc: number, dy: number, dx: number;
+    if (g.proj) {
+      if (Math.abs(lon) > Math.PI * 0.95 || Math.abs(lat) > 1.5) continue;
+      xc = g.proj.x(lon);
+      yc = g.proj.y(lat);
+      dx = dy = (s.radiusKm * 2.6) / g.proj.km(yc);
+    } else {
+      yc = ((Math.PI / 2 - lat) / Math.PI) * g.H;
+      xc = ((((lon / (2 * Math.PI)) % 1) + 1) % 1) * g.W;
+      dy = (rr / Math.PI) * g.H;
+      dx = Math.min(g.W / 2, ((rr / (2 * Math.PI)) * g.W) / Math.max(0.05, Math.cos(lat)));
+    }
     const j0 = Math.max(0, Math.floor((yc - dy - g.y0) / g.step));
     const j1 = Math.min(g.h - 1, Math.ceil((yc + dy - g.y0) / g.step));
     const i0 = Math.floor((xc - dx - g.x0) / g.step);
@@ -134,17 +150,32 @@ function splatHotspots(g: Grid, t: Tectonics): Float32Array {
   return out;
 }
 
+/** Flat maps: land fades out toward the map's edges, so the world sits in a sea instead of being cut off. */
+function flatEdges(g: Grid, landness: Float32Array): Float32Array {
+  for (let j = 0; j < g.h; j++)
+    for (let i = 0; i < g.w; i++) {
+      const u = (g.x0 + (i + 0.5) * g.step) / g.W;
+      const v = (g.y0 + (j + 0.5) * g.step) / g.H;
+      const edge = Math.min(u, 1 - u, v, 1 - v);
+      landness[j * g.w + i] -= 3 * (1 - smoothstep(0.01, 0.09, edge));
+    }
+  return landness;
+}
+
 /** Whole-world shape from plate tectonics, retrying plate layouts that don't fit the requested type. */
 function worldShape(p: GenParams, layout: Layout, mid: Grid, R: number, progress: Progress): Shape {
-  const coarse = makeGrid(p.W, p.H, R, p.W / 512);
+  // plates always move on a whole sphere; flat maps then read their patch of it
+  const coarse = mid.proj ? makeGrid(512, 256, R, 1) : makeGrid(p.W, p.H, R, p.W / 512);
+  const check = mid.proj ? makeGrid(p.W, p.H, R, Math.max(1, Math.round(Math.max(p.W, p.H) / 256)), { x0: 0, y0: 0, w: p.W, h: p.H }, mid.proj) : coarse;
   let best: Tectonics | null = null;
   let bestScore = Infinity;
   progress('Moving tectonic plates', 0);
   const base = plateBase(coarse, p.seed);
   for (let a = 0; a < 8 && bestScore > 0; a++) {
     progress('Moving tectonic plates', (a + 1) / 9);
-    const t = tectonics(coarse, subSeed(p.seed, 100 + a), layout, p.landFraction, base);
-    const s = layoutMismatch(coarse, t.landness, p.landFraction, layout);
+    // a flat map sees a few plates of a whole planet: more, smaller plates put several landmasses on it
+    const t = tectonics(coarse, subSeed(p.seed, 100 + a), layout, p.landFraction, base, mid.proj ? 2.5 : 1);
+    const s = layoutMismatch(check, check === coarse ? t.landness : flatEdges(check, resampleFromSphere(t.landness, coarse, check)), p.landFraction, layout);
     if (s < bestScore) {
       best = t;
       bestScore = s;
@@ -152,7 +183,7 @@ function worldShape(p: GenParams, layout: Layout, mid: Grid, R: number, progress
   }
   const t = best!;
   progress('Shaping coasts', 0);
-  const up = (f: Float32Array) => resample(f, coarse, mid, 'bspline');
+  const up = (f: Float32Array) => (mid.proj ? resampleFromSphere(f, coarse, mid) : resample(f, coarse, mid, 'bspline'));
   const shape: Shape = {
     landness: up(t.landness),
     crust: up(t.crust),
@@ -184,6 +215,7 @@ function worldShape(p: GenParams, layout: Layout, mid: Grid, R: number, progress
       else if (Math.abs(L - t0) < 0.5) L += 0.13 * n.fbm(x + 2.7, y, z, 5.5, 3) + 0.06 * n.fbm(x, y + 1.9, z, 22, 2);
       shape.landness[k] = L;
     }
+  if (mid.proj) flatEdges(mid, shape.landness);
   return shape;
 }
 
@@ -194,7 +226,7 @@ function regionShape(p: GenParams, mid: Grid): Shape {
   const n = new Simplex3(subSeed(p.seed, 31));
   const T = sphereTables(mid);
   const span = Math.max(mid.w, mid.h);
-  const f = (2 * Math.PI) / ((span * mid.step * 2 * Math.PI) / p.W); // one wavelength across the region
+  const f = (2 * Math.PI) / (span * mid.step * radPerCell(mid)); // one wavelength across the region
   const s: Shape = {
     landness: new Float32Array(N),
     crust: new Float32Array(N),
@@ -270,13 +302,32 @@ export function carveRivers(g: Grid, height: Float32Array, rivers: GenRiver[], c
   // the bed follows the terrain as it was, not the trench already cut behind it
   const terrain = height.slice();
   for (const r of rivers) {
+    // a river ends where it first reaches the sea (fine coastlines can cut it short of its traced mouth)
+    const end = r.points.findIndex(([x, y]) => sampleAt(terrain, g, x, y) <= 0);
+    if (end >= 0) r.points = r.points.slice(0, end + 1);
+  }
+  // twice: the second pass lets every river meet the beds cut near it by the others
+  for (let pass = 0; pass < 2; pass++) for (const r of rivers) {
     const widthCells = r.widthKm / cellKm;
     const radius = Math.min(4, 1.6 + widthCells * 0.7);
     const depth = 4 + 3 * widthCells;
     let bed = Infinity;
     for (const [x, y] of densify(r.points, 0.5)) {
-      const here = sampleAt(terrain, g, x, y);
-      if (here <= 0) break;
+      // the river's own end was trimmed above; a dip into a narrow strait on the way is just skipped
+      if (sampleAt(terrain, g, x, y) <= 0) continue;
+      // the lowest cell under the river, so no pocket beside the bed sits below it
+      let here = Infinity;
+      for (let dj = 0; dj <= 1; dj++)
+        for (let di = 0; di <= 1; di++) {
+          let i = Math.floor(x - g.x0 - 0.5) + di;
+          const j = Math.min(g.h - 1, Math.max(0, Math.floor(y - g.y0 - 0.5) + dj));
+          if (g.wrap) i = ((i % g.w) + g.w) % g.w;
+          else i = Math.min(g.w - 1, Math.max(0, i));
+          // a deeper bed already cut beside us (another river) pulls ours down to meet it
+          const v = Math.min(terrain[j * g.w + i], height[j * g.w + i] + depth);
+          if (v > 0 && v < here) here = v;
+        }
+      if (here === Infinity) continue;
       bed = Math.min(bed, here);
       const cut = Math.max(1, bed - depth);
       const ci = Math.floor(x - g.x0);
@@ -361,8 +412,8 @@ function paintBiomes(
       const mk = mj * mid.w + mi;
       const dRiver = riv.dist[mk];
       const bigness = riv.near[mk] >= 0 ? smoothstep(3, 9, size[riv.near[mk]]) : 0;
-      const lat = Math.PI / 2 - (wy / mid.H) * Math.PI;
-      const lon = (wx / mid.W) * 2 * Math.PI;
+      const lat = latOf(mid, wy);
+      const lon = lonOf(mid, wx);
       biomeWeights(
         {
           t: sampleAt(clim.temp, mid, wx, wy),
@@ -391,16 +442,19 @@ function paintBiomes(
  * the busy indicator.
  */
 export function generate(p: GenParams, progress: Progress = () => {}): GenResult {
-  const R = p.radiusKm ?? 7410;
+  const R = p.radiusKm ?? 6371;
   const realism: Realism = p.realism ?? 'easy';
+  // flat maps are a conformal patch of a virtual planet; their grids never wrap
+  const proj = p.flat ? mercatorPatch(p.W, p.H, R, (p.flat.spanLonDeg * Math.PI) / 180) : undefined;
   const whole = !p.region || p.type === 'continents' || p.type === 'pangaea';
   const rx0 = whole ? 0 : Math.max(0, Math.floor(p.region!.x0));
   const ry0 = whole ? 0 : Math.max(0, Math.floor(p.region!.y0));
   const rw = whole ? p.W : Math.max(16, Math.min(p.W, Math.ceil(p.region!.x1 - p.region!.x0)));
   const rh = whole ? p.H : Math.max(16, Math.min(p.H - ry0, Math.ceil(p.region!.y1 - p.region!.y0)));
-  const region = whole ? undefined : { x0: rx0, y0: ry0, w: rw, h: rh };
+  const region = whole ? (proj ? { x0: 0, y0: 0, w: p.W, h: p.H } : undefined) : { x0: rx0, y0: ry0, w: rw, h: rh };
+  const G = (step: number) => makeGrid(p.W, p.H, R, step, region, proj);
   const midStep = Math.max(rw, rh) >= 1024 ? 2 : 1;
-  const mid = makeGrid(p.W, p.H, R, midStep, region);
+  const mid = G(midStep);
   const layout = layoutFor(p);
   const N = mid.w * mid.h;
 
@@ -442,7 +496,7 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   const nC = new Simplex3(subSeed(p.seed, 42));
   const T = sphereTables(mid);
   // slow-varying fields are computed 4× coarser and interpolated
-  const lo = makeGrid(p.W, p.H, R, midStep * 4, region);
+  const lo = G(midStep * 4);
   const up = (f: (x: number, y: number, z: number) => number) => resample(lowField(lo, f), lo, mid, 'bspline');
   const plateauN = up((x, y, z) => smoothstep(0.12, 0.42, nA.fbm(x, y, z, 2.4, 3)));
   const hillN = up((x, y, z) => smoothstep(-0.05, 0.4, nA.fbm(x + 6.1, y, z, 3.2, 3)));
@@ -493,7 +547,12 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
 
   // ---- climate: prevailing winds and rain shadows at every realism level, so previews match the result
   progress('Simulating climate', 0);
-  const clim = climate(mid, h, coastKm, { warmth: p.warmth ?? 0, wetness: p.wetness ?? 0, winds: true, seed: subSeed(p.seed, 50) });
+  // flat maps: a band of climate around the chosen latitude instead of the patch's own latitudes
+  const climateLat =
+    proj && p.flat
+      ? (lat: number) => ((p.flat!.climateLatDeg + (lat / Math.max(1e-6, proj.lat(0))) * (p.flat!.climateSpanDeg / 2)) * Math.PI) / 180
+      : undefined;
+  const clim = climate(mid, h, coastKm, { warmth: p.warmth ?? 0, wetness: p.wetness ?? 0, winds: true, seed: subSeed(p.seed, 50), climateLat });
 
   // ---- stream-power erosion: grid (relative to the working grid), iterations and erodibility
   const ER: Record<Realism, { coarser: boolean; iters: number } | null> = {
@@ -504,7 +563,7 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   };
   const er = ER[realism];
   if (er) {
-    const eg = er.coarser ? makeGrid(p.W, p.H, R, midStep * 2, region) : mid;
+    const eg = er.coarser ? G(midStep * 2) : mid;
     const eh = er.coarser ? resample(h, mid, eg, 'bspline') : h.slice();
     if (er.coarser) for (let k = 0; k < eh.length; k++) if (eh[k] <= 0 && sampleAt(h, mid, ...gridXY(eg, k)) > 0) eh[k] = 1;
     const before = eh.slice();
@@ -526,19 +585,22 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   let maxFlow = 1;
   for (let k = 0; k < N; k++) if (h[k] > 0 && flow[k] > maxFlow) maxFlow = flow[k];
   const trace = (g: Grid, d: Drainage, A: Float32Array, hh: Float32Array, maxA: number): GenRiver[] =>
-    traceRivers(g, d, A, hh, p.rivers, Math.max(minRiverArea, maxA * 0.004)).map((r) => ({ points: r.points, widthKm: 2.5 + 16 * Math.sqrt(r.area / maxA) }));
+    traceRivers(g, d, A, hh, p.rivers, Math.max(minRiverArea, maxA * 0.004)).map((r) => {
+      const widthKm = 2.5 + 16 * Math.sqrt(r.area / maxA);
+      return { points: r.points, widthKm, widthCells: widthKm / dyKm(mid) * midStep };
+    });
   let rivers: GenRiver[] = realism === 'ultra' || p.rivers <= 0 ? [] : trace(mid, drained, flow, h, maxFlow);
 
   // ---- full resolution: smooth interpolation plus fine detail where the land is rough
   progress('Adding detail', 0);
-  const full = makeGrid(p.W, p.H, R, 1, region);
+  const full = G(1);
   const height = midStep === 1 ? h.slice() : resample(h, mid, full, 'catmull');
   const rugF = midStep === 1 ? rug : resample(rug, mid, full, 'bspline');
   const coarseH = midStep === 1 ? null : h;
   const nD = new Simplex3(subSeed(p.seed, 60));
   const FT = sphereTables(full);
   // about one full-resolution cell per feature
-  const fineF = p.W / 7;
+  const fineF = (2 * Math.PI) / (7 * radPerCell(full));
   const amp = 40 + 260 * rough;
   for (let j = 0; j < full.h; j++)
     for (let i = 0; i < full.w; i++) {
@@ -569,7 +631,7 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
     }
   }
   // every river runs downhill in its own bed
-  carveRivers(full, height, rivers, (2 * Math.PI * R) / p.W);
+  carveRivers(full, height, rivers, dyKm(full));
 
   // ---- biomes on the half-resolution biome grid, from climate, terrain and water
   progress('Painting biomes', 0);

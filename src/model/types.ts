@@ -136,6 +136,8 @@ export interface ViewSettings {
   showPeaks: boolean;
   peakMinElevation: number;
   coastRipples: boolean;
+  /** Planets: repeat the map east–west in the view (presentation only; the planet still wraps). */
+  repeat: boolean;
 }
 
 /** A name given to a landmass or body of water, pinned to a point inside it. */
@@ -166,6 +168,8 @@ export interface ProjectMeta {
   planet: PlanetSettings;
   /** Seed used for deterministic procedural details (ridges, textures). */
   seed: number;
+  /** Where the terrain came from, when it isn't the user's own (e.g. 'earth-etopo1'). */
+  source?: string;
 }
 
 export type SelectionKind = 'object' | 'path' | 'territory' | 'label' | 'peak';
@@ -185,6 +189,7 @@ export function defaultView(): ViewSettings {
     showPeaks: true,
     peakMinElevation: 2000,
     coastRipples: true,
+    repeat: true,
   };
 }
 
