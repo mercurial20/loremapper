@@ -6,6 +6,38 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+Planned as v1.1: map types, a welcoming start, Earth, global units and a phone / tablet viewer.
+
+### Added
+
+- **Welcome screen on first launch.** It offers **Generate a world**, **Start from Earth** or an **Empty map**; the same choices back **Maps → New map**. A browser that already has maps opens the last one as before.
+- **Flat maps:**
+  - rectangles of fixed physical size (default 500 × 500 km, or 400 × 400 mi in imperial), any aspect ratio;
+  - uniform scale, no poles and no wrapping, with planar distances and areas;
+  - all tools work on them, as do Lands & seas and export;
+  - the generator builds them as a patch of a virtual planet, so tectonics, rivers and biomes carry over, and adds a climate zone setting.
+- **Start from Earth:** real elevation and bathymetry from NOAA ETOPO1 (public domain), preprocessed to the standard 4096 × 2048 grid. It is an 8 MB download, fetched only when chosen, with a clear error and retry if it fails.
+- **Global metric / imperial switch** in the top bar (km, km², m / mi, mi², ft). It applies everywhere and is remembered; stored maps never change.
+- **"Repeat map horizontally"** view option for planets.
+- **Read-only viewer on phones and tablets:**
+  - pan, pinch zoom, tap for region or feature info, and layer visibility;
+  - edits are refused in the logic, not just hidden;
+  - a one-line note points to the desktop for editing.
+- **Community links** in the top bar: GitHub, issues and Reddit.
+
+### Changed
+
+- New planets default to Earth's radius, 6,371 km. Existing maps keep their own.
+- Generated rivers follow the lowest ground under them, meet nearby river beds, and end where they first reach the sea.
+
+### Fixed
+
+- **No more lag when selecting a large landmass.** The outline is now traced once in the analysis worker and simplified per zoom step. On a 8192 × 4096 map, zoom frames with an outline went from a 117 ms p95 to 17 ms, with no main-thread long tasks.
+
+### Compatibility
+
+- **Project format 2.** Older projects open as planets with the radius they were made with; their terrain, biomes, objects, paths, borders, labels and view are unchanged. Both `.loremap` files and browser-saved maps are migrated.
+
 ## [1.0.0-beta.2] — 2026-10-10
 
 A new world generator that builds planets from plate tectonics, climate and

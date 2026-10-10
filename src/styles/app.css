@@ -2141,3 +2141,12 @@ input[type='range']::-moz-range-thumb {
     bottom: calc(42% + 8px);
   }
 }
+
+.welcome-card header {
+  position: relative;
+}
+.welcome-units {
+  position: absolute;
+  top: 0;
+  right: 0;
+}

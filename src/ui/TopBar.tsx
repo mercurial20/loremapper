@@ -21,7 +21,8 @@ import { history } from '../model/history';
 import type { StylePresetId } from '../model/types';
 import { STYLE_PRESETS } from '../render/styles';
 import { useDoc } from '../store/docStore';
-import { setUnits, useEditor } from '../store/editorStore';
+import { useEditor } from '../store/editorStore';
+import { UnitsSwitch } from './UnitsSwitch';
 import { formatHeight } from '../core/units';
 import { COMMUNITY_LINKS } from '../community';
 import { editor } from '../editor/Editor';
@@ -126,21 +127,6 @@ function ViewMenu() {
           hint="Only changes how the map is shown: the planet itself stays round and continuous."
         />
       )}
-    </div>
-  );
-}
-
-/** Global display units: kilometres and metres, or miles and feet. */
-function UnitsSwitch() {
-  const units = useEditor((s) => s.units);
-  return (
-    <div className="units-switch" role="group" aria-label="Units">
-      <button className={units === 'metric' ? 'on' : ''} onClick={() => setUnits('metric')} title="Metric: km, km², m" aria-pressed={units === 'metric'}>
-        km
-      </button>
-      <button className={units === 'imperial' ? 'on' : ''} onClick={() => setUnits('imperial')} title="Imperial: mi, mi², ft" aria-pressed={units === 'imperial'}>
-        mi
-      </button>
     </div>
   );
 }

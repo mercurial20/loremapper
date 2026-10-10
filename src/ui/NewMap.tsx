@@ -8,6 +8,7 @@ import { importProject } from '../editor/exporter';
 import { generateWorld } from '../editor/generate';
 import { useEditor } from '../store/editorStore';
 import { MeasureField, Select, TextField } from './controls/controls';
+import { UnitsSwitch } from './UnitsSwitch';
 
 type Start = 'generate' | 'earth' | 'empty';
 type Kind = 'planet' | 'flat';
@@ -222,6 +223,9 @@ export function WelcomeScreen({ viewer }: { viewer?: boolean }) {
     <div className="welcome-screen">
       <div className="welcome-card" role="dialog" aria-label="Welcome to Loremapper">
         <header>
+          <div className="welcome-units">
+            <UnitsSwitch />
+          </div>
           <h1>Welcome to Loremapper</h1>
           <p>Fantasy maps you build like real geography. Everything stays in this browser; nothing is uploaded.</p>
         </header>
