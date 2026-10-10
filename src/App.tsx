@@ -94,6 +94,20 @@ function Busy() {
   );
 }
 
+/** The viewer's one-line note: editing is a desktop thing. */
+function ViewerNotice() {
+  const [hidden, setHidden] = useState(false);
+  if (hidden) return null;
+  return (
+    <div className="viewer-notice" role="note">
+      <span>For the full map editing experience, open LoreMapper in a desktop browser.</span>
+      <button className="icon-btn small" onClick={() => setHidden(true)} aria-label="Dismiss">
+        ×
+      </button>
+    </div>
+  );
+}
+
 function NewMapDialog() {
   const set = useEditor((s) => s.set);
   const close = () => set({ dialog: null });
@@ -127,16 +141,17 @@ function Dialogs() {
 export default function App() {
   const assetPanelOpen = useEditor((s) => s.assetPanelOpen);
   const welcome = useEditor((s) => s.welcome);
+  const readOnly = useEditor((s) => s.readOnly);
   const style = useDoc((s) => s.doc.view.style);
   const preset = STYLE_PRESETS[style] ?? STYLE_PRESETS.parchment;
   return (
-    <div className="app">
+    <div className={'app' + (readOnly ? ' viewer' : '')}>
       <ErrorBoundary label="Top bar">
         <TopBar />
       </ErrorBoundary>
       <div className="workspace">
-        <Toolbar />
-        {assetPanelOpen && (
+        {!readOnly && <Toolbar />}
+        {assetPanelOpen && !readOnly && (
           <ErrorBoundary label="Asset library">
             <AssetPanel />
           </ErrorBoundary>
@@ -151,7 +166,7 @@ export default function App() {
             <ScaleBar />
           </div>
           <Toast />
-          <Welcome />
+          {readOnly ? <ViewerNotice /> : <Welcome />}
           <Busy />
         </main>
         <ErrorBoundary label="Inspector">
@@ -166,7 +181,7 @@ export default function App() {
       </ErrorBoundary>
       {welcome && (
         <ErrorBoundary label="Welcome">
-          <WelcomeScreen />
+          <WelcomeScreen viewer={readOnly} />
         </ErrorBoundary>
       )}
     </div>

@@ -200,7 +200,9 @@ export async function exportHeightmap(bits: 8 | 16, width?: number) {
       bitDepth: bits,
       text: {
         Title: `${meta.name} heightmap`,
-        Description: `Elevation ${lo} m (black) to ${hi} m (white); sea level ${p.seaLevel} m; planet radius ${p.radiusKm} km; equirectangular`,
+        Description: `Elevation ${lo} m (black) to ${hi} m (white); sea level ${p.seaLevel} m; ${
+          m.geo.flat ? `flat map ${Math.round(m.W * m.geo.cellKm)} × ${Math.round(m.H * m.geo.cellKm)} km, uniform scale` : `planet radius ${p.radiusKm} km; equirectangular`
+        }`,
       },
       row: (y) => {
         const wy = (y + 0.5) * sy;

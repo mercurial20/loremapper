@@ -45,6 +45,7 @@ export function UnitsToggle({ compact }: { compact?: boolean }) {
 
 /** Facts about the landmass or body of water the user clicked. */
 export function RegionInspector({ r }: { r: RegionInfo }) {
+  const readOnly = useEditor((s) => s.readOnly);
   const geography = useEditor((s) => s.geography)!;
   const units = useEditor((s) => s.units);
   const peaks = useEditor((s) => s.peaks);
@@ -62,7 +63,11 @@ export function RegionInspector({ r }: { r: RegionInfo }) {
   const realms = g && r.land ? realmsOn(g, r) : [];
   return (
     <>
-      <TextField label="Name" value={pinned?.name ?? ''} placeholder={placeholder} onChange={(v) => setRegionName(r, v)} />
+      {readOnly ? (
+        <h4 className="viewer-title">{pinned?.name || placeholder}</h4>
+      ) : (
+        <TextField label="Name" value={pinned?.name ?? ''} placeholder={placeholder} onChange={(v) => setRegionName(r, v)} />
+      )}
       <div className="region-area">
         <b>{formatArea(r.areaKm2, units)}</b>
         <span>
@@ -106,9 +111,11 @@ export function RegionInspector({ r }: { r: RegionInfo }) {
         </div>
       )}
       <div className="btn-row">
-        <button className="btn small" onClick={() => labelRegion(r, pinned?.name || placeholder)} title="Add the name to the map as a label you can move and style">
-          <Type size={13} /> Write name on map
-        </button>
+        {!readOnly && (
+          <button className="btn small" onClick={() => labelRegion(r, pinned?.name || placeholder)} title="Add the name to the map as a label you can move and style">
+            <Type size={13} /> Write name on map
+          </button>
+        )}
         <button className="btn small" onClick={() => useEditor.getState().set({ geoListOpen: true })}>
           <List size={13} /> All lands & seas
         </button>

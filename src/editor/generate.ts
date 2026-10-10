@@ -47,7 +47,10 @@ export function genParams(o: GenerateOptions, size?: { W: number; H: number }): 
   let region: GenParams['region'] = null;
   if (!whole && !size) {
     const v = editor.renderer!.camera.visible;
-    region = { x0: v.x0, y0: Math.max(0, v.y0), x1: v.x1, y1: Math.min(model.H, v.y1) };
+    // flat maps end at their edges; planets wrap east–west
+    region = geo.flat
+      ? { x0: Math.max(0, v.x0), y0: Math.max(0, v.y0), x1: Math.min(model.W, v.x1), y1: Math.min(model.H, v.y1) }
+      : { x0: v.x0, y0: Math.max(0, v.y0), x1: v.x1, y1: Math.min(model.H, v.y1) };
   }
   return {
     type: o.type,
@@ -191,9 +194,11 @@ function writeRegion(
   return { layer, before, after };
 }
 
-export async function generateWorld(o: GenerateOptions) {
+export async function generateWorld(o: GenerateOptions, opts: { sample?: boolean } = {}) {
   const model = editor.model!;
   const st = useEditor.getState();
+  // the viewer doesn't edit maps (it may only build its own sample world)
+  if (st.readOnly && !opts.sample) return;
   const whole = o.type === 'continents' || o.type === 'pangaea' || o.region === 'world';
   st.set({ busy: 'Generating terrain…' });
   try {

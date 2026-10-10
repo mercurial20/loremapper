@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { history } from '../model/history';
+import { useEditor } from './editorStore';
 import {
   emptyDocument,
   type MapDocument,
@@ -42,11 +43,13 @@ export const useDoc = create<DocState>((set, get) => ({
 
   setMeta(patch) {
     const meta = get().meta;
-    if (!meta) return;
+    if (!meta || useEditor.getState().readOnly) return;
     set({ meta: { ...meta, ...patch }, revision: get().revision + 1 });
   },
 
   commit(label, fn, mergeKey) {
+    // the read-only viewer never changes map content
+    if (useEditor.getState().readOnly) return;
     const before = content(get().doc);
     const patch = fn(get().doc);
     const doc = { ...get().doc, ...patch };

@@ -4,6 +4,7 @@ import {
   CircleAlert,
   CloudFog,
   Download,
+  ExternalLink,
   Eye,
   EyeOff,
   Globe,
@@ -13,7 +14,6 @@ import {
   SlidersHorizontal,
   Undo2,
   Users,
-  ExternalLink,
   WandSparkles,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -104,7 +104,10 @@ function ViewMenu() {
         <Segmented
           label="Interval"
           value={String(view.contourInterval)}
-          options={['100', '250', '500', '1000', '2000'].map((v) => ({ value: v, label: units === 'imperial' ? formatHeight(Number(v), units) : `${Number(v) >= 1000 ? Number(v) / 1000 + 'k' : v}` }))}
+          options={['100', '250', '500', '1000', '2000'].map((v) => ({
+            value: v,
+            label: units === 'imperial' ? formatHeight(Number(v), units) : `${Number(v) >= 1000 ? Number(v) / 1000 + 'k' : v}`,
+          }))}
           onChange={(v) => setView({ contourInterval: Number(v) })}
         />
       )}
@@ -148,8 +151,9 @@ export function TopBar() {
   const { canUndo, canRedo, undoLabel, redoLabel, fogPreview, set } = useEditor();
   const view = useDoc((s) => s.doc.view);
   const setView = useDoc((s) => s.setView);
+  const readOnly = useEditor((s) => s.readOnly);
   return (
-    <header className="topbar">
+    <header className={'topbar' + (readOnly ? ' viewer' : '')}>
       <div className="brand">
         <CompassRose size={26} />
         <span>Loremapper</span>
@@ -167,23 +171,28 @@ export function TopBar() {
           onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
           aria-label="Map name"
           spellCheck={false}
+          readOnly={readOnly}
         />
         <button className="btn ghost" onClick={() => set({ dialog: 'projects' })} title="All maps">
           Maps <ChevronDown size={14} />
         </button>
       </div>
+      {!readOnly && (
+        <div className="tb-group">
+          <button className="icon-btn" disabled={!canUndo} onClick={() => history.undo()} title={canUndo ? `Undo ${undoLabel} (Ctrl+Z)` : 'Nothing to undo'}>
+            <Undo2 size={18} />
+          </button>
+          <button className="icon-btn" disabled={!canRedo} onClick={() => history.redo()} title={canRedo ? `Redo ${redoLabel} (Ctrl+Shift+Z)` : 'Nothing to redo'}>
+            <Redo2 size={18} />
+          </button>
+        </div>
+      )}
       <div className="tb-group">
-        <button className="icon-btn" disabled={!canUndo} onClick={() => history.undo()} title={canUndo ? `Undo ${undoLabel} (Ctrl+Z)` : 'Nothing to undo'}>
-          <Undo2 size={18} />
-        </button>
-        <button className="icon-btn" disabled={!canRedo} onClick={() => history.redo()} title={canRedo ? `Redo ${redoLabel} (Ctrl+Shift+Z)` : 'Nothing to redo'}>
-          <Redo2 size={18} />
-        </button>
-      </div>
-      <div className="tb-group">
-        <button className="btn" onClick={() => set({ dialog: 'generate' })}>
-          <WandSparkles size={16} /> Generate
-        </button>
+        {!readOnly && (
+          <button className="btn" onClick={() => set({ dialog: 'generate' })}>
+            <WandSparkles size={16} /> Generate
+          </button>
+        )}
         <Popover
           button={(open, toggle) => (
             <button className={'btn' + (open ? ' on' : '')} onClick={toggle}>
@@ -204,7 +213,7 @@ export function TopBar() {
         </button>
       </div>
       <div className="spacer" />
-      <SaveIndicator />
+      {!readOnly && <SaveIndicator />}
       <UnitsSwitch />
       <Popover
         align="right"
@@ -227,15 +236,19 @@ export function TopBar() {
           ))}
         </nav>
       </Popover>
-      <button className="icon-btn" onClick={() => set({ dialog: 'planet' })} title="Map settings">
-        <Globe size={18} />
-      </button>
-      <button className="icon-btn" onClick={() => set({ dialog: 'shortcuts' })} title="Keyboard shortcuts (?)">
-        <Keyboard size={18} />
-      </button>
-      <button className="btn primary" onClick={() => set({ dialog: 'export' })}>
-        <Download size={16} /> Export
-      </button>
+      {!readOnly && (
+        <>
+          <button className="icon-btn" onClick={() => set({ dialog: 'planet' })} title="Map settings">
+            <Globe size={18} />
+          </button>
+          <button className="icon-btn" onClick={() => set({ dialog: 'shortcuts' })} title="Keyboard shortcuts (?)">
+            <Keyboard size={18} />
+          </button>
+          <button className="btn primary" onClick={() => set({ dialog: 'export' })}>
+            <Download size={16} /> Export
+          </button>
+        </>
+      )}
     </header>
   );
 }

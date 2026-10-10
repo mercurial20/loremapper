@@ -67,6 +67,7 @@ export function StatusBar() {
   const zoom = useViewInfo((s) => s.zoom);
   const meta = useDoc((s) => s.meta);
   const units = useEditor((s) => s.units);
+  const readOnly = useEditor((s) => s.readOnly);
   const model = editor.model;
   const geo = model?.geo;
   const kmPerPx = geo ? geo.kmPerCellY / zoom : 0;
@@ -82,7 +83,7 @@ export function StatusBar() {
           {cursor.fog > 0.02 && <span className="sb-item">Fog {Math.round(cursor.fog * 100)}%</span>}
         </>
       ) : (
-        <span className="sb-item muted">Move over the map to inspect elevation and coordinates</span>
+        <span className="sb-item muted">{readOnly ? 'Tap the map to see what is there' : 'Move over the map to inspect elevation and coordinates'}</span>
       )}
       <span className="spacer" />
       {stats && meta && (

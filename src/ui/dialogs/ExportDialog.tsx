@@ -19,6 +19,7 @@ export function ExportDialog() {
   const [peaks, setPeaks] = useState(true);
   const [bits, setBits] = useState<'16' | '8'>('16');
   const [hmWidth, setHmWidth] = useState(meta?.planet.gridWidth ?? 4096);
+  const flat = meta?.planet.mapType === 'flat';
   const close = () => set({ dialog: null });
   const size = exportSize({ region, width });
   const mp = (size.width * size.height) / 1e6;
@@ -57,7 +58,7 @@ export function ExportDialog() {
             onChange={setRegion}
             options={[
               { value: 'view', label: 'Current view' },
-              { value: 'world', label: 'Whole planet' },
+              { value: 'world', label: flat ? 'Whole map' : 'Whole planet' },
             ]}
           />
           <Segmented label="Width" value={String(width)} onChange={(v) => setWidth(Number(v))} options={WIDTHS.map((w) => ({ value: String(w), label: `${w}px` }))} />
@@ -99,7 +100,8 @@ export function ExportDialog() {
             options={[1024, 2048, meta?.planet.gridWidth ?? 4096].filter((v, i, a) => a.indexOf(v) === i).map((w) => ({ value: String(w), label: `${w}px` }))}
           />
           <p className="hint">
-            Whole planet, equirectangular. Black = {meta?.planet.minElevation.toLocaleString()} m, white = {((meta?.planet.seaLevel ?? 0) + (meta?.planet.maxElevation ?? 10000)).toLocaleString()} m (range is in the file name and PNG metadata). 16-bit avoids terracing.
+            {flat ? 'Whole map, top-down at a uniform scale.' : 'Whole planet, equirectangular.'} Black = {meta?.planet.minElevation.toLocaleString()} m, white ={' '}
+            {((meta?.planet.seaLevel ?? 0) + (meta?.planet.maxElevation ?? 10000)).toLocaleString()} m (range is in the file name and PNG metadata; heights are always stored in metres). 16-bit avoids terracing.
           </p>
           <div className="btn-row end">
             <button className="btn primary" onClick={() => run(() => exportHeightmap(bits === '16' ? 16 : 8, hmWidth))}>

@@ -22,6 +22,7 @@ export function ProjectsDialog() {
   const set = useEditor((s) => s.set);
   const notify = useEditor((s) => s.notify);
   const current = useDoc((s) => s.meta?.id);
+  const readOnly = useEditor((s) => s.readOnly);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [storage, setStorage] = useState<{ usage: number; quota: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -49,9 +50,11 @@ export function ProjectsDialog() {
   return (
     <Modal title="Your maps" onClose={close} wide>
       <div className="projects-head">
-        <button className="btn primary" onClick={() => set({ dialog: 'newProject' })}>
-          <Plus size={14} /> New map
-        </button>
+        {!readOnly && (
+          <button className="btn primary" onClick={() => set({ dialog: 'newProject' })}>
+            <Plus size={14} /> New map
+          </button>
+        )}
         <button className="btn" onClick={() => fileRef.current?.click()}>
           <Upload size={14} /> Import project file…
         </button>
@@ -109,6 +112,8 @@ export function ProjectsDialog() {
               >
                 <FolderOpen size={14} />
               </button>
+{!readOnly && (
+                <>
               <button
                 className="icon-btn small"
                 title="Rename"
@@ -152,6 +157,8 @@ export function ProjectsDialog() {
               >
                 <Trash2 size={14} />
               </button>
+                </>
+              )}
             </div>
           </div>
         ))}

@@ -68,6 +68,10 @@ function isTyping(e: KeyboardEvent) {
 export class ToolController {
   private canvas: HTMLCanvasElement | null = null;
   private drag: Drag | null = null;
+  /** Viewer (read-only) touch state: active pointers, pinch, and a possible tap. */
+  private touches = new Map<number, [number, number]>();
+  private pinch: { dist: number; mx: number; my: number } | null = null;
+  private tap: { x: number; y: number; t: number } | null = null;
   private pointer: { sx: number; sy: number; x: number; y: number; inside: boolean } = { sx: 0, sy: 0, x: 0, y: 0, inside: false };
   private spaceDown = false;
   private shift = false;
@@ -264,6 +268,10 @@ export class ToolController {
     e.preventDefault();
     (document.activeElement as HTMLElement | null)?.blur?.();
     this.canvas!.setPointerCapture(e.pointerId);
+    if (useEditor.getState().readOnly) {
+      this.viewerDown(e);
+      return;
+    }
     this.shift = e.shiftKey;
     this.alt = e.altKey;
     const [x, y] = this.world(e);
@@ -316,6 +324,10 @@ export class ToolController {
 
   private onMove = (e: PointerEvent) => {
     if (!editor.renderer || !editor.model) return;
+    if (useEditor.getState().readOnly && this.touches.has(e.pointerId)) {
+      this.viewerMove(e);
+      return;
+    }
     this.shift = e.shiftKey;
     this.alt = e.altKey;
     const r = this.canvas!.getBoundingClientRect();
@@ -394,6 +406,10 @@ export class ToolController {
 
   private onUp = (e: PointerEvent) => {
     if (this.canvas?.hasPointerCapture(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId);
+    if (useEditor.getState().readOnly) {
+      this.viewerUp(e);
+      return;
+    }
     const d = this.drag;
     this.drag = null;
     if (!d || !editor.model) {
@@ -975,6 +991,53 @@ export class ToolController {
     this.showMeasure(null);
   }
 
+  // ------------------------------------------------------------ viewer (read-only) input
+
+  /** One finger pans, two pinch to zoom; a tap shows what is there. Nothing is edited. */
+  private viewerDown(e: PointerEvent) {
+    this.touches.set(e.pointerId, [e.clientX, e.clientY]);
+    if (this.touches.size === 2) {
+      const [a, b] = [...this.touches.values()];
+      this.pinch = { dist: Math.hypot(a[0] - b[0], a[1] - b[1]), mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 };
+      this.tap = null;
+    } else if (this.touches.size === 1) this.tap = { x: e.clientX, y: e.clientY, t: performance.now() };
+  }
+
+  private viewerMove(e: PointerEvent) {
+    const prev = this.touches.get(e.pointerId)!;
+    this.touches.set(e.pointerId, [e.clientX, e.clientY]);
+    const cam = editor.renderer!.camera;
+    const rect = this.canvas!.getBoundingClientRect();
+    if (this.pinch && this.touches.size >= 2) {
+      const [a, b] = [...this.touches.values()];
+      const dist = Math.max(1, Math.hypot(a[0] - b[0], a[1] - b[1]));
+      const mx = (a[0] + b[0]) / 2;
+      const my = (a[1] + b[1]) / 2;
+      cam.pan(mx - this.pinch.mx, my - this.pinch.my);
+      cam.zoomAt(mx - rect.left, my - rect.top, dist / this.pinch.dist, false);
+      this.pinch = { dist, mx, my };
+    } else {
+      cam.pan(e.clientX - prev[0], e.clientY - prev[1]);
+      if (this.tap && Math.hypot(e.clientX - this.tap.x, e.clientY - this.tap.y) > 8) this.tap = null;
+    }
+    editor.renderer!.viewChanged();
+  }
+
+  private viewerUp(e: PointerEvent) {
+    this.touches.delete(e.pointerId);
+    if (this.touches.size < 2) this.pinch = null;
+    const tap = this.tap;
+    this.tap = null;
+    if (!tap || this.touches.size || performance.now() - tap.t > 500 || !editor.model) return;
+    const [x, y] = this.world(e);
+    const hit = hitAny(this.hitCtx(), x, y);
+    if (hit) useEditor.getState().select([hit]);
+    else {
+      useEditor.getState().select([]);
+      void inspectAt(x, y);
+    }
+  }
+
   /** Re-label the measurement (e.g. after the display units changed). */
   refreshMeasure() {
     if (this.measure.length && editor.model) this.showMeasure(null);
@@ -1015,6 +1078,14 @@ export class ToolController {
 
   private onKeyDown = (e: KeyboardEvent) => {
     if (isTyping(e)) return;
+    // the viewer has no editing shortcuts; Escape still clears what is shown
+    if (useEditor.getState().readOnly) {
+      if (e.key === 'Escape') {
+        useEditor.getState().select([]);
+        clearInspect();
+      }
+      return;
+    }
     this.shift = e.shiftKey;
     this.alt = e.altKey;
     const st = useEditor.getState();

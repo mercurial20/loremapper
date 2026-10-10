@@ -2066,3 +2066,78 @@ input[type='range']::-moz-range-thumb {
     grid-template-columns: 1fr;
   }
 }
+
+/* ------------------------------------------------------------ read-only viewer (phones & tablets) */
+
+.map-host canvas {
+  touch-action: none;
+}
+.viewer-notice {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 24px);
+  padding: 5px 6px 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: rgba(14, 16, 20, 0.88);
+  color: var(--muted);
+  font-size: 12px;
+}
+.viewer-title {
+  margin: 0;
+  font-size: 15px;
+  color: var(--accent-2);
+}
+.app.viewer .topbar .tb-group .chip {
+  display: none;
+}
+@media (max-width: 760px) {
+  .app.viewer {
+    grid-template-rows: auto 1fr 0;
+  }
+  .app.viewer .statusbar {
+    display: none;
+  }
+  .app.viewer .topbar {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 8px;
+    height: auto;
+  }
+  .app.viewer .topbar .brand,
+  .app.viewer .topbar .spacer {
+    display: none;
+  }
+  .app.viewer .project-name input {
+    max-width: 38vw;
+  }
+  .app.viewer .workspace {
+    position: relative;
+  }
+  /* the inspector becomes a bottom sheet over the map */
+  .app.viewer .right-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 42%;
+    border-left: none;
+    border-top: 1px solid var(--border-2);
+    border-radius: 14px 14px 0 0;
+    z-index: 30;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+  }
+  .app.viewer .map-chrome.compass {
+    display: none;
+  }
+  .app.viewer .map-chrome.scale {
+    bottom: calc(42% + 8px);
+  }
+}

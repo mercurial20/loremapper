@@ -16,6 +16,29 @@ const SYSTEM: { id: SystemLayerId; name: string; lockable: boolean; note: string
   { id: 'terrain', name: 'Elevation', lockable: true, note: 'Heightmap in metres' },
 ];
 
+/** The viewer can show and hide the map's layers, nothing more. */
+export function ViewerLayers() {
+  const doc = useDoc((s) => s.doc);
+  const setSystemLayer = useDoc((s) => s.setSystemLayer);
+  return (
+    <ul className="layer-list">
+      {SYSTEM.map((l) => {
+        const st = doc.systemLayers[l.id];
+        return (
+          <li key={l.id} className={'layer-item' + (st.visible ? '' : ' off')}>
+            <div className="layer-row">
+              <button className="icon-btn small" onClick={() => setSystemLayer(l.id, { visible: !st.visible })} aria-label={(st.visible ? 'Hide ' : 'Show ') + l.name}>
+                {st.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+              </button>
+              <span className="layer-name">{l.name}</span>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export function LayersPanel() {
   const doc = useDoc((s) => s.doc);
   const setSystemLayer = useDoc((s) => s.setSystemLayer);

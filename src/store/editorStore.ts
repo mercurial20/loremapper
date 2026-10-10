@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { detectViewer } from './viewer';
 import type { Units } from '../core/units';
 import type { RegionInfo } from '../terrain/geography';
 import type { BrushParams } from '../terrain/brushes';
@@ -101,6 +102,8 @@ interface EditorState {
   busyCancel: (() => void) | null;
   /** First launch (no maps in this browser): show the welcome screen. */
   welcome: boolean;
+  /** Read-only viewer (phones and tablets): look around, no editing. */
+  readOnly: boolean;
   /** Landmass or water body shown in the inspector (found again by its anchor after edits). */
   inspect: { land: boolean; id: number; anchorX: number; anchorY: number } | null;
   /** Landmasses and water bodies of the current terrain (null until first measured). */
@@ -136,7 +139,7 @@ function storedUnits(): Units {
 }
 
 export const useEditor = create<EditorState>((set, get) => ({
-  tool: 'raise',
+  tool: detectViewer() ? 'select' : 'raise',
   prevTool: null,
   brushes: {
     terrain: { radiusKm: 260, strength: 0.5, falloff: 0.7, opacity: 1, roughness: 0.55 },
@@ -178,6 +181,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   busy: null,
   busyCancel: null,
   welcome: false,
+  readOnly: detectViewer(),
   inspect: null,
   geography: null,
   geoBusy: false,
@@ -187,6 +191,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   setTool(t) {
     const cur = get().tool;
     if (t === cur) return;
+    // the viewer only looks: select (to inspect) and pan
+    if (get().readOnly && t !== 'select' && t !== 'pan') return;
     set({ tool: t, prevTool: cur, assetPanelOpen: t === 'object' ? true : get().assetPanelOpen });
   },
   setBrush(g, p) {

@@ -3,7 +3,8 @@ import { useEditor } from '../store/editorStore';
 import { Section } from './controls/controls';
 import { kindLabel, useInspectedRegion } from '../editor/geography';
 import { LandsList, RegionInspector } from './panels/GeographyPanel';
-import { LayersPanel } from './panels/LayersPanel';
+import { LayersPanel, ViewerLayers } from './panels/LayersPanel';
+import { ViewerInfo } from './panels/ViewerInfo';
 import { SelectionInspector } from './panels/SelectionInspector';
 import { selectionTitle } from './panels/selectionTitle';
 import { ToolOptions } from './panels/ToolOptions';
@@ -16,9 +17,33 @@ export function RightPanel() {
   const layersOpen = useEditor((s) => s.layersOpen);
   const geoListOpen = useEditor((s) => s.geoListOpen);
   const region = useInspectedRegion();
+  const readOnly = useEditor((s) => s.readOnly);
   const set = useEditor((s) => s.set);
   const objectCount = useDoc((s) => Object.keys(s.doc.objects).length);
   const def = ALL_TOOLS.find((t) => t.id === tool);
+  if (readOnly)
+    return (
+      <aside className="right-panel viewer-panel">
+        <div className="right-scroll">
+          {sel.length > 0 && (
+            <Section title={selectionTitle(sel[0]?.kind, sel.length)} className="selection-section">
+              <ViewerInfo />
+            </Section>
+          )}
+          {region && sel.length === 0 && (
+            <Section title={kindLabel(region.kind)} className="selection-section">
+              <RegionInspector r={region} />
+            </Section>
+          )}
+          <Section title="Lands & seas" open={geoListOpen} onToggle={(v) => set({ geoListOpen: v })}>
+            <LandsList />
+          </Section>
+          <Section title="Layers" open={layersOpen} onToggle={(v) => set({ layersOpen: v })}>
+            <ViewerLayers />
+          </Section>
+        </div>
+      </aside>
+    );
   return (
     <aside className="right-panel">
       <div className="right-scroll">

@@ -5,6 +5,7 @@ import { formatArea, formatLength, KM_PER_MI } from '../core/units';
 import { EARTH_CREDIT, EARTH_RADIUS_KM, loadEarth } from '../editor/earth';
 import { editor } from '../editor/Editor';
 import { importProject } from '../editor/exporter';
+import { generateWorld } from '../editor/generate';
 import { useEditor } from '../store/editorStore';
 import { MeasureField, Select, TextField } from './controls/controls';
 
@@ -216,7 +217,7 @@ export function NewMapFlow({ onCancel, onCreated }: { onCancel?: () => void; onC
 }
 
 /** First launch: no maps yet in this browser. */
-export function WelcomeScreen() {
+export function WelcomeScreen({ viewer }: { viewer?: boolean }) {
   return (
     <div className="welcome-screen">
       <div className="welcome-card" role="dialog" aria-label="Welcome to Loremapper">
@@ -224,7 +225,96 @@ export function WelcomeScreen() {
           <h1>Welcome to Loremapper</h1>
           <p>Fantasy maps you build like real geography. Everything stays in this browser; nothing is uploaded.</p>
         </header>
-        <NewMapFlow />
+        {viewer ? <ViewerStart /> : <NewMapFlow />}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Phones and tablets: there's nothing to look at yet. Maps live in the
+ * browser that made them, so offer something to explore instead.
+ */
+function ViewerStart() {
+  const set = useEditor((s) => s.set);
+  const notify = useEditor((s) => s.notify);
+  const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const run = async (fn: () => Promise<void>) => {
+    setWorking(true);
+    setError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      set({ busy: null });
+      setWorking(false);
+    }
+  };
+  return (
+    <div className="new-map">
+      <p className="hint">
+        Maps are saved in the browser where they were made, so maps from your computer aren’t here. On this device you can explore a map; to create and edit maps,
+        open Loremapper in a desktop browser.
+      </p>
+      <div className="start-cards two">
+        <Card
+          icon={<Earth size={22} />}
+          title="Explore Earth"
+          onClick={() =>
+            void run(async () => {
+              set({ busy: 'Loading Earth (≈ 8 MB, once)…' });
+              const heights = await loadEarth();
+              await editor.createMap('Earth', { ...defaultPlanet('standard'), radiusKm: EARTH_RADIUS_KM, seaLevel: 0, landFraction: 0.29 }, { heights, source: 'earth-etopo1' });
+            })
+          }
+        >
+          Real coastlines, mountains and sea floor.
+        </Card>
+        <Card
+          icon={<WandSparkles size={22} />}
+          title="Explore a sample world"
+          onClick={() =>
+            void run(async () => {
+              await editor.createMap('Sample world', defaultPlanet('standard'));
+              await generateWorld(
+                { type: 'continents', template: 'none', realism: 'easy', seed: 4242, landFraction: 0.29, mountains: 0.75, roughness: 0.35, warmth: 0, wetness: 0, biomes: true, rivers: 'normal', settlements: true, region: 'world' },
+                { sample: true },
+              );
+            })
+          }
+        >
+          A generated planet with rivers, biomes and towns.
+        </Card>
+      </div>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="new-map-foot">
+        <button className="btn ghost small" onClick={() => fileRef.current?.click()} disabled={working}>
+          <Upload size={13} /> Open a .loremap file…
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          hidden
+          accept=".loremap,.fantasymap,.zip"
+          onChange={async (e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (!f) return;
+            try {
+              await importProject(f);
+              set({ welcome: false });
+            } catch (err) {
+              notify('Could not open the file: ' + (err instanceof Error ? err.message : String(err)), 'error');
+            }
+          }}
+        />
       </div>
     </div>
   );
