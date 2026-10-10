@@ -41,7 +41,6 @@ export function ensureGeography(): Promise<Geography | null> {
   const sea = model.seaLevel;
   const promise = new Promise<Geography | null>((resolve) => {
     const w = new Worker(new URL('../terrain/geography.worker.ts', import.meta.url), { type: 'module' });
-    const height = model.height.toFull((n) => new Float32Array(n));
     w.onmessage = (e: MessageEvent<Geography>) => {
       w.terminate();
       resolve(e.data);
@@ -50,8 +49,11 @@ export function ensureGeography(): Promise<Geography | null> {
       w.terminate();
       resolve(null);
     };
-    const req: GeographyRequest = { height, W: model.W, H: model.H, radiusKm: model.planet.radiusKm, seaLevel: sea };
-    w.postMessage(req, [height.buffer]);
+    const g = model.height;
+    const tiles = [...g.tiles.entries()].map(([k, data]) => ({ tx: k % g.NX, ty: Math.floor(k / g.NX), data: data as Float32Array }));
+    const req: GeographyRequest = { tiles, tileSize: g.TS, defaultHeight: g.defaultValue, W: model.W, H: model.H, surface: { kind: 'planet', radiusKm: model.planet.radiusKm }, seaLevel: sea };
+    // tiles are copied by structured clone (a fast memory copy); the editor keeps its own
+    w.postMessage(req);
   }).then((geo) => {
     if (pending?.revision !== revision || editor.model !== model) return geo;
     pending = null;
@@ -66,10 +68,13 @@ export function ensureGeography(): Promise<Geography | null> {
   return promise;
 }
 
-/** Re-measure after terrain edits, but only while something on screen shows the results. */
+/**
+ * Re-measure after terrain edits while something shows the results — or
+ * ahead of time while the Select tool is active, so a click answers at once.
+ */
 export function refreshGeographyIfShown() {
   const st = useEditor.getState();
-  if (st.inspect || st.geoListOpen) void ensureGeography();
+  if (st.inspect || st.geoListOpen || st.tool === 'select') void ensureGeography();
 }
 
 function publish(g: Geography) {
@@ -80,7 +85,7 @@ function publish(g: Geography) {
     const r = regionAt(g, inspect.anchorX, inspect.anchorY);
     inspect = r && r.land === inspect.land ? { ...inspect, id: r.id } : null;
   }
-  st.set({ geography: { land: g.land, water: g.water, landKm2: g.landKm2, planetKm2: g.planetKm2 }, inspect });
+  st.set({ geography: { land: g.land, water: g.water, landKm2: g.landKm2, mapKm2: g.mapKm2 }, inspect });
   setOutline(inspect ? regionOf(g, inspect.land, inspect.id) : null);
 }
 
@@ -130,78 +135,11 @@ export function clearInspect() {
   setOutline(null);
 }
 
-/**
- * Outline of a region: marching squares on its cells (corners at cell
- * centres), as line segments [x1, y1, x2, y2, …] in world cells. The world
- * ocean is left without an outline: it would trace every coast on the planet.
- */
-function outline(g: Geography, r: RegionInfo): Float32Array | null {
-  if (!r.land && r.kind === 'ocean') return null;
-  const target = r.land ? r.id : -(r.id + 1);
-  const { W, H, labels } = g;
-  const inside = (i: number, j: number) => j >= 0 && j < H && labels[j * W + (((i % W) + W) % W)] === target;
-  const seg: number[] = [];
-  const i0 = Math.floor(r.x0) - 1;
-  const i1 = Math.ceil(r.x1) + 1;
-  const j0 = Math.max(-1, Math.floor(r.y0) - 1);
-  const j1 = Math.min(H, Math.ceil(r.y1) + 1);
-  for (let j = j0; j < j1; j++)
-    for (let i = i0; i < i1; i++) {
-      // corners: a = (i, j), b = (i + 1, j), c = (i + 1, j + 1), d = (i, j + 1), at cell centres
-      const a = inside(i, j) ? 1 : 0;
-      const b = inside(i + 1, j) ? 2 : 0;
-      const c = inside(i + 1, j + 1) ? 4 : 0;
-      const d = inside(i, j + 1) ? 8 : 0;
-      const code = a | b | c | d;
-      if (code === 0 || code === 15) continue;
-      const x = i + 0.5;
-      const y = j + 0.5;
-      const top: Vec2 = [x + 0.5, y];
-      const right: Vec2 = [x + 1, y + 0.5];
-      const bottom: Vec2 = [x + 0.5, y + 1];
-      const left: Vec2 = [x, y + 0.5];
-      const add = (p: Vec2, q: Vec2) => seg.push(p[0], p[1], q[0], q[1]);
-      switch (code) {
-        case 1:
-        case 14:
-          add(left, top);
-          break;
-        case 2:
-        case 13:
-          add(top, right);
-          break;
-        case 3:
-        case 12:
-          add(left, right);
-          break;
-        case 4:
-        case 11:
-          add(right, bottom);
-          break;
-        case 6:
-        case 9:
-          add(top, bottom);
-          break;
-        case 7:
-        case 8:
-          add(left, bottom);
-          break;
-        case 5:
-          add(left, top);
-          add(right, bottom);
-          break;
-        case 10:
-          add(top, right);
-          add(left, bottom);
-          break;
-      }
-    }
-  return Float32Array.from(seg);
-}
-
+/** Show a region's shoreline on the map (the world ocean's would trace every coast, so it has none). */
 function setOutline(r: RegionInfo | null) {
   const g = current?.geo;
-  editor.layers?.overlay.set({ region: r && g ? outline(g, r) : null });
+  const lines = r && g && !(r.kind === 'ocean' && !r.land) ? r.outlines.map((n) => g.outlines[n].pts) : null;
+  editor.layers?.overlay.set({ region: lines });
   editor.requestRender();
 }
 
@@ -216,6 +154,7 @@ export function useInspectedRegion(): RegionInfo | null {
 // selecting something else (or anything that clears `inspect`) removes the outline
 useEditor.subscribe((s, prev) => {
   if (!s.inspect && prev.inspect) setOutline(null);
+  if (s.tool === 'select' && prev.tool !== 'select' && editor.model) void ensureGeography();
 });
 
 // ---------------------------------------------------------------- names

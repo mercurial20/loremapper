@@ -101,7 +101,7 @@ interface EditorState {
   /** Landmass or water body shown in the inspector (found again by its anchor after edits). */
   inspect: { land: boolean; id: number; anchorX: number; anchorY: number } | null;
   /** Landmasses and water bodies of the current terrain (null until first measured). */
-  geography: { land: RegionInfo[]; water: RegionInfo[]; landKm2: number; planetKm2: number } | null;
+  geography: { land: RegionInfo[]; water: RegionInfo[]; landKm2: number; mapKm2: number } | null;
   geoBusy: boolean;
   geoListOpen: boolean;
   /** Units for areas and distances in the geography panels. */

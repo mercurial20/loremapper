@@ -1,5 +1,6 @@
 import { Container, Graphics, Text, TextStyle } from 'pixi.js';
 import type { Geo } from '../core/geo';
+import { simplifyPath } from '../core/math';
 import { objectCorners, rotateHandle } from '../model/geometry';
 import type { MapDocument, SelectionRef, Vec2 } from '../model/types';
 import { brushWeight } from '../terrain/brushes';
@@ -30,8 +31,8 @@ export interface OverlayState {
   marquee: { x0: number; y0: number; x1: number; y1: number } | null;
   hover: SelectionRef | null;
   stampPreview: { x: number; y: number; w: number; h: number; rotation: number } | null;
-  /** outline of the inspected landmass / water body: segments [x1, y1, x2, y2, …] */
-  region: Float32Array | null;
+  /** shoreline of the inspected landmass / water body: polylines [x0, y0, x1, y1, …] in world cells */
+  region: Float32Array[] | null;
 }
 
 const ACCENT = 0xf2b14a;
@@ -40,6 +41,9 @@ const ACCENT = 0xf2b14a;
 export class OverlayLayer implements WorldLayer {
   readonly container = new Container();
   private g = new Graphics();
+  /** the inspected region's outline: rebuilt only when the region or the zoom level changes noticeably */
+  private regionG = new Graphics();
+  private regionKey: { lines: Float32Array[] | null; bucket: number } = { lines: null, bucket: NaN };
   private texts = new Container();
   private textPool: Text[] = [];
   private style = new TextStyle({
@@ -60,7 +64,7 @@ export class OverlayLayer implements WorldLayer {
   constructor(geo: Geo, labelBounds: (id: string) => { w: number; h: number } | null) {
     this.geo = geo;
     this.labelBounds = labelBounds;
-    this.container.addChild(this.g, this.texts);
+    this.container.addChild(this.regionG, this.g, this.texts);
   }
 
   setGeo(geo: Geo) {
@@ -104,6 +108,39 @@ export class OverlayLayer implements WorldLayer {
     this.g.circle(x, y, r * px).fill({ color: fill }).stroke({ width: 1.5 * px, color: 0x1b1612 });
   }
 
+  /**
+   * Inspected landmass or water body: a soft glow under a crisp line. Line
+   * widths are in screen pixels, so the geometry is rebuilt per zoom step
+   * (√2 apart), simplified to what that zoom can show.
+   */
+  private drawRegion() {
+    const lines = this.state.region;
+    const bucket = Math.round(Math.log2(this.zoom) * 2);
+    if (lines === this.regionKey.lines && bucket === this.regionKey.bucket) return;
+    this.regionKey = { lines, bucket };
+    const g = this.regionG;
+    g.clear();
+    if (!lines?.length) return;
+    const z = Math.pow(2, bucket / 2);
+    const px = 1 / z;
+    const tol = Math.max(0.35, 0.6 * px);
+    const simple = lines.map((l) => {
+      const pts: Vec2[] = [];
+      for (let i = 0; i < l.length; i += 2) pts.push([l[i], l[i + 1]]);
+      return pts.length > 2 ? simplifyPath(pts, tol) : pts;
+    });
+    for (const [w, alpha] of [
+      [6, 0.25],
+      [1.8, 1],
+    ] as const) {
+      for (const pts of simple) {
+        g.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+      }
+      g.stroke({ width: w * px, color: ACCENT, alpha, cap: 'butt', join: 'miter', miterLimit: 3 });
+    }
+  }
+
   private draw() {
     const g = this.g;
     const px = 1 / this.zoom;
@@ -113,17 +150,7 @@ export class OverlayLayer implements WorldLayer {
     const doc = this.doc;
     const s = this.state;
 
-    // inspected landmass or water body: a soft glow under a crisp line
-    if (s.region && s.region.length) {
-      const r = s.region;
-      for (const [w, alpha] of [
-        [6, 0.25],
-        [1.8, 1],
-      ] as const) {
-        for (let i = 0; i < r.length; i += 4) g.moveTo(r[i], r[i + 1]).lineTo(r[i + 2], r[i + 3]);
-        g.stroke({ width: w * px, color: ACCENT, alpha, cap: 'round' });
-      }
-    }
+    this.drawRegion();
 
     // selection
     if (doc) {

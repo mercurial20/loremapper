@@ -52,7 +52,7 @@ export function RegionInspector({ r }: { r: RegionInfo }) {
   const g = freshGeography();
   const pinned = g ? regionName(g, r, names) : null;
   const placeholder = defaultName(geography, r);
-  const share = r.land ? r.areaKm2 / Math.max(1, geography.landKm2) : r.areaKm2 / geography.planetKm2;
+  const share = r.land ? r.areaKm2 / Math.max(1, geography.landKm2) : r.areaKm2 / geography.mapKm2;
   const peak = r.land ? peaks.find((p) => p.name && Math.hypot(p.x - r.extremeX, p.y - r.extremeY) < 6) : undefined;
   const W = editor.model?.W ?? 1;
   const lonSpan = Math.min(360, ((r.x1 - r.x0) / W) * 360);
@@ -144,7 +144,7 @@ export function LandsList() {
       <p className="hint">
         {plural(count('continent'), 'continent', 'continents')} · {plural(count('island'), 'island', 'islands')} · {plural(count('islet'), 'islet', 'islets')}
         <br />
-        Land {((geography.landKm2 / geography.planetKm2) * 100).toFixed(1)}% · {formatArea(geography.landKm2, units)}
+        Land {((geography.landKm2 / geography.mapKm2) * 100).toFixed(1)}% · {formatArea(geography.landKm2, units)}
         {busy && (
           <>
             {' '}

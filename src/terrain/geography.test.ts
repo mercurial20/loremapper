@@ -13,7 +13,7 @@ describe('geography', () => {
   fill(40, 120, 30, 90, 200); // big landmass
   fill(74, 76, 54, 56, -20); // a small lake inside it
   fill(250, 262, 60, 70, 900); // island across the antimeridian
-  const g = analyzeGeography(h, W, H, R, 0);
+  const g = analyzeGeography(h, W, H, { kind: 'planet', radiusKm: R }, 0);
   const grid = makeGrid(W, H, R, 1);
   const area = (x0: number, x1: number, y0: number, y1: number) => {
     let a = 0;
@@ -45,5 +45,32 @@ describe('geography', () => {
     const cell = (2 * Math.PI * R) / W;
     expect(g.land[1].coastKm).toBeGreaterThan(cell * 30 * 0.6);
     expect(g.land[1].coastKm).toBeLessThan(cell * 44);
+  });
+
+  it('outlines each region with closed shorelines', () => {
+    const lake = g.water[1];
+    expect(lake.outlines.length).toBeGreaterThan(0);
+    for (const n of lake.outlines) {
+      const o = g.outlines[n];
+      expect(o.land).toBe(0);
+      expect(o.water).toBe(1);
+      for (let i = 0; i < o.pts.length; i += 2) {
+        expect(o.pts[i]).toBeGreaterThanOrEqual(73);
+        expect(o.pts[i]).toBeLessThanOrEqual(77);
+      }
+    }
+    // the island crosses the seam, so its shoreline comes in pieces on both sides
+    const xs = g.land[1].outlines.flatMap((n) => [...g.outlines[n].pts.filter((_, i) => i % 2 === 0)]);
+    expect(Math.min(...xs)).toBeLessThan(10);
+    expect(Math.max(...xs)).toBeGreaterThan(240);
+  });
+
+  it('measures flat maps with uniform cells and no wrapping', () => {
+    const f = analyzeGeography(h, W, H, { kind: 'flat', cellKm: 2 }, 0);
+    // without wrap, the island at the edges is two islands
+    expect(f.land.length).toBe(3);
+    expect(f.land[0].areaKm2).toBeCloseTo((80 * 60 - 4) * 4, 6);
+    expect(f.mapKm2).toBe(W * H * 4);
+    expect(f.water[0].kind).toBe('sea');
   });
 });
