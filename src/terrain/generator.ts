@@ -436,6 +436,7 @@ function paintBiomes(
           bigRiver: Math.exp(-dRiver / 75) * bigness,
           coast: coastKm[mk],
           patch: 0.5 + 0.5 * patchN.fbm(Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat), 40, 2),
+          dry: sampleAt(clim.dry, mid, wx, wy),
         },
         wts,
       );

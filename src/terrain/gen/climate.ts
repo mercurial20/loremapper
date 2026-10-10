@@ -7,6 +7,10 @@ export interface Climate {
   temp: Float32Array;
   /** yearly rainfall, ≈0 (desert) … 1.5 (rainforest) */
   rain: Float32Array;
+  /** 0..1 how dry the summers are (the Mediterranean belt on western coasts) */
+  dry: Float32Array;
+  /** −1 cold … +1 warm: sea-surface anomaly from ocean currents, spread a little inland */
+  current: Float32Array;
 }
 
 export interface ClimateOptions {
@@ -21,10 +25,72 @@ export interface ClimateOptions {
   climateLat?: (lat: number) => number;
 }
 
-/** Zonal rainfall pattern: wet equator and mid-latitudes, dry subtropics and poles. */
-function latRain(latDeg: number): number {
+/**
+ * Zonal rainfall pattern: wet equator and mid-latitudes, dry subtropics and
+ * poles. The subtropical high sinks hardest over the eastern side of oceans,
+ * so its dry belt deepens beside cold currents (`current` < 0: Sahara,
+ * Atacama, Namib) and fades beside warm ones (eastern coasts stay humid).
+ */
+function latRain(latDeg: number, current = 0): number {
   const a = Math.abs(latDeg);
-  return Math.max(0.1, 0.45 + 0.95 * Math.exp(-((latDeg / 11) ** 2)) + 0.6 * Math.exp(-(((a - 50) / 14) ** 2)) - 0.42 * Math.exp(-(((a - 26) / 8) ** 2)) - 0.3 * smoothstep(65, 85, a));
+  const subtropicalDry = 0.42 * (1 + 0.5 * Math.max(0, -current) - 0.85 * Math.max(0, current));
+  return Math.max(0.1, 0.45 + 0.95 * Math.exp(-((latDeg / 11) ** 2)) + 0.6 * Math.exp(-(((a - 50) / 14) ** 2)) - subtropicalDry * Math.exp(-(((a - 26) / 8) ** 2)) - 0.3 * smoothstep(65, 85, a));
+}
+
+/**
+ * Sign of the wind-driven gyres by latitude: + where an ocean's eastern side is
+ * cold (subtropical gyres: Humboldt, Benguela, California, Canary currents) and
+ * its western side warm (Gulf Stream, Kuroshio); − where that flips in the
+ * subpolar gyres (the North Atlantic Drift warms the east, Labrador chills the west).
+ */
+function gyreSign(latDeg: number): number {
+  const a = Math.abs(latDeg);
+  return smoothstep(6, 16, a) * smoothstep(48, 38, a) - 0.7 * smoothstep(42, 50, a) * smoothstep(70, 58, a);
+}
+
+/**
+ * Ocean-current anomaly on every sea cell (land 0) from where it lies between
+ * the coasts to its west and east along its row, and summer dryness on land
+ * with the ocean to its west in the Mediterranean latitudes.
+ */
+function currentsAndDrySummers(g: Grid, h: Float32Array, latDeg: (j: number) => number): { cur: Float32Array; dry: Float32Array } {
+  const N = g.w * g.h;
+  const cur = new Float32Array(N);
+  const dry = new Float32Array(N);
+  const toLandW = new Float32Array(g.w);
+  const toLandE = new Float32Array(g.w);
+  const toSeaW = new Float32Array(g.w);
+  for (let j = 0; j < g.h; j++) {
+    const o = j * g.w;
+    const km = dxKm(g, j);
+    const lat = latDeg(j);
+    // distance along the row to the nearest land (or sea) on each side; two laps on a wrapping grid
+    const sweep = (out: Float32Array, dir: number, findLand: boolean) => {
+      let d = Infinity;
+      const laps = g.wrap ? 2 : 1;
+      for (let step = 0; step < g.w * laps; step++) {
+        const i = dir > 0 ? step % g.w : g.w - 1 - (step % g.w);
+        const land = h[o + i] > 0;
+        out[i] = d;
+        d = land === findLand ? 0 : d + km;
+      }
+    };
+    sweep(toLandW, 1, true);
+    sweep(toLandE, -1, true);
+    sweep(toSeaW, 1, false);
+    const s = gyreSign(lat);
+    const med = smoothstep(28, 33, Math.abs(lat)) * smoothstep(46, 38, Math.abs(lat));
+    for (let i = 0; i < g.w; i++) {
+      const k = o + i;
+      if (h[k] <= 0) {
+        // western side of an ocean (off an eastern coast) vs its eastern side (off a western coast)
+        const west = toLandW[i] < Infinity ? Math.exp(-toLandW[i] / 1400) : 0;
+        const east = toLandE[i] < Infinity ? Math.exp(-toLandE[i] / 1100) : 0;
+        cur[k] = s * (0.8 * west - east);
+      } else if (med > 0 && toSeaW[i] < Infinity) dry[k] = med * Math.exp(-toSeaW[i] / 700);
+    }
+  }
+  return { cur, dry };
 }
 
 /** Prevailing wind direction along x: −1 westward (trade winds, polar easterlies), +1 eastward (westerlies). */
@@ -58,9 +124,25 @@ export function climate(g: Grid, h: Float32Array, coastKm: Float32Array, o: Clim
         const inland = land ? Math.exp(-coastKm[k] / 1300) : 1;
         // climate belts wander in latitude so they never form straight bands
         const latJ = lat + 11 * n.fbm(x, y + 4.4, z, 1.6, 3);
-        rain[k] = latRain(latJ) * (0.45 + 0.55 * inland) * (1 + 0.55 * n.fbm(x + 9, y, z, 2.2, 4));
+        rain[k] = latRain(latJ, 0) * (0.45 + 0.55 * inland) * (1 + 0.55 * n.fbm(x + 9, y, z, 2.2, 4));
       }
     }
+  }
+  const latDeg = (j: number) => (rowLat(g, j) * 180) / Math.PI;
+  const { cur, dry } = currentsAndDrySummers(g, h, latDeg);
+  // the sea's anomaly as felt nearby: averaged over sea cells only, then fading inland
+  const seaMask = new Float32Array(N);
+  for (let k = 0; k < N; k++) seaMask[k] = h[k] <= 0 ? 1 : 0;
+  const curSum = blurKm(cur, g, 450, 2);
+  const seaSum = blurKm(seaMask, g, 450, 2);
+  const current = new Float32Array(N);
+  // the moisture a current brings (or withholds) carries much further inland than its warmth or chill
+  const moist = new Float32Array(N);
+  for (let k = 0; k < N; k++) {
+    const c = seaSum[k] > 0.02 ? curSum[k] / seaSum[k] : 0;
+    current[k] = h[k] <= 0 ? cur[k] : c * Math.exp(-coastKm[k] / 400);
+    moist[k] = h[k] <= 0 ? cur[k] : c * Math.exp(-coastKm[k] / 1100);
+    temp[k] += 4.5 * current[k];
   }
   if (o.winds) {
     // sweep every row downwind: the air picks up moisture over the sea, rains
@@ -85,7 +167,8 @@ export function climate(g: Grid, h: Float32Array, coastKm: Float32Array, o: Clim
         else if (i < 0 || i >= g.w) break;
         const k = o0 + i;
         if (h[k] <= 0) {
-          const evap = 0.04 + 0.1 * smoothstep(-5, 28, temp[k]);
+          // cold upwelling water gives the air little moisture; warm currents a lot
+          const evap = (0.04 + 0.1 * smoothstep(-5, 28, temp[k])) * Math.min(1.6, Math.max(0.25, 1 + 1.2 * cur[k]));
           m += (1 - m) * Math.min(1, evap * (km / 25));
           lifted = 0;
           if (step >= g.w * (loops - 1) || !g.wrap) rain[k] = m;
@@ -107,12 +190,16 @@ export function climate(g: Grid, h: Float32Array, coastKm: Float32Array, o: Clim
         const y = T.cosLat[j] * T.sinLon[i];
         const z = T.sinLat[j];
         const latJ = lat + 9 * n.fbm(x, y + 4.4, z, 1.6, 3);
-        rain[k] = 1.7 * smooth[k] * latRain(latJ) * (1 + 0.35 * n.fbm(x + 9, y, z, 2.2, 4));
+        rain[k] = 1.7 * smooth[k] * latRain(latJ, moist[k]) * (1 + 0.35 * n.fbm(x + 9, y, z, 2.2, 4));
       }
     }
   }
-  for (let k = 0; k < N; k++) rain[k] = Math.max(0, rain[k] * (1 + o.wetness * 0.6) + o.wetness * 0.08);
-  return { temp, rain };
+  for (let k = 0; k < N; k++) {
+    // coasts beside cold currents stay dry under stable air (fog deserts); warm ones are humid
+    if (h[k] > 0) rain[k] *= Math.min(1.5, Math.max(0.3, 1 + 0.9 * current[k]));
+    rain[k] = Math.max(0, rain[k] * (1 + o.wetness * 0.6) + o.wetness * 0.08);
+  }
+  return { temp, rain, dry, current };
 }
 
 export const BIOME_GRASS = 0;
@@ -143,6 +230,8 @@ export interface BiomeInput {
   coast: number;
   /** 0..1 slow noise that breaks farmland into patches */
   patch: number;
+  /** 0..1 dry summers (Mediterranean climate): scrub and grassland instead of forest */
+  dry: number;
 }
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -157,7 +246,8 @@ const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
  */
 export function biomeWeights(c: BiomeInput, out: Float32Array) {
   const { t, elev, slope } = c;
-  const m = c.r * (1.25 - 0.5 * clamp01(t / 30));
+  // effective moisture: rain against evaporation, and against a long summer drought
+  const m = c.r * (1.25 - 0.5 * clamp01(t / 30)) * (1 - 0.35 * c.dry);
   const flat = 1 - smoothstep(5, 22, slope);
   const snow = smoothstep(-3, -11, t);
   const tundra = smoothstep(1, -6, t) * (1 - snow);
