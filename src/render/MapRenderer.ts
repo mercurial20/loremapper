@@ -96,6 +96,10 @@ export class MapRenderer {
       uPaperAmount: { value: 0, type: 'f32' },
       uGrain: { value: 0, type: 'f32' },
       uStains: { value: 0, type: 'f32' },
+      uCel: { value: 0, type: 'f32' },
+      uPosterize: { value: 0, type: 'f32' },
+      uPixel: { value: 0, type: 'f32' },
+      uHatch: { value: 0, type: 'f32' },
       uCoastInk: { value: new Float32Array(3), type: 'vec3<f32>' },
       uCoastWidth: { value: 1.5, type: 'f32' },
       uRippleColor: { value: new Float32Array(3), type: 'vec3<f32>' },
@@ -207,6 +211,10 @@ export class MapRenderer {
     u.uPaperAmount = style.paperAmount;
     u.uGrain = style.grain;
     u.uStains = style.stains;
+    u.uCel = style.cel ?? 0;
+    u.uPosterize = style.posterize ?? 0;
+    u.uPixel = style.pixel ?? 0;
+    u.uHatch = style.hatch ?? 0;
     u.uCoastInk = hexToVec3(style.coastInk);
     u.uCoastWidth = style.coastWidth;
     u.uRippleColor = hexToVec3(style.rippleColor);

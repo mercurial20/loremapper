@@ -34,7 +34,7 @@ function TerrainPresets() {
     return TERRAIN_PRESETS[id].hint(c === undefined ? '' : formatHeight(c, units));
   };
   return (
-    <>
+    <div className="terrain-presets">
       <Segmented
         label="Land to build"
         value={preset}
@@ -47,7 +47,7 @@ function TerrainPresets() {
       <Hint>
         {current ? presetHint(preset as Exclude<TerrainPreset, 'custom'>) : b.ceiling !== undefined ? `Your own settings, levelling off near ${formatHeight(b.ceiling, units)}.` : 'Your own settings.'}
       </Hint>
-    </>
+    </div>
   );
 }
 

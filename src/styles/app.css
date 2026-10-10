@@ -422,42 +422,73 @@ code {
 .view-menu h4:first-child {
   margin-top: 0;
 }
-.style-cards {
+.popover:has(.view-menu) {
+  width: 440px;
+}
+.style-tiles {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
 }
-.style-card {
-  text-align: left;
+.style-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 4px 6px;
   border: 1px solid var(--border-2);
   border-radius: var(--radius-sm);
   background: var(--panel-2);
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  color: var(--text);
+  font-size: 11.5px;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
 }
-.style-card:hover {
+.style-tile:hover {
   border-color: #4a5160;
 }
-.style-card.on {
+.style-tile.on {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
-.style-card small {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.3;
-}
-.style-swatch {
-  display: flex;
-  height: 16px;
+.style-thumb {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
   border-radius: 4px;
-  overflow: hidden;
-  margin-bottom: 3px;
+  display: block;
 }
-.style-swatch i {
-  flex: 1;
+.style-desc {
+  margin: 6px 2px 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.view-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.view-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.view-chip:hover {
+  color: var(--text);
+}
+.view-chip.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-2);
 }
 
 /* ------------------------------------------------------------------ toolbar */
@@ -811,6 +842,12 @@ input[type='range']::-moz-range-thumb {
   cursor: pointer;
 }
 
+.terrain-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
 .segmented {
   display: flex;
   background: var(--panel-2);

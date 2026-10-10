@@ -292,12 +292,13 @@ see through the fog; switch to **Player view** to check what players will see,
 then export the **revealed areas only** image. Fog never changes anything
 underneath it.
 
-### Four looks, one map
+### Eight looks, one map
 
 <img src="docs/images/styles.jpg" alt="The same map in four styles: parchment, fantasy atlas, clean political and shaded relief" />
 
 Switch styles any time from **View**: parchment, colourful fantasy atlas, clean
-political or shaded relief. You can also toggle contour lines, the height
+political, shaded relief, cel-shaded anime, strategy game, pixel art or antique
+engraving. You can also toggle contour lines, the height
 overlay, a latitude/longitude grid, peak markers and coastal ripples.
 
 ### Planets and flat maps

@@ -138,6 +138,11 @@ uniform vec3 uContourColor;
 uniform vec3 uShadowTint;
 uniform vec2 uWorldSize;
 uniform float uSeed;
+// stylisation: cel-shaded light bands, colour levels, screen-pixel blocks, engraved hatching
+uniform float uCel;
+uniform float uPosterize;
+uniform float uPixel;
+uniform float uHatch;
 
 ${NOISE}
 
@@ -290,6 +295,11 @@ float lodLevel(float targetPx) {
 
 void main() {
   vec2 w = vWorld;
+  if (uPixel > 0.0) {
+    // pixel art: the whole map is sampled in blocks of uPixel screen pixels
+    float cell = uPixel / uZoom;
+    w = (floor(w / cell) + 0.5) * cell;
+  }
   float W = uWorldSize.x;
   float px = 1.0 / uZoom; // cells per screen pixel
 
@@ -317,9 +327,10 @@ void main() {
   float hD = h + coastDetail(w) * min(gmag, 3000.0) * 1.3 * nearSurface;
 
   float s = hD - uSea;
-  float fw = max(fwidth(s), 1e-4);
+  // in pixel art the height is constant inside a block, so measure the coast in blocks from the gradient
+  float fw = uPixel > 0.0 ? max(gmag * px * uPixel, 1e-3) : max(fwidth(s), 1e-4);
   float distPx = s / fw;
-  float landA = smoothstep(-0.5, 0.5, distPx);
+  float landA = uPixel > 0.0 ? step(0.0, s) : smoothstep(-0.5, 0.5, distPx);
 
   // micro-relief bump: finite differences of a procedural height
   float elev0 = max(s, 0.0) / uMaxElev;
@@ -341,6 +352,11 @@ void main() {
   vec3 L = normalize(vec3(-0.62, -0.72, 0.6));
   float lambert = dot(n, L);
   float shade = (lambert - L.z) / (1.0 - L.z);
+  if (uCel > 0.0) {
+    // cel shading: three flat bands of light, as in hand-painted animation backgrounds
+    float q = shade < -0.16 ? -0.55 : (shade > 0.2 ? 0.32 : 0.0);
+    shade = mix(shade, q, uCel);
+  }
 
   // ---------- land ----------
   float elev = max(s, 0.0) / uMaxElev;
@@ -418,6 +434,20 @@ void main() {
   // shading
   float sh = shade * uHillshade;
   sh = sh / (1.0 + abs(sh) * 0.9);
+  if (uHatch > 0.0) {
+    // engraving: shadows drawn as diagonal hatching, crossed where darkest; lines are tied to the map
+    vec2 fc = w * uZoom;
+    float S = 5.0;
+    float dark = clamp(-sh * 1.7 + 0.12 * mtn, 0.0, 1.0);
+    float d1 = abs(fract((fc.x + fc.y) / S) - 0.5) * S;
+    float d2 = abs(fract((fc.x - fc.y) / S) - 0.5) * S;
+    float w1 = dark * S * 0.42;
+    float w2 = max(0.0, dark - 0.55) * S * 0.6;
+    float ink = max(1.0 - smoothstep(w1 - 0.5, w1 + 0.5, d1), 1.0 - smoothstep(w2 - 0.5, w2 + 0.5, d2)) * step(0.04, dark);
+    land *= 1.0 + max(sh, 0.0) * 0.25 * uHatch;
+    land = mix(land, uShadowTint, ink * 0.8 * uHatch);
+    sh *= 1.0 - uHatch;
+  }
   land *= 1.0 + sh * (sh < 0.0 ? 0.62 : 0.38);
   land = mix(land, uShadowTint, clamp(-sh, 0.0, 1.0) * 0.22);
 
@@ -474,6 +504,9 @@ void main() {
     float eq = uFlat > 0.5 ? 0.0 : 1.0 - smoothstep(0.5, 1.6, abs(w.y - uWorldSize.y * 0.5) / (px));
     col = mix(col, uCoastInk, max(l * 0.28, eq * 0.45));
   }
+
+  // ---------- flat colour levels ----------
+  if (uPosterize > 0.5) col = floor(col * uPosterize + 0.5) / uPosterize;
 
   // ---------- paper ----------
   col = mix(col, uPaper, uPaperAmount);

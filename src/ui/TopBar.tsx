@@ -25,7 +25,7 @@ import { UnitsSwitch } from './UnitsSwitch';
 import { formatHeight } from '../core/units';
 import { COMMUNITY_LINKS } from '../community';
 import { editor } from '../editor/Editor';
-import { Segmented, Slider, Toggle } from './controls/controls';
+import { Segmented, Slider } from './controls/controls';
 import { APP_VERSION } from '../version';
 import { CompassRose, GitHubMark, RedditMark } from './icons';
 
@@ -69,40 +69,63 @@ function SaveIndicator() {
   );
 }
 
+/** A tiny island drawn in a style's own colours. */
+function StyleThumb({ s }: { s: (typeof STYLE_PRESETS)[StylePresetId] }) {
+  const land = (t: number) => s.land.reduce((c, [at, col]) => (at <= t ? col : c), s.land[0][1]);
+  const water = (t: number) => s.water.reduce((c, [at, col]) => (at <= t ? col : c), s.water[0][1]);
+  return (
+    <svg className="style-thumb" viewBox="0 0 64 36" aria-hidden>
+      <rect width="64" height="36" fill={water(0.6)} />
+      <path d="M8 26 C10 14 22 8 34 9 C46 10 58 16 56 25 C54 32 40 33 30 31 C20 30 7 34 8 26 Z" fill={water(0.05)} />
+      <path d="M12 25 C14 16 23 12 33 12 C44 12 53 17 52 24 C51 29 40 30 31 28 C22 27 11 31 12 25 Z" fill={land(0.01)} stroke={s.coastInk} strokeWidth={Math.min(1.6, s.coastWidth * 0.55)} />
+      <path d="M17 24 C20 19 26 17 30 19 C33 21 28 25 22 26 Z" fill={s.biomes[1]} />
+      <path d="M30 22 L37 13 L42 19 L46 15 L50 23 Z" fill={land(0.5)} />
+      <path d="M35 15.5 L37 13 L39 15.5 Z M44.6 16.6 L46 15 L47.3 16.8 Z" fill={land(1)} />
+    </svg>
+  );
+}
+
 function ViewMenu() {
   const view = useDoc((s) => s.doc.view);
   const setView = useDoc((s) => s.setView);
   const units = useEditor((s) => s.units);
   useDoc((s) => s.meta);
   const flat = !!editor.model?.geo.flat;
+  const current = STYLE_PRESETS[view.style] ?? STYLE_PRESETS.parchment;
+  const chip = (label: string, on: boolean, toggle: () => void, title?: string) => (
+    <button className={'view-chip' + (on ? ' on' : '')} onClick={toggle} aria-pressed={on} title={title}>
+      {on && <Check size={12} />} {label}
+    </button>
+  );
   return (
     <div className="view-menu">
       <h4>Map style</h4>
-      <div className="style-cards">
+      <div className="style-tiles">
         {(Object.keys(STYLE_PRESETS) as StylePresetId[]).map((id) => {
           const s = STYLE_PRESETS[id];
           return (
-            <button key={id} className={'style-card' + (view.style === id ? ' on' : '')} onClick={() => setView({ style: id })}>
-              <span className="style-swatch">
-                <i style={{ background: s.water[Math.min(3, s.water.length - 1)][1] }} />
-                <i style={{ background: s.land[Math.min(2, s.land.length - 1)][1] }} />
-                <i style={{ background: s.land[Math.floor(s.land.length * 0.6)][1] }} />
-                <i style={{ background: s.biomes[1] }} />
-              </span>
-              <b>{s.name}</b>
-              <small>{s.description}</small>
+            <button key={id} className={'style-tile' + (view.style === id ? ' on' : '')} onClick={() => setView({ style: id })} title={s.description} aria-pressed={view.style === id}>
+              <StyleThumb s={s} />
+              <span>{s.name}</span>
             </button>
           );
         })}
       </div>
+      <p className="style-desc">{current.description}</p>
       <h4>Relief</h4>
       <Slider label="Hill shading" value={view.hillshade} min={0} max={2} step={0.05} onChange={(v) => setView({ hillshade: v })} format={(v) => `${Math.round(v * 100)}%`} />
-      <Toggle label="Coastal ripples" checked={view.coastRipples} onChange={(v) => setView({ coastRipples: v })} />
-      <h4>Elevation</h4>
-      <Toggle label="Contour lines" checked={view.contours} onChange={(v) => setView({ contours: v })} />
+      <h4>Show on map</h4>
+      <div className="view-chips">
+        {chip('Contours', view.contours, () => setView({ contours: !view.contours }), 'Contour lines')}
+        {chip('Height colours', view.heightOverlay, () => setView({ heightOverlay: !view.heightOverlay }), 'Hypsometric tints by elevation')}
+        {chip('Peaks', view.showPeaks, () => setView({ showPeaks: !view.showPeaks }), 'Peak markers with their heights')}
+        {chip('Coastal ripples', view.coastRipples, () => setView({ coastRipples: !view.coastRipples }))}
+        {chip(flat ? 'Distance grid' : 'Lat / long grid', view.graticule, () => setView({ graticule: !view.graticule }))}
+        {!flat && chip('Repeat sideways', view.repeat !== false, () => setView({ repeat: view.repeat === false }), 'Only changes how the planet is shown: it stays round and continuous')}
+      </div>
       {view.contours && (
         <Segmented
-          label="Interval"
+          label="Contour interval"
           value={String(view.contourInterval)}
           options={['100', '250', '500', '1000', '2000'].map((v) => ({
             value: v,
@@ -111,20 +134,8 @@ function ViewMenu() {
           onChange={(v) => setView({ contourInterval: Number(v) })}
         />
       )}
-      <Toggle label="Height overlay (hypsometric)" checked={view.heightOverlay} onChange={(v) => setView({ heightOverlay: v })} />
-      <Toggle label="Peak markers" checked={view.showPeaks} onChange={(v) => setView({ showPeaks: v })} />
       {view.showPeaks && (
         <Slider label="Show peaks above" value={view.peakMinElevation} min={300} max={9000} step={100} onChange={(v) => setView({ peakMinElevation: v })} format={(v) => formatHeight(v, units)} />
-      )}
-      <h4>{flat ? 'Map' : 'Geography'}</h4>
-      <Toggle label={flat ? 'Distance grid' : 'Latitude / longitude grid'} checked={view.graticule} onChange={(v) => setView({ graticule: v })} />
-      {!flat && (
-        <Toggle
-          label="Repeat map horizontally"
-          checked={view.repeat !== false}
-          onChange={(v) => setView({ repeat: v })}
-          hint="Only changes how the map is shown: the planet itself stays round and continuous."
-        />
       )}
     </div>
   );

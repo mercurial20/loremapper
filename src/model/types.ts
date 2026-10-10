@@ -124,7 +124,7 @@ export interface SystemLayerState {
   locked: boolean;
 }
 
-export type StylePresetId = 'parchment' | 'atlas' | 'political' | 'relief';
+export type StylePresetId = 'parchment' | 'atlas' | 'political' | 'relief' | 'anime' | 'strategy' | 'pixel' | 'antique';
 
 export interface ViewSettings {
   style: StylePresetId;
@@ -181,7 +181,7 @@ export interface SelectionRef {
 export function defaultView(): ViewSettings {
   return {
     style: 'parchment',
-    hillshade: 0.85,
+    hillshade: 0.3,
     contours: false,
     contourInterval: 500,
     heightOverlay: false,

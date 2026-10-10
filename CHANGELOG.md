@@ -17,6 +17,8 @@ Planned as v1.1: map types, a welcoming start, global units and a phone / tablet
   - all tools work on them, as do Lands & seas and export;
   - the generator builds them as a patch of a virtual planet, so tectonics, rivers and biomes carry over, and adds a climate zone setting.
 - **Built-in worlds:** *The Inner Sea*, *The Walled Isle*, *The Thousand Isles* and *The Spine of the World*. Each is a sketch of land, seas, ranges and climate regions that the generator turns into full relief, rivers, biomes and towns. **Suggest a world** opens a GitHub form for new ones (original settings only).
+- **Four new map styles:** *Anime* (cel-shaded bands, flat colour levels, bold outlines), *Strategy game*, *Pixel art* and *Antique engraving* (shadows drawn as hatching).
+- **A simpler View menu:** styles as small previews in one grid, one relief slider, and map overlays as on/off chips whose settings appear only when they're on.
 - **Global metric / imperial switch** in the top bar (km, km², m / mi, mi², ft). It applies everywhere and is remembered; stored maps never change.
 - **"Repeat map horizontally"** view option for planets.
 - **Read-only viewer on phones and tablets:**
@@ -40,6 +42,7 @@ Planned as v1.1: map types, a welcoming start, global units and a phone / tablet
 - **Gravity suggests a mountain height.** Map settings show how tall mountains could stand at the planet's gravity (Everest scaled by 1 / g) and can apply it as the maximum elevation.
 - **Ocean currents and dry summers in generated climates.** Wind-driven gyres put cold currents off western coasts in the subtropics (coastal deserts) and warm ones off eastern coasts (humid subtropics), and flip at high latitudes. Western coasts at 30–45° get Mediterranean dry summers, with scrub and grassland rather than forest.
 - New planets default to Earth's radius, 6,371 km. Existing maps keep their own.
+- Hill shading defaults to 30% for new maps (it was 85%): ranges stay readable without the relief overwhelming the map. Existing maps keep their setting.
 - A click on empty map with the Select tool now only clears the selection; measuring land and water moved to the Info tool.
 - Generated rivers follow the lowest ground under them, meet nearby river beds, and end where they first reach the sea.
 
