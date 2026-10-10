@@ -209,6 +209,7 @@ function worldShape(p: GenParams, layout: Layout, mid: Grid, R: number, progress
   const arch = layout === 'archipelago';
   // island groups: a slow "where" field times a fast "which islands" field
   const groups = arch ? resample(lowField(coarse, (x, y, z) => smoothstep(-0.15, 0.45, n.fbm(x, y + 7, z, 2.6, 3))), coarse, mid, 'bspline') : null;
+  const coastOctaves = Math.max(3, Math.floor(Math.log2((2 * Math.PI) / (4 * radPerCell(mid) * mid.step) / 5.5)) + 1);
   // fine coastline noise only matters near the coast: estimate where that is first
   const t0 = thresholdForFraction(shape.landness, mid, p.landFraction);
   for (let j = 0; j < mid.h; j++)
@@ -221,7 +222,9 @@ function worldShape(p: GenParams, layout: Layout, mid: Grid, R: number, progress
       if (shape.arc[k] > 0.01) L += (arch ? 0.9 : 0.75) * shape.arc[k] * smoothstep(-0.05, 0.45, n.fbm(x, y, z, 17, 3));
       L += (arch ? 1.1 : 0.95) * shape.hot[k];
       if (arch) L += groups![k] * (0.35 + 0.45 * n.fbm(x, y - 3.3, z, 9, 4));
-      else if (Math.abs(L - t0) < 0.5) L += 0.13 * n.fbm(x + 2.7, y, z, 5.5, 3) + 0.06 * n.fbm(x, y + 1.9, z, 22, 2);
+      // coasts are fractal (Mandelbrot 1967): bays within bays down to the grid's resolution,
+      // with fine octaves fading slowly (gain 0.62) like real shorelines, D ≈ 1.1–1.25
+      else if (Math.abs(L - t0) < 0.5) L += 0.4 * n.fbm(x + 2.7, y, z, 5.5, coastOctaves, 0.62);
       shape.landness[k] = L;
     }
   if (mid.proj) flatEdges(mid, shape.landness);
@@ -628,15 +631,14 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
     for (let i = 0; i < full.w; i++) {
       const k = j * full.w + i;
       let v = height[k];
-      // keep the coastline where the working grid put it
-      const wasLand = coarseH ? sampleAt(coarseH, mid, full.x0 + i + 0.5, full.y0 + j + 0.5) > 0 : v > 0;
+      const x = FT.cosLat[j] * FT.cosLon[i];
+      const y = FT.cosLat[j] * FT.sinLon[i];
+      const z = FT.sinLat[j];
+      // the coastline from the working grid, frayed at full resolution so it stays fractal down to the cell
+      const cv = coarseH ? sampleAt(coarseH, mid, full.x0 + i + 0.5, full.y0 + j + 0.5) : v;
+      const wasLand = Math.abs(cv) < 90 ? cv + 22 * nD.fbm(x - 5.1, y, z, fineF * 0.6, 3, 0.6) > 0 : cv > 0;
       const r = rugF[k];
-      if (wasLand && r > 0.06) {
-        const x = FT.cosLat[j] * FT.cosLon[i];
-        const y = FT.cosLat[j] * FT.sinLon[i];
-        const z = FT.sinLat[j];
-        v += r * r * amp * nD.fbm(x, y, z, fineF, 2);
-      }
+      if (wasLand && r > 0.06) v += r * r * amp * nD.fbm(x, y, z, fineF, 2);
       height[k] = wasLand ? Math.max(1, v) : Math.min(-2, v);
     }
   if (realism === 'ultra') {
