@@ -1055,6 +1055,8 @@ export class ToolController {
       useEditor.getState().select([]);
       void inspectAt(x, y);
     }
+    // a tap asks "what is here?": show the answer even if the panel is tucked away
+    if (useEditor.getState().panelHidden) togglePanel(true);
   }
 
   /** Re-label the measurement (e.g. after the display units changed). */

@@ -1902,6 +1902,11 @@ input[type='range']::-moz-range-thumb {
   color: var(--muted);
   font-size: 12px;
 }
+.app.viewer .region-list {
+  /* one scroll area in the viewer: the panel (a bottom sheet on phones) scrolls, not the list inside it */
+  max-height: none;
+  overflow: visible;
+}
 .region-list {
   list-style: none;
   margin: 0;
@@ -2244,12 +2249,14 @@ input[type='range']::-moz-range-thumb {
     z-index: 30;
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
   }
-  .app.viewer .map-chrome.compass,
-  .app.viewer .panel-toggle {
+  .app.viewer .map-chrome.compass {
     display: none;
   }
   .app.viewer .map-chrome.scale {
     bottom: calc(42% + 8px);
+  }
+  .app.viewer.panel-hidden .map-chrome.scale {
+    bottom: 14px;
   }
 }
 

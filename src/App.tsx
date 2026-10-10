@@ -154,12 +154,11 @@ export default function App() {
   const assetPanelOpen = useEditor((s) => s.assetPanelOpen);
   const welcome = useEditor((s) => s.welcome);
   const readOnly = useEditor((s) => s.readOnly);
-  // on a phone the panel is a bottom sheet that only opens for a tapped feature, so it is never hidden
-  const panelHidden = useEditor((s) => s.panelHidden) && !(readOnly && window.matchMedia('(max-width: 760px)').matches);
+  const panelHidden = useEditor((s) => s.panelHidden);
   const style = useDoc((s) => s.doc.view.style);
   const preset = STYLE_PRESETS[style] ?? STYLE_PRESETS.parchment;
   return (
-    <div className={'app' + (readOnly ? ' viewer' : '')}>
+    <div className={'app' + (readOnly ? ' viewer' : '') + (panelHidden ? ' panel-hidden' : '')}>
       <ErrorBoundary label="Top bar">
         <TopBar />
       </ErrorBoundary>

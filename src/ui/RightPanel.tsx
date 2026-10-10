@@ -1,6 +1,6 @@
 import { X } from 'lucide-react';
 import { useDoc } from '../store/docStore';
-import { useEditor } from '../store/editorStore';
+import { togglePanel, useEditor } from '../store/editorStore';
 import { Section } from './controls/controls';
 import { clearInspect, kindLabel, useInspectedRegion } from '../editor/geography';
 import { LandsList, RegionInspector } from './panels/GeographyPanel';
@@ -27,17 +27,32 @@ export function RightPanel() {
       <X size={14} />
     </button>
   );
+  // in the viewer the panel only answers a tap, so closing the answer tucks the panel away
+  const closeViewer = (
+    <button
+      className="icon-btn small"
+      onClick={() => {
+        set({ selection: [] });
+        clearInspect();
+        togglePanel(false);
+      }}
+      title="Close"
+      aria-label="Close"
+    >
+      <X size={14} />
+    </button>
+  );
   if (readOnly)
     return (
       <aside className="right-panel viewer-panel">
         <div className="right-scroll">
           {sel.length > 0 && (
-            <Section title={selectionTitle(sel[0]?.kind, sel.length)} className="selection-section">
+            <Section title={selectionTitle(sel[0]?.kind, sel.length)} className="selection-section" actions={closeViewer}>
               <ViewerInfo />
             </Section>
           )}
           {region && sel.length === 0 && (
-            <Section title={kindLabel(region.kind)} className="selection-section" actions={closeRegion}>
+            <Section title={kindLabel(region.kind)} className="selection-section" actions={closeViewer}>
               <RegionInspector r={region} />
             </Section>
           )}

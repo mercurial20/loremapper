@@ -28,6 +28,7 @@ Planned as v1.1: map types, a welcoming start, global units and a phone / tablet
   - pan, pinch zoom, tap for region or feature info, and layer visibility;
   - edits are refused in the logic, not just hidden;
   - a one-line note points to the desktop for editing.
+  - the map gets the whole screen: the panel starts hidden and opens from its button or when you tap the map; closing a card tucks it away again.
 - **Community links** always visible in the top bar: GitHub and Reddit (with labels on wide screens) and a feedback button for bug reports and suggestions.
 - **Info tool** (<kbd>I</kbd>): point at land or water to see its name and area in the status bar; click it for its card, which closes with ✕ or <kbd>Esc</kbd>. Dragging with it pans.
 - **Hide the right panel** with the button at the top right of the map or <kbd>\\</kbd>, for more room; the choice is remembered.

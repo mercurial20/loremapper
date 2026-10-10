@@ -318,7 +318,7 @@ It covers heights and depths, brush sizes, distances, the scale bar, planet and 
 
 ### On phones and tablets
 
-Editing needs a desktop browser. A phone or tablet opens maps in a read-only viewer: drag to pan, pinch to zoom, tap land or water for its size, show or hide layers. Maps are stored in the browser that made them, so the viewer offers Earth, a sample world or a `.loremap` file to explore.
+Editing needs a desktop browser. A phone or tablet opens maps in a read-only viewer: drag to pan, pinch to zoom, tap land or water for its size. The map gets the whole screen; the panel with layers and lands opens from the button at the top right or when you tap something. Maps are stored in the browser that made them, so the viewer offers Earth, a sample world or a `.loremap` file to explore.
 
 ### How big is it?
 

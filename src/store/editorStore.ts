@@ -148,21 +148,26 @@ export function setUnits(units: Units) {
   }
 }
 
+/** The viewer (phones and tablets) remembers its own choice: the panel starts hidden there. */
+const panelKey = () => (detectViewer() ? 'loremapper.panel.viewer' : 'loremapper.panel');
+
 export function togglePanel(show?: boolean) {
   const hidden = show === undefined ? !useEditor.getState().panelHidden : !show;
   useEditor.getState().set({ panelHidden: hidden });
   try {
-    localStorage.setItem('loremapper.panel', hidden ? 'hidden' : 'shown');
+    localStorage.setItem(panelKey(), hidden ? 'hidden' : 'shown');
   } catch {
     // remembering the choice is a convenience only
   }
 }
 
 function storedPanelHidden(): boolean {
+  const viewer = detectViewer();
   try {
-    return localStorage.getItem('loremapper.panel') === 'hidden';
+    const v = localStorage.getItem(panelKey());
+    return v === null ? viewer : v === 'hidden';
   } catch {
-    return false;
+    return viewer;
   }
 }
 
