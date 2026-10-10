@@ -322,7 +322,7 @@ Editing needs a desktop browser. A phone or tablet opens maps in a read-only vie
 
 ### How big is it?
 
-With the Select tool (<kbd>V</kbd>), click any land or water on the map. The whole continent, island, sea or lake is outlined, and the panel shows:
+Pick the Info tool (<kbd>I</kbd>) and point at any land or water: the status bar shows its name and area. Click it and the whole continent, island, sea or lake is outlined, and a card opens in the panel (close it with ✕ or <kbd>Esc</kbd>) with:
 
 - its **area**, measured on the sphere, and its share of all land;
 - its coastline, its highest or deepest point and its mean height;
@@ -353,6 +353,7 @@ You can name it there and write the name on the map as a normal label. **Lands &
 | <kbd>F</kbd> | Flatten | <kbd>P</kbd> | Peaks |
 | <kbd>B</kbd> | Paint biome (<kbd>1</kbd>–<kbd>8</kbd> pick one) | <kbd>U</kbd> | Measure |
 | <kbd>E</kbd> | Eraser | <kbd>[</kbd> <kbd>]</kbd> | Brush size |
+| <kbd>I</kbd> | Info: name and size of land or water | <kbd>\\</kbd> | Hide / show the right panel |
 
 <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redo · <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicate · <kbd>Delete</kbd> remove · hold <kbd>Shift</kbd> or <kbd>Alt</kbd> while painting to invert a brush
 

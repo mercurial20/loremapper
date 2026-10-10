@@ -197,7 +197,7 @@ export function LandsList() {
           Show {hidden} smaller {tab === 'land' ? 'islets' : 'lakes'}
         </button>
       )}
-      <Hint>Click land or water on the map with the Select tool (V) to see its size.</Hint>
+      <Hint>{useEditor.getState().readOnly ? 'Tap land or water on the map to see its size.' : 'Use the Info tool (I): point at land or water to see its name and size, click it for the full card.'}</Hint>
     </>
   );
 }

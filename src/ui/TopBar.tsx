@@ -4,16 +4,15 @@ import {
   CircleAlert,
   CloudFog,
   Download,
-  ExternalLink,
   Eye,
   EyeOff,
   Globe,
   Keyboard,
   LoaderCircle,
+  MessageSquarePlus,
   Redo2,
   SlidersHorizontal,
   Undo2,
-  Users,
   WandSparkles,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -28,7 +27,7 @@ import { COMMUNITY_LINKS } from '../community';
 import { editor } from '../editor/Editor';
 import { Segmented, Slider, Toggle } from './controls/controls';
 import { APP_VERSION } from '../version';
-import { CompassRose } from './icons';
+import { CompassRose, GitHubMark, RedditMark } from './icons';
 
 function Popover({ button, children, align = 'left' }: { button: (open: boolean, toggle: () => void) => ReactNode; children: ReactNode; align?: 'left' | 'right' }) {
   const [open, setOpen] = useState(false);
@@ -201,27 +200,17 @@ export function TopBar() {
       <div className="spacer" />
       {!readOnly && <SaveIndicator />}
       <UnitsSwitch />
-      <Popover
-        align="right"
-        button={(open, toggle) => (
-          <button className={'icon-btn' + (open ? ' on' : '')} onClick={toggle} title="Community" aria-label="Community links">
-            <Users size={18} />
-          </button>
-        )}
-      >
-        <nav className="community-menu" aria-label="Community">
-          <h4>Community</h4>
-          {COMMUNITY_LINKS.map((l) => (
-            <a key={l.id} href={l.href} target="_blank" rel="noopener noreferrer">
-              <span>
-                <b>{l.label}</b>
-                <small>{l.detail}</small>
-              </span>
-              <ExternalLink size={13} aria-hidden />
-            </a>
-          ))}
-        </nav>
-      </Popover>
+      <nav className="community-links" aria-label="Community">
+        <a href={COMMUNITY_LINKS.github.href} target="_blank" rel="noopener noreferrer" title={COMMUNITY_LINKS.github.title}>
+          <GitHubMark /> <span>{COMMUNITY_LINKS.github.label}</span>
+        </a>
+        <a className="reddit" href={COMMUNITY_LINKS.reddit.href} target="_blank" rel="noopener noreferrer" title={COMMUNITY_LINKS.reddit.title}>
+          <RedditMark /> <span>{COMMUNITY_LINKS.reddit.label}</span>
+        </a>
+        <a href={COMMUNITY_LINKS.feedback.href} target="_blank" rel="noopener noreferrer" title={COMMUNITY_LINKS.feedback.title} aria-label={COMMUNITY_LINKS.feedback.title}>
+          <MessageSquarePlus size={16} />
+        </a>
+      </nav>
       {!readOnly && (
         <>
           <button className="icon-btn" onClick={() => set({ dialog: 'planet' })} title="Map settings">

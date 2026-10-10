@@ -10,7 +10,7 @@ const GENERAL: [string, string][] = [
   ['Ctrl/⌘ D', 'Duplicate selection'],
   ['Ctrl/⌘ A', 'Select all objects & labels'],
   ['Ctrl/⌘ ] / [', 'Bring forward / send backward (+Shift: front/back)'],
-  ['Ctrl/⌘ 0', 'Fit whole planet'],
+  ['Ctrl/⌘ 0', 'Fit whole map'],
   ['Delete / Backspace', 'Delete selection (or last draft point)'],
   ['Arrows', 'Nudge selection (+Shift: ×10)'],
   ['Esc', 'Cancel drawing / clear selection'],
@@ -19,9 +19,10 @@ const GENERAL: [string, string][] = [
   ['Shift [ / ]', 'Brush strength'],
   ['Alt + wheel', 'Brush radius'],
   ['Shift or Alt (painting)', 'Invert raise↔lower, paint↔erase, hide↔reveal'],
-  ['1 – 7', 'Pick biome while painting'],
+  ['1 – 8', 'Pick biome while painting'],
   ['Space + drag · middle/right drag', 'Pan'],
   ['Wheel · pinch', 'Zoom at cursor'],
+  ['\\', 'Hide or show the right panel'],
   ['?', 'This help'],
 ];
 

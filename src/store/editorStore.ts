@@ -8,6 +8,7 @@ import type { BorderStyle, LabelFont, RoadStyle, SelectionRef, TerritoryType } f
 
 export type ToolId =
   | 'select'
+  | 'info'
   | 'pan'
   | 'raise'
   | 'lower'
@@ -114,6 +115,8 @@ interface EditorState {
   geoListOpen: boolean;
   /** Units for areas and distances in the geography panels. */
   units: Units;
+  /** The right-hand panel is hidden to give the map more room (remembered per browser). */
+  panelHidden: boolean;
 
   setTool(t: ToolId): void;
   setBrush(g: BrushGroup, p: Partial<BrushParams>): void;
@@ -142,6 +145,24 @@ export function setUnits(units: Units) {
     localStorage.setItem('loremapper.units', units);
   } catch {
     // remembering the choice is a convenience only
+  }
+}
+
+export function togglePanel(show?: boolean) {
+  const hidden = show === undefined ? !useEditor.getState().panelHidden : !show;
+  useEditor.getState().set({ panelHidden: hidden });
+  try {
+    localStorage.setItem('loremapper.panel', hidden ? 'hidden' : 'shown');
+  } catch {
+    // remembering the choice is a convenience only
+  }
+}
+
+function storedPanelHidden(): boolean {
+  try {
+    return localStorage.getItem('loremapper.panel') === 'hidden';
+  } catch {
+    return false;
   }
 }
 
@@ -203,6 +224,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   geoBusy: false,
   geoListOpen: false,
   units: storedUnits(),
+  panelHidden: storedPanelHidden(),
 
   setTool(t) {
     const cur = get().tool;

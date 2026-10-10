@@ -24,13 +24,14 @@ import { history } from '../model/history';
 import type { MapDocument, MapLabel, PathFeature, SelectionRef, Territory, Vec2 } from '../model/types';
 import { hexToNumber, STYLE_PRESETS } from '../render/styles';
 import { useDoc } from '../store/docStore';
-import { brushGroupOf, useEditor, type ToolId } from '../store/editorStore';
+import { brushGroupOf, togglePanel, useEditor, type ToolId } from '../store/editorStore';
 import { Stroke, type TerrainOp } from '../terrain/brushes';
 import type { TileChange } from '../terrain/TerrainModel';
 import { hitAny, hitPeak, hitVertex, insertionIndex, nearX, objectHandleHit, type HitContext } from './hitTest';
 
 type Drag =
-  | { kind: 'pan'; sx: number; sy: number }
+  // the Info tool pans too; a press that does not move is a click on `info`
+  | { kind: 'pan'; sx: number; sy: number; info?: { x: number; y: number; ox: number; oy: number; moved: boolean } }
   | { kind: 'stroke'; stroke: Stroke; last: Vec2; lastDab: number; erase?: EraseState }
   | { kind: 'move'; start: Vec2; base: MapDocument; refs: SelectionRef[]; moved: boolean; key: string }
   | { kind: 'marquee'; start: Vec2; additive: boolean }
@@ -173,6 +174,7 @@ export class ToolController {
     let c = 'crosshair';
     if (t === 'pan') c = this.drag?.kind === 'pan' ? 'grabbing' : 'grab';
     else if (t === 'select') c = 'default';
+    else if (t === 'info') c = this.drag?.kind === 'pan' && this.drag.info?.moved ? 'grabbing' : 'help';
     else if (brushGroupOf(t)) c = 'none';
     else if (t === 'label') c = 'text';
     this.canvas.style.cursor = c;
@@ -276,8 +278,9 @@ export class ToolController {
     this.alt = e.altKey;
     const [x, y] = this.world(e);
     this.pointer = { ...this.pointer, x, y, inside: true };
-    if (e.button === 1 || e.button === 2 || this.tool === 'pan') {
-      this.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY };
+    if (e.button === 1 || e.button === 2 || this.tool === 'pan' || this.tool === 'info') {
+      const info = e.button === 0 && this.tool === 'info' ? { x, y, ox: e.clientX, oy: e.clientY, moved: false } : undefined;
+      this.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, info };
       this.updateCursorStyle();
       return;
     }
@@ -338,6 +341,11 @@ export class ToolController {
     if (d) {
       switch (d.kind) {
         case 'pan':
+          if (d.info && !d.info.moved) {
+            if (Math.hypot(e.clientX - d.info.ox, e.clientY - d.info.oy) < 4) break;
+            d.info.moved = true;
+            this.updateCursorStyle();
+          }
           editor.renderer.camera.pan(e.clientX - d.sx, e.clientY - d.sy);
           d.sx = e.clientX;
           d.sy = e.clientY;
@@ -417,6 +425,9 @@ export class ToolController {
       return;
     }
     switch (d.kind) {
+      case 'pan':
+        if (d.info && !d.info.moved) this.infoClick(d.info.x, d.info.y);
+        break;
       case 'stroke':
         this.endStroke(d.stroke, d.erase);
         break;
@@ -736,14 +747,22 @@ export class ToolController {
     }
   }
 
+  /** Info tool: show the card of the landmass or water body clicked. */
+  private infoClick(x: number, y: number) {
+    const st = useEditor.getState();
+    st.select([]);
+    if (st.panelHidden) togglePanel(true);
+    void inspectAt(x, y);
+  }
+
   private finishMarquee(d: Extract<Drag, { kind: 'marquee' }>) {
     const m = this.overlay().state.marquee;
     this.overlay().set({ marquee: null });
     editor.requestRender();
     const click = !m || (Math.abs(m.x1 - m.x0) * editor.zoom < 3 && Math.abs(m.y1 - m.y0) * editor.zoom < 3);
     if (click || !m) {
-      // a plain click on empty map: show the landmass or water body there
-      if (!d.additive) void inspectAt(d.start[0], d.start[1]);
+      // a plain click on empty map only deselects (the Info tool shows what is there)
+      if (!d.additive) clearInspect();
       return;
     }
     const x0 = Math.min(m.x0, m.x1);
@@ -1078,6 +1097,10 @@ export class ToolController {
 
   private onKeyDown = (e: KeyboardEvent) => {
     if (isTyping(e)) return;
+    if (e.key === '\\' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      togglePanel();
+      return;
+    }
     // the viewer has no editing shortcuts; Escape still clears what is shown
     if (useEditor.getState().readOnly) {
       if (e.key === 'Escape') {
@@ -1209,6 +1232,7 @@ export class ToolController {
       t: 'label',
       g: 'territory',
       x: 'fog',
+      i: 'info',
       u: 'measure',
       p: 'peak',
     };

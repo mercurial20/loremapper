@@ -1,7 +1,8 @@
+import { X } from 'lucide-react';
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import { Section } from './controls/controls';
-import { kindLabel, useInspectedRegion } from '../editor/geography';
+import { clearInspect, kindLabel, useInspectedRegion } from '../editor/geography';
 import { LandsList, RegionInspector } from './panels/GeographyPanel';
 import { LayersPanel, ViewerLayers } from './panels/LayersPanel';
 import { ViewerInfo } from './panels/ViewerInfo';
@@ -21,6 +22,11 @@ export function RightPanel() {
   const set = useEditor((s) => s.set);
   const objectCount = useDoc((s) => Object.keys(s.doc.objects).length);
   const def = ALL_TOOLS.find((t) => t.id === tool);
+  const closeRegion = (
+    <button className="icon-btn small" onClick={clearInspect} title="Close (Esc)" aria-label="Close">
+      <X size={14} />
+    </button>
+  );
   if (readOnly)
     return (
       <aside className="right-panel viewer-panel">
@@ -31,7 +37,7 @@ export function RightPanel() {
             </Section>
           )}
           {region && sel.length === 0 && (
-            <Section title={kindLabel(region.kind)} className="selection-section">
+            <Section title={kindLabel(region.kind)} className="selection-section" actions={closeRegion}>
               <RegionInspector r={region} />
             </Section>
           )}
@@ -53,7 +59,7 @@ export function RightPanel() {
           </Section>
         )}
         {region && sel.length === 0 && (
-          <Section title={kindLabel(region.kind)} className="selection-section">
+          <Section title={kindLabel(region.kind)} className="selection-section" actions={closeRegion}>
             <RegionInspector r={region} />
           </Section>
         )}

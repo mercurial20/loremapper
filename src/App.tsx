@@ -1,10 +1,10 @@
-import { LoaderCircle } from 'lucide-react';
+import { LoaderCircle, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { surfaceAreaKm2 } from './core/planet';
 import { formatArea } from './core/units';
 import { STYLE_PRESETS } from './render/styles';
 import { useDoc } from './store/docStore';
-import { useEditor } from './store/editorStore';
+import { togglePanel, useEditor } from './store/editorStore';
 import { ExportDialog } from './ui/dialogs/ExportDialog';
 import { GenerateDialog } from './ui/dialogs/GenerateDialog';
 import { PlanetDialog } from './ui/dialogs/PlanetDialog';
@@ -34,6 +34,15 @@ function Toast() {
     <div className={'toast ' + toast.kind} role="status" key={toast.id}>
       {toast.text}
     </div>
+  );
+}
+
+function PanelToggle() {
+  const hidden = useEditor((s) => s.panelHidden);
+  return (
+    <button className="panel-toggle" onClick={() => togglePanel()} title={hidden ? 'Show the panel (\\)' : 'Hide the panel for more map (\\)'} aria-label={hidden ? 'Show the panel' : 'Hide the panel'} aria-pressed={!hidden}>
+      {hidden ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}
+    </button>
   );
 }
 
@@ -142,6 +151,8 @@ export default function App() {
   const assetPanelOpen = useEditor((s) => s.assetPanelOpen);
   const welcome = useEditor((s) => s.welcome);
   const readOnly = useEditor((s) => s.readOnly);
+  // on a phone the panel is a bottom sheet that only opens for a tapped feature, so it is never hidden
+  const panelHidden = useEditor((s) => s.panelHidden) && !(readOnly && window.matchMedia('(max-width: 760px)').matches);
   const style = useDoc((s) => s.doc.view.style);
   const preset = STYLE_PRESETS[style] ?? STYLE_PRESETS.parchment;
   return (
@@ -165,13 +176,16 @@ export default function App() {
           <div className="map-chrome scale">
             <ScaleBar />
           </div>
+          <PanelToggle />
           <Toast />
           {readOnly ? <ViewerNotice /> : <Welcome />}
           <Busy />
         </main>
-        <ErrorBoundary label="Inspector">
-          <RightPanel />
-        </ErrorBoundary>
+        {!panelHidden && (
+          <ErrorBoundary label="Inspector">
+            <RightPanel />
+          </ErrorBoundary>
+        )}
       </div>
       <ErrorBoundary label="Status bar">
         <StatusBar />

@@ -23,12 +23,15 @@ Planned as v1.1: map types, a welcoming start, Earth, global units and a phone /
   - pan, pinch zoom, tap for region or feature info, and layer visibility;
   - edits are refused in the logic, not just hidden;
   - a one-line note points to the desktop for editing.
-- **Community links** in the top bar: GitHub, issues and Reddit.
+- **Community links** always visible in the top bar: GitHub and Reddit (with labels on wide screens) and a feedback button for bug reports and suggestions.
+- **Info tool** (<kbd>I</kbd>): point at land or water to see its name and area in the status bar; click it for its card, which closes with ✕ or <kbd>Esc</kbd>. Dragging with it pans.
+- **Hide the right panel** with the button at the top right of the map or <kbd>\\</kbd>, for more room; the choice is remembered.
 - **Kinds of land for the Raise brush:** Plains (the default), Hills, Plateau and Mountains. Plains, hills and plateaus level off at a natural height instead of rising forever, so a beginner's first strokes make believable lowlands. Moving a slider turns the choice into Custom.
 
 ### Changed
 
 - New planets default to Earth's radius, 6,371 km. Existing maps keep their own.
+- A click on empty map with the Select tool now only clears the selection; measuring land and water moved to the Info tool.
 - Generated rivers follow the lowest ground under them, meet nearby river beds, and end where they first reach the sea.
 
 ### Fixed

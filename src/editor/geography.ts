@@ -68,13 +68,16 @@ export function ensureGeography(): Promise<Geography | null> {
   return promise;
 }
 
+/** The tool that answers "what is here?": Info in the editor, a tap (Select) in the viewer. */
+const asksWhatIsHere = (st: { tool: string; readOnly: boolean }) => st.tool === 'info' || (st.readOnly && st.tool === 'select');
+
 /**
  * Re-measure after terrain edits while something shows the results — or
- * ahead of time while the Select tool is active, so a click answers at once.
+ * ahead of time while the Info tool is active, so hover and click answer at once.
  */
 export function refreshGeographyIfShown() {
   const st = useEditor.getState();
-  if (st.inspect || st.geoListOpen || st.tool === 'select') void ensureGeography();
+  if (st.inspect || st.geoListOpen || asksWhatIsHere(st)) void ensureGeography();
 }
 
 function publish(g: Geography) {
@@ -154,7 +157,7 @@ export function useInspectedRegion(): RegionInfo | null {
 // selecting something else (or anything that clears `inspect`) removes the outline
 useEditor.subscribe((s, prev) => {
   if (!s.inspect && prev.inspect) setOutline(null);
-  if (s.tool === 'select' && prev.tool !== 'select' && editor.model) void ensureGeography();
+  if (asksWhatIsHere(s) && s.tool !== prev.tool && editor.model) void ensureGeography();
 });
 
 // ---------------------------------------------------------------- names

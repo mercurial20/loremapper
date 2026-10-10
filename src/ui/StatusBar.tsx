@@ -1,6 +1,7 @@
 import { BIOMES } from '../core/planet';
 import { formatArea, formatHeight, formatLatLon, formatLength, formatPosition, kmToDisplay, KM_PER_MI } from '../core/units';
 import { editor } from '../editor/Editor';
+import { defaultName, freshGeography, kindLabel, regionAt, regionName } from '../editor/geography';
 import { useDoc } from '../store/docStore';
 import { useEditor, useViewInfo } from '../store/editorStore';
 
@@ -61,6 +62,27 @@ export function ScaleBar() {
   );
 }
 
+/** Info tool: name, kind and size of the landmass or water body under the cursor. */
+function RegionUnderCursor({ x, y }: { x: number; y: number }) {
+  const tool = useEditor((s) => s.tool);
+  const geography = useEditor((s) => s.geography);
+  const busy = useEditor((s) => s.geoBusy);
+  const units = useEditor((s) => s.units);
+  const names = useDoc((s) => s.doc.regionNames);
+  if (tool !== 'info') return null;
+  const g = freshGeography();
+  if (!g || !geography) return <span className="sb-item muted">{busy ? 'Measuring lands and seas…' : ''}</span>;
+  const r = regionAt(g, x, y);
+  if (!r) return null;
+  const name = regionName(g, r, names)?.name || defaultName(geography, r);
+  return (
+    <span className={'sb-item region ' + (r.land ? 'land' : 'sea')}>
+      <b>{name}</b>
+      {name.startsWith(kindLabel(r.kind)) || r.kind === 'ocean' ? '' : ` · ${kindLabel(r.kind)}`} · {formatArea(r.areaKm2, units)}
+    </span>
+  );
+}
+
 export function StatusBar() {
   const cursor = useEditor((s) => s.cursor);
   const stats = useEditor((s) => s.landStats);
@@ -81,6 +103,7 @@ export function StatusBar() {
           </span>
           <span className="sb-item">{cursor.elevation >= 0 ? (cursor.biome >= 0 ? BIOMES[cursor.biome].name : 'Unpainted land') : 'Water'}</span>
           {cursor.fog > 0.02 && <span className="sb-item">Fog {Math.round(cursor.fog * 100)}%</span>}
+          <RegionUnderCursor x={cursor.x} y={cursor.y} />
         </>
       ) : (
         <span className="sb-item muted">{readOnly ? 'Tap the map to see what is there' : 'Move over the map to inspect elevation and coordinates'}</span>

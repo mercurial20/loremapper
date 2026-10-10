@@ -1,5 +1,5 @@
 /** Toolbar tool definitions (name, shortcut, icon, help text). */
-import { Eraser, Hand, MousePointer2, Ruler, Shapes, Type } from 'lucide-react';
+import { Eraser, Hand, Info, MousePointer2, Ruler, Shapes, Type } from 'lucide-react';
 import type { ComponentType, SVGProps } from 'react';
 import type { ToolId } from '../store/editorStore';
 import {
@@ -27,6 +27,7 @@ export interface ToolDef {
 export const TOOL_GROUPS: ToolDef[][] = [
   [
     { id: 'select', name: 'Select & edit', key: 'V', icon: MousePointer2, help: 'Select, move, rotate and scale. Double-click a path/border to add a point, Alt-click to delete one.' },
+    { id: 'info', name: 'Info', key: 'I', icon: Info, help: 'Point at land or water to see its name and size below the map; click for its card with area, coastline, highest point and realms. Drag to pan.' },
     { id: 'pan', name: 'Pan', key: 'H', icon: Hand, help: 'Drag to move the view. Space, middle or right mouse also pan.' },
   ],
   [
