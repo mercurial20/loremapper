@@ -1,7 +1,7 @@
 import { ArrowLeft, Castle, ExternalLink, LoaderCircle } from 'lucide-react';
 import { useState } from 'react';
 import { COMMUNITY_LINKS } from '../community';
-import { flatMap } from '../core/planet';
+import { defaultPlanet, flatMap } from '../core/planet';
 import { formatLength } from '../core/units';
 import { editor } from '../editor/Editor';
 import { generateWorld } from '../editor/generate';
@@ -13,7 +13,8 @@ import { TextField } from './controls/controls';
 /** A small drawing of a world's sketch: land, seas, ranges and volcanoes. */
 function SketchThumb({ preset }: { preset: WorldPreset }) {
   const w = 100;
-  const h = Math.round((100 * preset.map.heightKm) / preset.map.widthKm);
+  const m = preset.map;
+  const h = m.kind === 'planet' ? 50 : Math.round((100 * m.heightKm) / m.widthKm);
   const pts = (p: [number, number][]) => p.map(([u, v]) => `${(u * w).toFixed(1)},${(v * h).toFixed(1)}`).join(' ');
   const sk = preset.sketch;
   return (
@@ -50,7 +51,8 @@ export function WorldPicker({ onBack, onCreated, sample }: { onBack: () => void;
     setError(null);
     try {
       const m = pick.map;
-      await editor.createMap(name.trim() || pick.name, { ...flatMap(m.widthKm, m.heightKm, 'standard'), maxElevation: m.maxElevation }, { source: `world:${pick.id}` });
+      const planet = m.kind === 'planet' ? { ...defaultPlanet('standard'), radiusKm: m.radiusKm } : flatMap(m.widthKm, m.heightKm, 'standard');
+      await editor.createMap(name.trim() || pick.name, { ...planet, maxElevation: m.maxElevation }, { source: `world:${pick.id}` });
       onCreated?.();
       const o = pick.options;
       await generateWorld(
@@ -95,8 +97,10 @@ export function WorldPicker({ onBack, onCreated, sample }: { onBack: () => void;
       <div className="world-detail">
         <p>{pick.description}</p>
         <p className="hint">
-          A flat map of {formatLength(pick.map.widthKm, units)} × {formatLength(pick.map.heightKm, units)}. The generator builds its relief, rivers, climate and towns, so
-          you can reshape everything afterwards.
+          {pick.map.kind === 'planet'
+            ? `A whole planet of ${formatLength(pick.map.radiusKm, units)} radius.`
+            : `A flat map of ${formatLength(pick.map.widthKm, units)} × ${formatLength(pick.map.heightKm, units)}.`}{' '}
+          The generator builds its relief, rivers, climate and towns, so you can reshape everything afterwards.
           {pick.local && ' Kept on this computer only.'}
         </p>
       </div>

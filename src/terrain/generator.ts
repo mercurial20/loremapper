@@ -629,9 +629,8 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
       const x = FT.cosLat[j] * FT.cosLon[i];
       const y = FT.cosLat[j] * FT.sinLon[i];
       const z = FT.sinLat[j];
-      // the coastline from the working grid, frayed at full resolution so it stays fractal down to the cell
-      const cv = coarseH ? sampleAt(coarseH, mid, full.x0 + i + 0.5, full.y0 + j + 0.5) : v;
-      const wasLand = Math.abs(cv) < 90 ? cv + 22 * nD.fbm(x - 5.1, y, z, fineF * 0.6, 3, 0.6) > 0 : cv > 0;
+      // keep the coastline where the working grid put it
+      const wasLand = coarseH ? sampleAt(coarseH, mid, full.x0 + i + 0.5, full.y0 + j + 0.5) > 0 : v > 0;
       const r = rugF[k];
       if (wasLand && r > 0.06) v += r * r * amp * nD.fbm(x, y, z, fineF, 2);
       height[k] = wasLand ? Math.max(1, v) : Math.min(-2, v);
