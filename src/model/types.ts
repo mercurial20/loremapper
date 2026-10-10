@@ -168,7 +168,7 @@ export interface ProjectMeta {
   planet: PlanetSettings;
   /** Seed used for deterministic procedural details (ridges, textures). */
   seed: number;
-  /** Where the terrain came from, when it isn't the user's own (e.g. 'earth-etopo1'). */
+  /** Where the terrain came from, when it isn't the user's own (e.g. a built-in world). */
   source?: string;
 }
 

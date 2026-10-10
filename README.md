@@ -29,7 +29,7 @@ drop in castles and dragons, and hide the unexplored under fog of war.
 
 - **Terrain is real, not just painted.** Every point has an elevation in metres. Mountains cast shade, peaks label themselves ("7,192 m"), coastlines follow the sea level, and contour lines come for free.
 - **Start from an empty ocean or a seed.** Sculpt by hand, or type a seed like `amber-drake-7` and get a whole planet built by plate tectonics: mountain ranges where plates collide, rivers that drain real basins, and deserts, steppes, forests and farmland where the climate puts them. Then keep editing everything by hand.
-- **A planet, a flat map, or Earth itself.** Make a whole round world, a flat map of a kingdom or region (say 500 × 500 km), or start from the real Earth with its coastlines, mountains and sea floor.
+- **A planet or a flat map.** Make a whole round world, or a flat map of a kingdom or region (say 500 × 500 km).
 - **Your art is welcome.** It ships with 57 illustrated map icons, and you can drop in your own PNG, WebP or SVG files. They stay in your library.
 - **Built for game masters.** Paint fog of war over unexplored lands and export a player-safe version of the map.
 - **Nothing leaves your computer.** There's no account and no cloud. Maps are saved automatically in your browser. Use it [online](https://mercurial20.github.io/loremapper/) with nothing to install, or run your own copy with one command.
@@ -197,10 +197,9 @@ Actions variable named `CF_BEACON_TOKEN` in your fork.
 <td><b>1. Create a world.</b><br/>The first time you open Loremapper (and later from <b>Maps → New map</b>), choose how to begin:
 <ul>
 <li><b>Generate a world</b>;</li>
-<li><b>Start from Earth</b>;</li>
 <li>an <b>Empty map</b>.</li>
 </ul>
-Generated and empty maps can be a <b>Planet map</b> or a <b>Flat map</b>:
+Either can be a <b>Planet map</b> or a <b>Flat map</b>:
 <ul>
 <li>a planet wraps east–west and has poles; you set its radius (Earth's 6,371 km by default) and its detail;</li>
 <li>a flat map is a rectangle with the same scale everywhere; you set its width and height.</li>
@@ -300,13 +299,12 @@ Switch styles any time from **View**: parchment, colourful fantasy atlas, clean
 political or shaded relief. You can also toggle contour lines, the height
 overlay, a latitude/longitude grid, peak markers and coastal ripples.
 
-### Planets, flat maps and Earth
+### Planets and flat maps
 
 | | |
 |---|---|
 | **Planet map** | A whole round world: an equirectangular map that wraps east–west, with poles, latitude and longitude. **View → Repeat map horizontally** shows it once instead of repeating it sideways; the planet itself stays continuous. |
 | **Flat map** | A rectangle of fixed size with the same scale everywhere: a kingdom, a region, a continent. No poles or wrapping; distances and areas are plain plane measurements. Every tool works on it. The generator builds continents, rivers and climates on it too, with a **Climate** zone from tropical to polar. |
-| **Start from Earth** | Earth's real elevation and sea floor (NOAA ETOPO1, about 10 km per cell, sea level 0 m). Nothing invented is added, so you can redraw it as your own. The data (8 MB) downloads only when you choose Earth. |
 
 ### Metric or imperial
 
@@ -441,7 +439,6 @@ So far testing has been on macOS. Windows and Linux reports are very welcome.
 - Near the poles, brushes keep their real size in km, so they look very wide on the flat map.
 - Editing is desktop-only; phones and tablets get a read-only viewer.
 - Planets are shown in the equirectangular projection only; polar projections aren't available yet.
-- Earth comes at the standard detail (about 10 km per cell). Each cell holds its average height, so the highest cells reach about 6,400 m rather than Everest's summit.
 
 ## ✅ Testing done for this beta
 
@@ -510,7 +507,6 @@ non-commercial hobby project.
 - Fonts: Cinzel, EB Garamond, IM Fell English and Inter, under the SIL Open
   Font License 1.1, bundled via [Fontsource](https://fontsource.org).
 - Libraries: React, PixiJS, Zustand, idb, fflate and Lucide icons.
-- Earth elevation: NOAA NGDC ETOPO1 Global Relief Model (Amante & Eakins 2009), public domain.
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details.
 

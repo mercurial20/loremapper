@@ -1,8 +1,7 @@
-import { ArrowLeft, Earth, Globe2, LoaderCircle, Map as MapIcon, Square, Upload, WandSparkles } from 'lucide-react';
+import { ArrowLeft, Globe2, Map as MapIcon, Square, Upload, WandSparkles } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { defaultPlanet, flatMap, FLAT_PRESETS, GRID_PRESETS, surfaceAreaKm2, type GridPreset } from '../core/planet';
 import { formatArea, formatLength, KM_PER_MI } from '../core/units';
-import { EARTH_CREDIT, EARTH_RADIUS_KM, loadEarth } from '../editor/earth';
 import { editor } from '../editor/Editor';
 import { importProject } from '../editor/exporter';
 import { generateWorld } from '../editor/generate';
@@ -10,7 +9,7 @@ import { useEditor } from '../store/editorStore';
 import { MeasureField, Select, TextField } from './controls/controls';
 import { UnitsSwitch } from './UnitsSwitch';
 
-type Start = 'generate' | 'earth' | 'empty';
+type Start = 'generate' | 'empty';
 type Kind = 'planet' | 'flat';
 
 function Card({ icon, title, children, onClick, on }: { icon: ReactNode; title: string; children: ReactNode; onClick: () => void; on?: boolean }) {
@@ -24,7 +23,7 @@ function Card({ icon, title, children, onClick, on }: { icon: ReactNode; title: 
 }
 
 /**
- * How to begin a new map: generate one, start from the real Earth, or start
+ * How to begin a new map: generate one or start
  * empty — as a planet or a flat map. Used on first launch and for New map.
  */
 export function NewMapFlow({ onCancel, onCreated }: { onCancel?: () => void; onCreated?: () => void }) {
@@ -60,33 +59,13 @@ export function NewMapFlow({ onCancel, onCreated }: { onCancel?: () => void; onC
       setWorking(false);
     }
   };
-  const createEarth = async () => {
-    setWorking(true);
-    setError(null);
-    set({ busy: 'Loading Earth (≈ 8 MB, once)…' });
-    try {
-      const heights = await loadEarth();
-      set({ busy: 'Building the map…' });
-      await editor.createMap(name.trim() || 'Earth', { ...defaultPlanet('standard'), radiusKm: EARTH_RADIUS_KM, seaLevel: 0, landFraction: 0.29 }, { heights, source: 'earth-etopo1' });
-      onCreated?.();
-      notify('Earth is ready — every coast, mountain and sea floor is editable');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      set({ busy: null });
-      setWorking(false);
-    }
-  };
 
   if (!start)
     return (
       <div className="new-map">
-        <div className="start-cards">
+        <div className="start-cards two">
           <Card icon={<WandSparkles size={22} />} title="Generate a world" onClick={() => setStart('generate')}>
             Continents, climates and rivers from a seed, as a planet or a flat map. Then edit everything.
-          </Card>
-          <Card icon={<Earth size={22} />} title="Start from Earth" onClick={() => setStart('earth')}>
-            Our planet with real coastlines, mountains and sea floor, ready to change into your own.
           </Card>
           <Card icon={<MapIcon size={22} />} title="Empty map" onClick={() => setStart('empty')}>
             An ocean planet or a blank flat canvas. Raise the land yourself.
@@ -128,35 +107,6 @@ export function NewMapFlow({ onCancel, onCreated }: { onCancel?: () => void; onC
       <ArrowLeft size={13} /> Back
     </button>
   );
-
-  if (start === 'earth')
-    return (
-      <div className="new-map">
-        <div className="earth-intro">
-          <Earth size={36} />
-          <div>
-            <h3>Start from Earth</h3>
-            <p className="hint">
-              A {formatLength(EARTH_RADIUS_KM, units)}-radius planet with Earth’s real coastlines, mountains and ocean floor (about 10 km per cell, sea level at 0). Nothing else is
-              added: no invented towns or borders. Sculpt, paint and draw on it like any other map.
-            </p>
-            <p className="hint small">{EARTH_CREDIT}.</p>
-          </div>
-        </div>
-        <TextField label="Name" value={name} placeholder="Earth" onChange={setName} />
-        {error && (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
-        )}
-        <div className="new-map-foot">
-          {back}
-          <button className="btn primary" onClick={createEarth} disabled={working}>
-            {working ? <LoaderCircle size={14} className="spin" /> : <Earth size={14} />} {error ? 'Try again' : 'Create Earth map'}
-          </button>
-        </div>
-      </div>
-    );
 
   const flat = kind === 'flat';
   const cell = flat ? (planet.cellKm ?? 1) : (Math.PI * planet.radiusKm) / planet.gridHeight;
@@ -264,19 +214,6 @@ function ViewerStart() {
         open Loremapper in a desktop browser.
       </p>
       <div className="start-cards two">
-        <Card
-          icon={<Earth size={22} />}
-          title="Explore Earth"
-          onClick={() =>
-            void run(async () => {
-              set({ busy: 'Loading Earth (≈ 8 MB, once)…' });
-              const heights = await loadEarth();
-              await editor.createMap('Earth', { ...defaultPlanet('standard'), radiusKm: EARTH_RADIUS_KM, seaLevel: 0, landFraction: 0.29 }, { heights, source: 'earth-etopo1' });
-            })
-          }
-        >
-          Real coastlines, mountains and sea floor.
-        </Card>
         <Card
           icon={<WandSparkles size={22} />}
           title="Explore a sample world"

@@ -6,17 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-Planned as v1.1: map types, a welcoming start, Earth, global units and a phone / tablet viewer.
+Planned as v1.1: map types, a welcoming start, global units and a phone / tablet viewer.
 
 ### Added
 
-- **Welcome screen on first launch.** It offers **Generate a world**, **Start from Earth** or an **Empty map**; the same choices back **Maps → New map**. A browser that already has maps opens the last one as before.
+- **Welcome screen on first launch.** It offers **Generate a world** or an **Empty map**; the same choices back **Maps → New map**. A browser that already has maps opens the last one as before.
 - **Flat maps:**
   - rectangles of fixed physical size (default 500 × 500 km, or 400 × 400 mi in imperial), any aspect ratio;
   - uniform scale, no poles and no wrapping, with planar distances and areas;
   - all tools work on them, as do Lands & seas and export;
   - the generator builds them as a patch of a virtual planet, so tectonics, rivers and biomes carry over, and adds a climate zone setting.
-- **Start from Earth:** real elevation and bathymetry from NOAA ETOPO1 (public domain), preprocessed to the standard 4096 × 2048 grid. It is an 8 MB download, fetched only when chosen, with a clear error and retry if it fails.
 - **Global metric / imperial switch** in the top bar (km, km², m / mi, mi², ft). It applies everywhere and is remembered; stored maps never change.
 - **"Repeat map horizontally"** view option for planets.
 - **Read-only viewer on phones and tablets:**

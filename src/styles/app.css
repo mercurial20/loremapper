@@ -2059,20 +2059,6 @@ input[type='range']::-moz-range-thumb {
 .new-map-foot > :last-child:not(:first-child) {
   margin-left: auto;
 }
-.earth-intro {
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  color: var(--accent-2);
-}
-.earth-intro h3 {
-  margin: 0 0 4px;
-  color: var(--text);
-}
-.earth-intro .hint.small {
-  font-size: 11px;
-  margin-top: 6px;
-}
 .form-error {
   margin: 0;
   padding: 8px 10px;

@@ -107,7 +107,7 @@ class Editor {
 
   /**
    * Create and open a new map with the given settings. `heights` (full
-   * resolution, metres) fills the terrain, e.g. for Earth. Never touches
+   * resolution, metres) fills the terrain. Never touches
    * other maps.
    */
   async createMap(name: string, planet: ProjectMeta['planet'], opts: { heights?: Float32Array; source?: string } = {}) {
