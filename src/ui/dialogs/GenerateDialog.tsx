@@ -60,10 +60,10 @@ const PRESETS: Preset[] = [
 ];
 
 const REALISM: { value: Realism; label: string; seconds: number; desc: string }[] = [
-  { value: 'easy', label: 'Easy', seconds: 2.5, desc: 'Tectonic plates, plains and mountain ranges, winds and rain shadows, rivers and biomes.' },
-  { value: 'medium', label: 'Medium', seconds: 3.5, desc: 'Adds light erosion: rivers start to wear down the land.' },
-  { value: 'high', label: 'High', seconds: 6, desc: 'Rivers carve valleys across the whole map.' },
-  { value: 'ultra', label: 'Ultra', seconds: 12, desc: 'Also carves fine valleys at full resolution. The slowest option.' },
+  { value: 'easy', label: 'Easy', seconds: 3, desc: 'Tectonic plates raise the land and rivers wear it into valleys and ridges; winds, rain shadows, rivers and biomes.' },
+  { value: 'medium', label: 'Medium', seconds: 3.5, desc: 'Lets the river network settle further, for longer rivers and cleaner valleys.' },
+  { value: 'high', label: 'High', seconds: 4.5, desc: 'Settles the river network fully and rounds ridges by soil creep.' },
+  { value: 'ultra', label: 'Ultra', seconds: 9, desc: 'Also carves fine valleys at full resolution. The slowest option.' },
 ];
 
 /** Flat maps: the climate at the map's centre, as a latitude on an Earth-like world. */

@@ -206,6 +206,54 @@ export function erode(g: Grid, h: Float32Array, rain: Float32Array | null, itera
   for (let k = 0; k < N; k++) if (h[k] > 0) h[k] = Math.max(2, work[k]);
 }
 
+/**
+ * Relief in equilibrium between uplift and river incision: the steady state
+ * of the stream-power law (Cordonnier et al. 2016; Tzathas et al. 2024). With
+ * n = 1, every reach climbs from its receiver by S = U · A^(−θ) (Flint's law),
+ * so big rivers run nearly flat and the land between them rises into ridges
+ * where uplift is high. `uplift` is the channel steepness in m/km at 1 km² of
+ * upstream area (A in km², rain-weighted when `rain` is given). Flow is routed
+ * over `h`, then again over the result, `passes` times, so the river network
+ * adapts to the relief it creates. Returns metres above the coast.
+ */
+export function steadyState(
+  g: Grid,
+  h: Float32Array,
+  uplift: Float32Array,
+  rain: Float32Array | null,
+  o: { theta: number; maxSlope: number; passes: number },
+  onPass?: (i: number) => void,
+): Float32Array {
+  const N = g.w * g.h;
+  const ws = new DrainWork(N);
+  const out = new Float32Array(N);
+  // routing surface: jittered a little so flow over even ground wanders
+  // instead of running in the grid's eight straight directions
+  const route = new Float32Array(N);
+  const jitter = (src: Float32Array, seed: number) => {
+    for (let k = 0; k < N; k++) route[k] = src[k] > 0 ? src[k] * (1 + 0.04 * (cellJitter(k * 7 + seed) - 0.5)) + 6 * cellJitter(k + seed * 977) + 1e-3 : h[k];
+  };
+  jitter(h, 0);
+  for (let pass = 0; pass < o.passes; pass++) {
+    const d = drain(g, route, true, ws);
+    const A = accumulate(g, d, rain, ws.A);
+    out.fill(0);
+    for (let n = 0; n < d.count; n++) {
+      const k = d.order[n];
+      if (h[k] <= 0) continue;
+      const r = d.rcv[k];
+      const base = r >= 0 && h[r] > 0 ? out[r] : 0;
+      // hillslopes steeper than about 35° fail in landslides, whatever the uplift
+      const slope = Math.min(o.maxSlope, uplift[k] * Math.pow(Math.max(A[k], 1e-3), -o.theta));
+      out[k] = base + slope * (r >= 0 ? stepKm(g, k, r) : dyKm(g, (k / g.w) | 0));
+    }
+    onPass?.(pass);
+    // the next pass routes over this relief (sea stays sea)
+    if (pass + 1 < o.passes) jitter(out, pass + 1);
+  }
+  return out;
+}
+
 /** Gentle hillslope diffusion on land (softens knife-edge noise between valleys). */
 export function diffuse(g: Grid, h: Float32Array, passes: number, rate = 0.18) {
   const { w } = g;

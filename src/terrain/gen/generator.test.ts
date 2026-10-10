@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Simplex3 } from '../../core/noise3';
 import { carveRivers, generate, type GenParams } from '../generator';
 import { cellAreaKm2, components, makeGrid, sampleAt } from './grid';
+import { drain, steadyState } from './hydrology';
 
 const params = (o: Partial<GenParams>): GenParams => ({
   type: 'continents',
@@ -133,4 +134,37 @@ describe('world generator', () => {
     expect(edgeLand).toBe(0);
     for (const rv of r.rivers) for (const [x] of rv.points) expect(x).toBeGreaterThanOrEqual(0);
   });
+});
+
+describe('relief from uplift and erosion', () => {
+  // an island of land in the middle of a small regional grid, ringed by sea
+  const g = makeGrid(64, 64, 6371, 1, { x0: 0, y0: 0, w: 64, h: 64 });
+  const sea = new Float32Array(64 * 64);
+  for (let j = 0; j < 64; j++) for (let i = 0; i < 64; i++) sea[j * 64 + i] = Math.hypot(i - 31.5, j - 31.5) < 24 ? 10 + Math.hypot(i - 31.5, j - 31.5) * -0.1 + 30 : -100;
+  const solve = (U: number) => steadyState(g, sea, new Float32Array(64 * 64).fill(U), null, { theta: 0.45, maxSlope: 700, passes: 3 });
+
+  it('rises steadily from the coast: every cell sits above the one it drains into', () => {
+    const h = solve(100);
+    const route = new Float32Array(64 * 64);
+    for (let k = 0; k < route.length; k++) route[k] = sea[k] > 0 ? Math.max(1e-3, h[k]) : sea[k];
+    const d = drain(g, route, false);
+    let checked = 0;
+    for (let n = 0; n < d.count; n++) {
+      const k = d.order[n];
+      const r = d.rcv[k];
+      if (sea[k] <= 0 || r < 0 || sea[r] <= 0) continue;
+      expect(h[k]).toBeGreaterThanOrEqual(h[r] - 1e-3);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(1000);
+    for (let k = 0; k < h.length; k++) if (sea[k] <= 0) expect(h[k]).toBe(0);
+  });
+
+  it('scales with uplift: twice the uplift, twice the relief', () => {
+    const a = solve(50);
+    const b = solve(100);
+    const max = (f: Float32Array) => f.reduce((m, v) => Math.max(m, v), 0);
+    expect(max(b) / max(a)).toBeCloseTo(2, 1);
+  });
+
 });

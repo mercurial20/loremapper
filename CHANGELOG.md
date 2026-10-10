@@ -29,6 +29,12 @@ Planned as v1.1: map types, a welcoming start, global units and a phone / tablet
 
 ### Changed
 
+- **World generator version 3: relief from uplift and erosion.** Plate tectonics now sets how fast each region rises, and the heights are the steady state of that uplift against river incision (the stream-power law, after Cordonnier et al. 2016 and Tzathas et al. 2024). Ranges get branching valleys and sharp ridges, plains stay low, and wetter land wears lower. Compared with Earth's relief (ETOPO1) at the same resolution, generated worlds now match:
+  - its distribution of land elevations (mean ≈ 650–840 m, Earth ≈ 690 m);
+  - its slopes (median ≈ 2.0–2.6 m/km, Earth 2.55);
+  - its river-basin shape: Hack's exponent ≈ 0.44–0.48, against 0.39–0.45 before and Earth's 0.56.
+
+  The same seed builds a different world than in version 2.
 - New planets default to Earth's radius, 6,371 km. Existing maps keep their own.
 - A click on empty map with the Select tool now only clears the selection; measuring land and water moved to the Info tool.
 - Generated rivers follow the lowest ground under them, meet nearby river beds, and end where they first reach the sea.

@@ -2,16 +2,18 @@ import { clamp, mulberry32, smoothstep } from '../core/math';
 import { Simplex3, subSeed } from '../core/noise3';
 import { BIOME_CHANNELS } from '../core/planet';
 import { biomeWeights, climate, type Climate } from './gen/climate';
-import { components, distanceField, dyKm, latOf, lonOf, makeGrid, mercatorPatch, radPerCell, resample, resampleFromSphere, sampleAt, sphereTables, thresholdForFraction, type Grid } from './gen/grid';
-import { accumulate, diffuse, drain, erode, traceRivers, type Drainage } from './gen/hydrology';
+import { blurKm, components, distanceField, dyKm, latOf, lonOf, makeGrid, mercatorPatch, radPerCell, resample, resampleFromSphere, sampleAt, sphereTables, thresholdForFraction, type Grid } from './gen/grid';
+import { accumulate, diffuse, drain, erode, steadyState, traceRivers, type Drainage } from './gen/hydrology';
 import { layoutMismatch, plateBase, tectonics, type Layout, type Tectonics } from './gen/plates';
 
 /**
- * World generator, version 2: plate tectonics, plains / hills / mountain
- * belts, wind-driven climate, drainage-basin rivers and (at higher realism)
- * stream-power erosion. Deterministic: one version + settings + seed = one map.
+ * World generator, version 3: plate tectonics set where land rises and how
+ * fast; the relief is the steady state of that uplift against river incision
+ * (stream-power law), so valleys, ridges and river networks follow real
+ * scaling laws. Wind-driven climate, drainage-basin rivers and biomes.
+ * Deterministic: one version + settings + seed = one map.
  */
-export const GENERATOR_VERSION = 2;
+export const GENERATOR_VERSION = 3;
 
 export type GenType = 'continents' | 'pangaea' | 'island' | 'archipelago';
 export type Realism = 'easy' | 'medium' | 'high' | 'ultra';
@@ -84,8 +86,15 @@ function layoutFor(p: GenParams): Layout {
 const gauss = (x: number, w: number) => Math.exp(-(x / w) * (x / w));
 /** Erodibility for the stream-power law (per √km² of rain-weighted upstream area, per km). */
 const ERODE_K = 0.02;
-/** World position (cells) of the centre of grid cell k. */
-const gridXY = (g: Grid, k: number): [number, number] => [g.x0 + ((k % g.w) + 0.5) * g.step, g.y0 + (((k / g.w) | 0) + 0.5) * g.step];
+/**
+ * Channel steepness by setting, m/km at 1 km² of upstream area: S = U · A^(−θ).
+ * Earth's rivers span roughly 20 (cratons) to 1000+ (Himalaya) on this scale.
+ */
+const UPLIFT = { plain: 20, hills: 110, range: 700, old: 180, arc: 300 };
+/** Concavity of river profiles (Flint's law); 0.45 is the usual reference value. */
+const THETA = 0.45;
+/** About 35°: steeper hillslopes fail. */
+const MAX_SLOPE_M_PER_KM = 700;
 
 /** Evaluate a function of the unit-sphere position on every cell of a grid. */
 function lowField(g: Grid, f: (x: number, y: number, z: number) => number): Float32Array {
@@ -403,13 +412,15 @@ function paintBiomes(
     for (let i = 0; i < bg.w; i++) {
       const wx = (bg.x0 + i) * 2 + 1;
       const wy = (bg.y0 + j) * 2 + 1;
-      const e = sampleAt(h, mid, wx, wy);
-      if (e <= 0) continue;
       // nearest working-grid cell for the discrete fields
       let mi = Math.floor((wx - mid.x0) / mid.step);
       const mj = Math.min(mid.h - 1, Math.max(0, Math.floor((wy - mid.y0) / mid.step)));
       mi = mid.wrap ? ((mi % mid.w) + mid.w) % mid.w : Math.min(mid.w - 1, Math.max(0, mi));
       const mk = mj * mid.w + mi;
+      // coastal lowlands sit only metres above the sea: land if either the cell or its neighbourhood is
+      let e = sampleAt(h, mid, wx, wy);
+      if (e <= 0 && h[mk] <= 0) continue;
+      e = Math.max(e, h[mk], 1);
       const dRiver = riv.dist[mk];
       const bigness = riv.near[mk] >= 0 ? smoothstep(3, 9, size[riv.near[mk]]) : 0;
       const lat = latOf(mid, wy);
@@ -489,8 +500,12 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
 
   // ---- elevation (metres above sea level) on the working grid
   progress('Raising mountains', 0);
+  // h: a first sketch of the relief that only routes the rivers; the land's
+  // final heights come from uplift (U) in balance with river incision
   const h = new Float32Array(N);
   const rug = new Float32Array(N);
+  const U = new Float32Array(N);
+  const built = new Float32Array(N);
   const nA = new Simplex3(subSeed(p.seed, 40));
   const nB = new Simplex3(subSeed(p.seed, 41));
   const nC = new Simplex3(subSeed(p.seed, 42));
@@ -500,6 +515,8 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   const up = (f: (x: number, y: number, z: number) => number) => resample(lowField(lo, f), lo, mid, 'bspline');
   const plateauN = up((x, y, z) => smoothstep(0.12, 0.42, nA.fbm(x, y, z, 2.4, 3)));
   const hillN = up((x, y, z) => smoothstep(-0.05, 0.4, nA.fbm(x + 6.1, y, z, 3.2, 3)));
+  // broad sinking lowlands (sedimentary basins) between rising shields
+  const basinN = up((x, y, z) => 0.3 + 1.1 * smoothstep(-0.35, 0.35, nA.fbm(x - 4.2, y + 1.3, z, 1.8, 3)));
   const seaN = up((x, y, z) => 1.05 + 0.12 * nA.fbm(x, y, z, 2.2, 3) + 0.03 * nB.fbm(x, y, z, 9, 2));
   const maxE = p.maxElevation;
   const rough = clamp(p.roughness, 0, 1);
@@ -531,6 +548,12 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
         const volc = (s.arc[k] > 0.01 ? 2400 * s.arc[k] * (0.35 + 0.65 * smoothstep(-0.2, 0.6, nC.fbm(x, y, z, 20, 2))) : 0) + 3600 * Math.pow(s.hot[k], 1.6);
         const coastSoft = 0.45 + 0.55 * smoothstep(0, 60, d);
         h[k] = Math.max(2, base + plateau + (hills + mtn + oldM + volc) * coastSoft);
+        // channel steepness (m/km at 1 km² of upstream area): tens on plains, hundreds in young ranges
+        const het = 0.65 + 0.7 * (0.5 + 0.5 * nC.fbm(x - 1.7, y, z, 7, 3));
+        U[k] = het * (UPLIFT.plain * basinN[k] + UPLIFT.hills * hillZone * (0.25 + rough) + UPLIFT.range * clamp(p.mountains, 0, 1) * Math.pow(Math.min(1, o), 1.2) + UPLIFT.old * s.old[k] + UPLIFT.arc * s.arc[k]);
+        // what uplift and incision don't make: tablelands and volcanoes
+        // (arcs already rise through uplift; their volcanoes add only cones on top)
+        built[k] = 6 + plateau + 0.45 * volc * coastSoft;
       } else {
         const crust = s.crust[k];
         const shelfW = 45 + 190 * crust * (1 - 0.6 * Math.min(1, s.orogen[k] * 2));
@@ -552,29 +575,27 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
     proj && p.flat
       ? (lat: number) => ((p.flat!.climateLatDeg + (lat / Math.max(1e-6, proj.lat(0))) * (p.flat!.climateSpanDeg / 2)) * Math.PI) / 180
       : undefined;
-  const clim = climate(mid, h, coastKm, { warmth: p.warmth ?? 0, wetness: p.wetness ?? 0, winds: true, seed: subSeed(p.seed, 50), climateLat });
+  const climOpts = { warmth: p.warmth ?? 0, wetness: p.wetness ?? 0, winds: true, seed: subSeed(p.seed, 50), climateLat };
+  let clim = climate(mid, h, coastKm, climOpts);
 
-  // ---- stream-power erosion: grid (relative to the working grid), iterations and erodibility
-  const ER: Record<Realism, { coarser: boolean; iters: number } | null> = {
-    easy: null,
-    medium: { coarser: true, iters: 10 },
-    high: { coarser: false, iters: 24 },
-    ultra: { coarser: false, iters: 24 },
-  };
-  const er = ER[realism];
-  if (er) {
-    const eg = er.coarser ? G(midStep * 2) : mid;
-    const eh = er.coarser ? resample(h, mid, eg, 'bspline') : h.slice();
-    if (er.coarser) for (let k = 0; k < eh.length; k++) if (eh[k] <= 0 && sampleAt(h, mid, ...gridXY(eg, k)) > 0) eh[k] = 1;
-    const before = eh.slice();
-    const rain = er.coarser ? resample(clim.rain, mid, eg, 'bspline') : clim.rain;
-    erode(eg, eh, rain, er.iters, ERODE_K, (i) => progress('Eroding valleys', (i + 1) / er.iters));
-    if (!er.coarser) diffuse(eg, eh, 1);
-    const delta = new Float32Array(eh.length);
-    for (let k = 0; k < eh.length; k++) delta[k] = eh[k] - before[k];
-    const dm = er.coarser ? resample(delta, eg, mid, 'bspline') : delta;
-    for (let k = 0; k < N; k++) if (land[k]) h[k] = Math.max(2, h[k] + dm[k]);
-  }
+  // ---- relief: uplift in balance with river incision (wetter land wears lower); more passes let the network settle
+  const PASSES: Record<Realism, number> = { easy: 2, medium: 3, high: 4, ultra: 4 };
+  const passes = PASSES[realism];
+  const rel = steadyState(mid, h, U, clim.rain, { theta: THETA, maxSlope: MAX_SLOPE_M_PER_KM, passes }, (i) => progress('Carving valleys', (i + 1) / passes));
+  // the highest ranges ease into the chosen summit height instead of piling past it
+  const knee = 0.55 * mtnTop;
+  const soft = (v: number) => (v <= knee ? v : knee + (mtnTop - knee) * Math.tanh((v - knee) / Math.max(1, mtnTop - knee)));
+  for (let k = 0; k < N; k++)
+    if (land[k]) {
+      h[k] = Math.max(2, soft(built[k] + rel[k]));
+      rug[k] = clamp(U[k] / 500, 0.03, 1);
+    }
+  // low, gently uplifted land is shaped more by soil creep than by rivers (a low
+  // Péclet number, Perron et al. 2009): plains come out smooth, ranges stay sharp
+  const creep = blurKm(h, mid, 1.5 * dyKm(mid), 2);
+  for (let k = 0; k < N; k++) if (land[k]) h[k] = Math.max(2, h[k] + (1 - smoothstep(25, 220, U[k])) * 0.5 * (creep[k] - h[k]));
+  diffuse(mid, h, realism === 'easy' ? 1 : 2);
+  clim = climate(mid, h, coastKm, climOpts);
 
   // ---- drainage: closed basins fill into flat alluvial plains; upstream area feeds rivers, swamps and farmland
   progress('Tracing rivers', 0);
