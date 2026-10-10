@@ -1,4 +1,4 @@
-import { ArrowLeft, Globe2, Map as MapIcon, Square, Upload, WandSparkles } from 'lucide-react';
+import { ArrowLeft, Castle, Globe2, Map as MapIcon, Square, Upload, WandSparkles } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { defaultPlanet, flatMap, FLAT_PRESETS, GRID_PRESETS, surfaceAreaKm2, type GridPreset } from '../core/planet';
 import { formatArea, formatLength, KM_PER_MI } from '../core/units';
@@ -8,8 +8,9 @@ import { generateWorld } from '../editor/generate';
 import { useEditor } from '../store/editorStore';
 import { MeasureField, Select, TextField } from './controls/controls';
 import { UnitsSwitch } from './UnitsSwitch';
+import { WorldPicker } from './WorldPicker';
 
-type Start = 'generate' | 'empty';
+type Start = 'generate' | 'world' | 'empty';
 type Kind = 'planet' | 'flat';
 
 function Card({ icon, title, children, onClick, on }: { icon: ReactNode; title: string; children: ReactNode; onClick: () => void; on?: boolean }) {
@@ -23,7 +24,7 @@ function Card({ icon, title, children, onClick, on }: { icon: ReactNode; title: 
 }
 
 /**
- * How to begin a new map: generate one or start
+ * How to begin a new map: generate one, start from a built-in world, or start
  * empty — as a planet or a flat map. Used on first launch and for New map.
  */
 export function NewMapFlow({ onCancel, onCreated }: { onCancel?: () => void; onCreated?: () => void }) {
@@ -63,9 +64,12 @@ export function NewMapFlow({ onCancel, onCreated }: { onCancel?: () => void; onC
   if (!start)
     return (
       <div className="new-map">
-        <div className="start-cards two">
+        <div className="start-cards">
           <Card icon={<WandSparkles size={22} />} title="Generate a world" onClick={() => setStart('generate')}>
             Continents, climates and rivers from a seed, as a planet or a flat map. Then edit everything.
+          </Card>
+          <Card icon={<Castle size={22} />} title="Built-in world" onClick={() => setStart('world')}>
+            Ready-made settings such as an inland sea or an island walled by mountains, generated fresh for you.
           </Card>
           <Card icon={<MapIcon size={22} />} title="Empty map" onClick={() => setStart('empty')}>
             An ocean planet or a blank flat canvas. Raise the land yourself.
@@ -101,6 +105,8 @@ export function NewMapFlow({ onCancel, onCreated }: { onCancel?: () => void; onC
         </div>
       </div>
     );
+
+  if (start === 'world') return <WorldPicker onBack={() => setStart(null)} onCreated={onCreated} />;
 
   const back = (
     <button className="btn ghost small" onClick={() => setStart(null)} disabled={working}>
@@ -194,6 +200,7 @@ function ViewerStart() {
   const notify = useEditor((s) => s.notify);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+  const [worlds, setWorlds] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const run = async (fn: () => Promise<void>) => {
     setWorking(true);
@@ -207,6 +214,7 @@ function ViewerStart() {
       setWorking(false);
     }
   };
+  if (worlds) return <WorldPicker onBack={() => setWorlds(false)} sample />;
   return (
     <div className="new-map">
       <p className="hint">
@@ -214,6 +222,9 @@ function ViewerStart() {
         open Loremapper in a desktop browser.
       </p>
       <div className="start-cards two">
+        <Card icon={<Castle size={22} />} title="Explore a built-in world" onClick={() => setWorlds(true)}>
+          An inland sea, a walled isle, an archipelago and more.
+        </Card>
         <Card
           icon={<WandSparkles size={22} />}
           title="Explore a sample world"

@@ -2067,6 +2067,71 @@ input[type='range']::-moz-range-thumb {
   color: #ffc7c0;
   font-size: 12.5px;
 }
+.world-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.world-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.world-card:hover {
+  border-color: var(--border-2);
+  background: var(--panel-3);
+}
+.world-card.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.world-card b {
+  font-size: 13px;
+}
+.world-card small {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+.world-thumb {
+  width: 100%;
+  height: 84px;
+  border-radius: 6px;
+  background: #2c4a63;
+}
+.world-thumb .sea {
+  fill: #2c4a63;
+}
+.world-thumb .land {
+  fill: #b9ad7c;
+}
+.world-thumb .range {
+  fill: none;
+  stroke: #6e5a40;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.world-thumb .range.old {
+  stroke: #8d7a5c;
+}
+.world-thumb .volcano {
+  fill: #7a3b2a;
+}
+.world-detail p {
+  margin: 0 0 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.world-detail .hint {
+  margin: 0;
+}
 @media (max-width: 720px) {
   .start-cards,
   .start-cards.two {

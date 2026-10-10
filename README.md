@@ -197,9 +197,10 @@ Actions variable named `CF_BEACON_TOKEN` in your fork.
 <td><b>1. Create a world.</b><br/>The first time you open Loremapper (and later from <b>Maps → New map</b>), choose how to begin:
 <ul>
 <li><b>Generate a world</b>;</li>
+<li>a <b>Built-in world</b>: <i>The Inner Sea</i>, <i>The Walled Isle</i>, <i>The Thousand Isles</i> or <i>The Spine of the World</i>;</li>
 <li>an <b>Empty map</b>.</li>
 </ul>
-Either can be a <b>Planet map</b> or a <b>Flat map</b>:
+Generated and empty maps can be a <b>Planet map</b> or a <b>Flat map</b>:
 <ul>
 <li>a planet wraps east–west and has poles; you set its radius (Earth's 6,371 km by default) and its detail;</li>
 <li>a flat map is a rectangle with the same scale everywhere; you set its width and height.</li>

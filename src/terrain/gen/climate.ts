@@ -110,7 +110,8 @@ export function climate(g: Grid, h: Float32Array, coastKm: Float32Array, o: Clim
   for (let j = 0; j < g.h; j++) {
     const lat = (rowLat(g, j) * 180) / Math.PI;
     const s = Math.sin(rowLat(g, j));
-    const base = 27 - 32 * s * s - 12 * s * s * s * s + o.warmth * 7;
+    // sea-level annual mean by latitude, close to Earth's zonal means (27 °C at the equator, ≈ 10 °C at 45°, ≈ 0 °C at 60°)
+    const base = 27 - 28 * s * s - 10 * s * s * s * s + o.warmth * 7;
     for (let i = 0; i < g.w; i++) {
       const k = j * g.w + i;
       const x = T.cosLat[j] * T.cosLon[i];
@@ -249,7 +250,8 @@ export function biomeWeights(c: BiomeInput, out: Float32Array) {
   // effective moisture: rain against evaporation, and against a long summer drought
   const m = c.r * (1.25 - 0.5 * clamp01(t / 30)) * (1 - 0.35 * c.dry);
   const flat = 1 - smoothstep(5, 22, slope);
-  const snow = smoothstep(-3, -11, t);
+  // glaciers hold where the mean annual temperature stays below about −6 °C (the Alps: ≈ 2,800 m)
+  const snow = smoothstep(-5, -12, t);
   const tundra = smoothstep(1, -6, t) * (1 - snow);
   const rock = clamp01(smoothstep(2400, 3900, elev) + 0.75 * smoothstep(35, 90, slope) * smoothstep(700, 1600, elev)) * (1 - snow);
   const oasis = c.bigRiver;

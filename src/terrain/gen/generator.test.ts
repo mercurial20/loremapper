@@ -168,3 +168,40 @@ describe('relief from uplift and erosion', () => {
   });
 
 });
+
+describe('built-in world sketches', () => {
+  it('puts land where the sketch draws it and sea elsewhere', () => {
+    const W = 512;
+    const H = 512;
+    const p = params({
+      W,
+      H,
+      rivers: 0,
+      flat: { spanLonDeg: 90, climateLatDeg: 40, climateSpanDeg: 10 },
+      sketch: { land: [[[0.3, 0.3], [0.7, 0.3], [0.7, 0.7], [0.3, 0.7]]], ranges: [{ pts: [[0.4, 0.5], [0.6, 0.5]], width: 0.05, height: 1 }] },
+    });
+    const r = generate(p);
+    let inLand = 0;
+    let inside = 0;
+    let outLand = 0;
+    let outside = 0;
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const u = x / W;
+        const v = y / H;
+        const land = r.height[y * W + x] > 0;
+        if (u > 0.38 && u < 0.62 && v > 0.38 && v < 0.62) {
+          inside++;
+          if (land) inLand++;
+        } else if (u < 0.2 || u > 0.8 || v < 0.2 || v > 0.8) {
+          outside++;
+          if (land) outLand++;
+        }
+      }
+    expect(inLand / inside).toBeGreaterThan(0.98);
+    expect(outLand / outside).toBeLessThan(0.01);
+    // the drawn range is the high ground
+    const at = (u: number, v: number) => r.height[Math.floor(v * H) * W + Math.floor(u * W)];
+    expect(Math.max(at(0.45, 0.5), at(0.5, 0.5), at(0.55, 0.5))).toBeGreaterThan(Math.max(at(0.35, 0.35), at(0.65, 0.65)));
+  });
+});

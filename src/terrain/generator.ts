@@ -2,6 +2,7 @@ import { clamp, mulberry32, smoothstep } from '../core/math';
 import { Simplex3, subSeed } from '../core/noise3';
 import { BIOME_CHANNELS } from '../core/planet';
 import { biomeWeights, climate, type Climate } from './gen/climate';
+import { sketchClimate, sketchShape, type Shape, type Sketch } from './gen/sketch';
 import { blurKm, components, distanceField, dyKm, latOf, lonOf, makeGrid, mercatorPatch, radPerCell, resample, resampleFromSphere, sampleAt, sphereTables, thresholdForFraction, type Grid } from './gen/grid';
 import { accumulate, diffuse, drain, erode, steadyState, traceRivers, type Drainage } from './gen/hydrology';
 import { layoutMismatch, plateBase, tectonics, type Layout, type Tectonics } from './gen/plates';
@@ -53,6 +54,8 @@ export interface GenParams {
    * band of `climateSpanDeg` from top to bottom.
    */
   flat?: { spanLonDeg: number; climateLatDeg: number; climateSpanDeg: number };
+  /** A drawn layout (built-in worlds): replaces the plate layout; `landFraction` is ignored. */
+  sketch?: Sketch;
 }
 
 export interface GenRiver {
@@ -105,18 +108,6 @@ function lowField(g: Grid, f: (x: number, y: number, z: number) => number): Floa
   return out;
 }
 
-/** Fields the elevation model needs, on the working ("mid") grid. */
-interface Shape {
-  landness: Float32Array;
-  crust: Float32Array;
-  orogen: Float32Array;
-  arc: Float32Array;
-  trench: Float32Array;
-  ridge: Float32Array;
-  rift: Float32Array;
-  old: Float32Array;
-  hot: Float32Array;
-}
 
 /** Hotspot volcanoes splatted onto a grid. */
 function splatHotspots(g: Grid, t: Tectonics): Float32Array {
@@ -474,8 +465,8 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   const N = mid.w * mid.h;
 
   // ---- shape: where land goes
-  const s = whole ? worldShape(p, layout, mid, R, progress) : regionShape(p, mid);
-  const t = thresholdForFraction(s.landness, mid, p.landFraction);
+  const s = p.sketch ? sketchShape(p.sketch, mid, p.seed) : whole ? worldShape(p, layout, mid, R, progress) : regionShape(p, mid);
+  const t = p.sketch ? 0 : thresholdForFraction(s.landness, mid, p.landFraction);
   const isCoast = new Uint8Array(N);
   const land = new Uint8Array(N);
   for (let k = 0; k < N; k++) land[k] = s.landness[k] > t ? 1 : 0;
@@ -581,6 +572,7 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
       : undefined;
   const climOpts = { warmth: p.warmth ?? 0, wetness: p.wetness ?? 0, winds: true, seed: subSeed(p.seed, 50), climateLat };
   let clim = climate(mid, h, coastKm, climOpts);
+  if (p.sketch) sketchClimate(p.sketch, mid, clim.temp, clim.rain);
 
   // ---- relief: uplift in balance with river incision (wetter land wears lower); more passes let the network settle
   const PASSES: Record<Realism, number> = { easy: 2, medium: 3, high: 4, ultra: 4 };
@@ -600,6 +592,7 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   for (let k = 0; k < N; k++) if (land[k]) h[k] = Math.max(2, h[k] + (1 - smoothstep(25, 220, U[k])) * 0.5 * (creep[k] - h[k]));
   diffuse(mid, h, realism === 'easy' ? 1 : 2);
   clim = climate(mid, h, coastKm, climOpts);
+  if (p.sketch) sketchClimate(p.sketch, mid, clim.temp, clim.rain);
 
   // ---- drainage: closed basins fill into flat alluvial plains; upstream area feeds rivers, swamps and farmland
   progress('Tracing rivers', 0);

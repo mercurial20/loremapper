@@ -4,6 +4,7 @@ import { history } from '../model/history';
 import type { MapDocument, MapObject, PathFeature } from '../model/types';
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
+import type { Sketch } from '../terrain/gen/sketch';
 import type { GenParams, GenResult, GenType, Realism, Template } from '../terrain/generator';
 import type { WorkerReply, WorkerRequest } from '../terrain/generator.worker';
 import type { RasterArray } from '../terrain/TileGrid';
@@ -31,6 +32,8 @@ export interface GenerateOptions {
   region: 'view' | 'world';
   /** Flat maps: latitude (degrees) of the climate at the map's centre. */
   climateLat?: number;
+  /** A built-in world's layout (replaces the plate layout). */
+  sketch?: Sketch;
 }
 
 /** Flat maps are generated as a 90°-wide patch of a virtual planet (enough room for several landmasses). */
@@ -74,6 +77,7 @@ export function genParams(o: GenerateOptions, size?: { W: number; H: number }): 
     biomes: o.biomes,
     rivers: size ? 0 : RIVERS[o.rivers][whole ? 0 : 1],
     flat,
+    sketch: whole ? o.sketch : undefined,
   };
 }
 

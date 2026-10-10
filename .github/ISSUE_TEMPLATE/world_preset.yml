@@ -1,0 +1,35 @@
+name: Built-in world suggestion
+description: Suggest a new built-in world for Loremapper's start screen
+labels: [world-preset]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Built-in worlds are original settings: a sketch of land, seas and mountain ranges that the generator turns into a full map.
+        Please describe an original world. Maps of existing books, films, games or anime are copyrighted, so they can't be included.
+  - type: input
+    id: name
+    attributes:
+      label: Name
+      placeholder: The Sunken Crown
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What makes this world interesting?
+      description: Its shape, seas, mountains, climate and what stories it invites.
+    validations:
+      required: true
+  - type: textarea
+    id: layout
+    attributes:
+      label: Rough layout
+      description: Where the land, seas and ranges go, and how big the map is (for example 2,000 × 1,500 km). A sketch or an exported Loremapper image helps a lot.
+  - type: checkboxes
+    id: original
+    attributes:
+      label: Originality
+      options:
+        - label: This world is my own idea, not a map of an existing work.
+          required: true

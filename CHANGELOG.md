@@ -10,12 +10,13 @@ Planned as v1.1: map types, a welcoming start, global units and a phone / tablet
 
 ### Added
 
-- **Welcome screen on first launch.** It offers **Generate a world** or an **Empty map**; the same choices back **Maps → New map**. A browser that already has maps opens the last one as before.
+- **Welcome screen on first launch.** It offers **Generate a world**, a **Built-in world** or an **Empty map**; the same choices back **Maps → New map**. A browser that already has maps opens the last one as before.
 - **Flat maps:**
   - rectangles of fixed physical size (default 500 × 500 km, or 400 × 400 mi in imperial), any aspect ratio;
   - uniform scale, no poles and no wrapping, with planar distances and areas;
   - all tools work on them, as do Lands & seas and export;
   - the generator builds them as a patch of a virtual planet, so tectonics, rivers and biomes carry over, and adds a climate zone setting.
+- **Built-in worlds:** *The Inner Sea*, *The Walled Isle*, *The Thousand Isles* and *The Spine of the World*. Each is a sketch of land, seas, ranges and climate regions that the generator turns into full relief, rivers, biomes and towns. **Suggest a world** opens a GitHub form for new ones (original settings only).
 - **Global metric / imperial switch** in the top bar (km, km², m / mi, mi², ft). It applies everywhere and is remembered; stored maps never change.
 - **"Repeat map horizontally"** view option for planets.
 - **Read-only viewer on phones and tablets:**
