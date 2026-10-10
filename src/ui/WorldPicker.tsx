@@ -5,6 +5,7 @@ import { flatMap } from '../core/planet';
 import { formatLength } from '../core/units';
 import { editor } from '../editor/Editor';
 import { generateWorld } from '../editor/generate';
+import { addWorldFeatures } from '../editor/worldFeatures';
 import { WORLD_PRESETS, type WorldPreset } from '../presets/worlds';
 import { useEditor } from '../store/editorStore';
 import { TextField } from './controls/controls';
@@ -72,6 +73,7 @@ export function WorldPicker({ onBack, onCreated, sample }: { onBack: () => void;
         },
         { sample },
       );
+      if (pick.features) addWorldFeatures(pick.features);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

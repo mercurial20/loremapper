@@ -1,6 +1,6 @@
 import { CanvasTextMetrics, Container, Text, TextStyle } from 'pixi.js';
 import type { LabelFont } from '../model/types';
-import { FONT_FAMILY } from './fonts';
+import { FONT_STACK } from './fonts';
 
 const BASE = 64;
 
@@ -67,7 +67,7 @@ export class TextLabel extends Container {
     this.removeChildren();
     const text = o.uppercase ? o.text.toUpperCase() : o.text;
     this.style = new TextStyle({
-      fontFamily: FONT_FAMILY[o.font],
+      fontFamily: FONT_STACK[o.font],
       fontSize: BASE,
       fontStyle: o.italic ? 'italic' : 'normal',
       fontWeight: o.font === 'display' ? '600' : '400',

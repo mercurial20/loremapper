@@ -1,5 +1,16 @@
 import type { GenerateOptions } from '../editor/generate';
-import type { Sketch } from '../terrain/gen/sketch';
+import type { MapPoint, Sketch } from '../terrain/gen/sketch';
+
+/**
+ * What a built-in world brings besides terrain: realms (their borders follow
+ * the generated coast), named places and the names of seas, bays and islands.
+ * Positions are map fractions, like the sketch.
+ */
+export interface WorldFeatures {
+  realms?: { name: string; color: string; pts: MapPoint[] }[];
+  places?: { name: string; at: MapPoint; kind: 'capital' | 'city' | 'town' | 'village' | 'port' | 'temple' | 'fortress' | 'ruins' }[];
+  names?: { text: string; at: MapPoint; kind: 'ocean' | 'sea' | 'bay' | 'island' | 'region'; rotation?: number }[];
+}
 
 /**
  * A built-in world: a sketch of land, seas and ranges plus generator settings.
@@ -15,6 +26,7 @@ export interface WorldPreset {
   map: { kind: 'flat'; widthKm: number; heightKm: number; maxElevation: number };
   options: Partial<GenerateOptions>;
   sketch: Sketch;
+  features?: WorldFeatures;
   /** Only on this computer (never published). */
   local?: boolean;
 }

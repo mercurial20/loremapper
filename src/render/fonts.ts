@@ -13,6 +13,17 @@ export const FONT_FAMILY: Record<LabelFont, string> = {
   sans: 'Inter Variable',
 };
 
+/**
+ * Font stacks for canvas text: Cinzel and Fell English have no Cyrillic or
+ * Greek, so their letters fall back to Garamond instead of a system font.
+ */
+export const FONT_STACK: Record<LabelFont, string[]> = {
+  display: [FONT_FAMILY.display, FONT_FAMILY.serif, 'serif'],
+  serif: [FONT_FAMILY.serif, 'serif'],
+  script: [FONT_FAMILY.script, FONT_FAMILY.serif, 'serif'],
+  sans: [FONT_FAMILY.sans, 'sans-serif'],
+};
+
 export const FONT_LABEL: Record<LabelFont, string> = {
   display: 'Cinzel (display)',
   serif: 'Garamond (book)',
@@ -22,7 +33,8 @@ export const FONT_LABEL: Record<LabelFont, string> = {
 
 /** Wait until the bundled map fonts are usable by canvas text rendering. */
 export async function ensureFonts() {
-  const loads = Object.values(FONT_FAMILY).flatMap((f) => [document.fonts.load(`400 32px "${f}"`), document.fonts.load(`italic 400 32px "${f}"`)]);
+  // the sample text pulls in the Latin and Cyrillic subsets (fonts load by unicode range)
+  const loads = Object.values(FONT_FAMILY).flatMap((f) => [document.fonts.load(`400 32px "${f}"`, 'Aa Жж'), document.fonts.load(`italic 400 32px "${f}"`, 'Aa Жж')]);
   loads.push(document.fonts.load(`700 32px "${FONT_FAMILY.display}"`));
   await Promise.allSettled(loads);
 }

@@ -17,6 +17,8 @@ Planned as v1.1: map types, a welcoming start, global units and a phone / tablet
   - all tools work on them, as do Lands & seas and export;
   - the generator builds them as a patch of a virtual planet, so tectonics, rivers and biomes carry over, and adds a climate zone setting.
 - **Built-in worlds:** *The Inner Sea*, *The Walled Isle*, *The Thousand Isles* and *The Spine of the World*. Each is a sketch of land, seas, ranges and climate regions that the generator turns into full relief, rivers, biomes and towns. **Suggest a world** opens a GitHub form for new ones (original settings only).
+- **Built-in worlds can bring realms, places and names:** realm borders are traced along the generated coast, every land cell belongs to one realm, and places come with their name labels.
+- **Cyrillic and Greek map labels** use Garamond where the display or old-hand fonts have no such letters, instead of a system font.
 - **Four new map styles:** *Anime* (cel-shaded bands, flat colour levels, bold outlines), *Strategy game*, *Pixel art* and *Antique engraving* (shadows drawn as hatching).
 - **A simpler View menu:** styles as small previews in one grid, one relief slider, and map overlays as on/off chips whose settings appear only when they're on.
 - **Global metric / imperial switch** in the top bar (km, km², m / mi, mi², ft). It applies everywhere and is remembered; stored maps never change.

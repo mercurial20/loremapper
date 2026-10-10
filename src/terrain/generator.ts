@@ -577,7 +577,9 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   // ---- relief: uplift in balance with river incision (wetter land wears lower); more passes let the network settle
   const PASSES: Record<Realism, number> = { easy: 2, medium: 3, high: 4, ultra: 4 };
   const passes = PASSES[realism];
-  const rel = steadyState(mid, h, U, clim.rain, { theta: THETA, maxSlope: MAX_SLOPE_M_PER_KM, passes }, (i) => progress('Carving valleys', (i + 1) / passes));
+  // dry land still wears down in flash floods: incision never sees less than a modest rainfall
+  const erosionRain = clim.rain.map((r) => Math.max(0.4, r));
+  const rel = steadyState(mid, h, U, erosionRain, { theta: THETA, maxSlope: MAX_SLOPE_M_PER_KM, passes }, (i) => progress('Carving valleys', (i + 1) / passes));
   // the highest ranges ease into the chosen summit height instead of piling past it
   const knee = 0.55 * mtnTop;
   const soft = (v: number) => (v <= knee ? v : knee + (mtnTop - knee) * Math.tanh((v - knee) / Math.max(1, mtnTop - knee)));
