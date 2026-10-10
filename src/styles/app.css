@@ -250,6 +250,7 @@ code {
 }
 
 .btn {
+  text-decoration: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2259,4 +2260,39 @@ input[type='range']::-moz-range-thumb {
   position: absolute;
   top: 0;
   right: 0;
+}
+
+/* ------------------------------------------------------------ share after export */
+
+.share-body {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.share-body p {
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+.share-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 14px;
+  background: rgba(255, 69, 0, 0.14);
+  color: #ff4500;
+}
+.share-hide {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.share-foot {
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }

@@ -9,6 +9,7 @@ import { ExportDialog } from './ui/dialogs/ExportDialog';
 import { GenerateDialog } from './ui/dialogs/GenerateDialog';
 import { PlanetDialog } from './ui/dialogs/PlanetDialog';
 import { ProjectsDialog } from './ui/dialogs/ProjectsDialog';
+import { ShareDialog } from './ui/dialogs/ShareDialog';
 import { ShortcutsDialog } from './ui/dialogs/ShortcutsDialog';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { CompassRose } from './ui/icons';
@@ -142,6 +143,8 @@ function Dialogs() {
       return <ShortcutsDialog />;
     case 'newProject':
       return <NewMapDialog />;
+    case 'share':
+      return <ShareDialog />;
     default:
       return null;
   }

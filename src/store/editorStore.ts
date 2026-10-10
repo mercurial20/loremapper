@@ -58,7 +58,7 @@ export interface CursorInfo {
   fog: number;
 }
 
-export type DialogId = null | 'projects' | 'export' | 'generate' | 'planet' | 'shortcuts' | 'newProject';
+export type DialogId = null | 'projects' | 'export' | 'generate' | 'planet' | 'shortcuts' | 'newProject' | 'share';
 
 export type SaveStatus = 'saved' | 'saving' | 'pending' | 'error';
 

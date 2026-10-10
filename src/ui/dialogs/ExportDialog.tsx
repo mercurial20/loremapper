@@ -5,6 +5,7 @@ import { useEditor } from '../../store/editorStore';
 import { useDoc } from '../../store/docStore';
 import { Segmented, Toggle } from '../controls/controls';
 import { Modal } from './Modal';
+import { shouldOfferShare } from '../share';
 
 const WIDTHS = [1024, 2048, 4096, 8192, 12288];
 
@@ -23,10 +24,11 @@ export function ExportDialog() {
   const close = () => set({ dialog: null });
   const size = exportSize({ region, width });
   const mp = (size.width * size.height) / 1e6;
-  const run = async (fn: () => Promise<void>) => {
+  const run = async (fn: () => Promise<void>, offerShare = false) => {
     close();
     try {
       await fn();
+      if (offerShare && shouldOfferShare()) set({ dialog: 'share' });
     } catch (e) {
       notify('Export failed: ' + (e instanceof Error ? e.message : String(e)), 'error');
     }
@@ -76,7 +78,7 @@ export function ExportDialog() {
             Output: {size.width.toLocaleString()} × {size.height.toLocaleString()} px ({mp.toFixed(1)} MP). Large images are rendered in tiles and may take a moment.
           </p>
           <div className="btn-row end">
-            <button className="btn primary" disabled={mp > 160} onClick={() => run(() => exportImage({ region, width, fog, includePeaks: peaks }))}>
+            <button className="btn primary" disabled={mp > 160} onClick={() => run(() => exportImage({ region, width, fog, includePeaks: peaks }), true)}>
               <Image size={14} /> Export PNG
             </button>
           </div>
