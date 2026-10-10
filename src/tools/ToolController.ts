@@ -1,4 +1,5 @@
 import { assetLibrary } from '../assets/library';
+import { clearInspect, inspectAt } from '../editor/geography';
 import { formatKm } from '../core/geo';
 import { clamp, simplifyPath, uid } from '../core/math';
 import { BIOMES } from '../core/planet';
@@ -722,12 +723,16 @@ export class ToolController {
     const m = this.overlay().state.marquee;
     this.overlay().set({ marquee: null });
     editor.requestRender();
-    if (!m) return;
+    const click = !m || (Math.abs(m.x1 - m.x0) * editor.zoom < 3 && Math.abs(m.y1 - m.y0) * editor.zoom < 3);
+    if (click || !m) {
+      // a plain click on empty map: show the landmass or water body there
+      if (!d.additive) void inspectAt(d.start[0], d.start[1]);
+      return;
+    }
     const x0 = Math.min(m.x0, m.x1);
     const x1 = Math.max(m.x0, m.x1);
     const y0 = Math.min(m.y0, m.y1);
     const y1 = Math.max(m.y0, m.y1);
-    if ((x1 - x0) * editor.zoom < 3 && (y1 - y0) * editor.zoom < 3) return;
     const geo = editor.model!.geo;
     const doc = useDoc.getState().doc;
     const inside = (x: number, y: number) => {
@@ -1055,7 +1060,10 @@ export class ToolController {
     if (k === 'Escape') {
       if (this.draft) this.cancelDraft();
       else if (this.tool === 'measure') this.clearMeasure();
-      else st.select([]);
+      else {
+        st.select([]);
+        clearInspect();
+      }
       return;
     }
     if (k === 'Enter') {
@@ -1103,7 +1111,7 @@ export class ToolController {
       }
       return;
     }
-    if (st.tool === 'paint' && /^[1-7]$/.test(k)) {
+    if (st.tool === 'paint' && /^[1-8]$/.test(k)) {
       st.set({ biome: Number(k) - 1 });
       st.notify(`Biome: ${BIOMES[Number(k) - 1].name}`);
       return;

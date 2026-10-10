@@ -73,11 +73,17 @@ function Welcome() {
 
 function Busy() {
   const busy = useEditor((s) => s.busy);
+  const cancel = useEditor((s) => s.busyCancel);
   if (!busy) return null;
   return (
     <div className="busy">
       <LoaderCircle className="spin" size={22} />
       <span>{busy}</span>
+      {cancel && (
+        <button className="btn small" onClick={cancel}>
+          Cancel
+        </button>
+      )}
     </div>
   );
 }

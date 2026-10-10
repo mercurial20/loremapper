@@ -1,6 +1,8 @@
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import { Section } from './controls/controls';
+import { kindLabel, useInspectedRegion } from '../editor/geography';
+import { LandsList, RegionInspector } from './panels/GeographyPanel';
 import { LayersPanel } from './panels/LayersPanel';
 import { SelectionInspector } from './panels/SelectionInspector';
 import { selectionTitle } from './panels/selectionTitle';
@@ -12,6 +14,8 @@ export function RightPanel() {
   const sel = useEditor((s) => s.selection);
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
   const layersOpen = useEditor((s) => s.layersOpen);
+  const geoListOpen = useEditor((s) => s.geoListOpen);
+  const region = useInspectedRegion();
   const set = useEditor((s) => s.set);
   const objectCount = useDoc((s) => Object.keys(s.doc.objects).length);
   const def = ALL_TOOLS.find((t) => t.id === tool);
@@ -23,8 +27,16 @@ export function RightPanel() {
             <SelectionInspector />
           </Section>
         )}
+        {region && sel.length === 0 && (
+          <Section title={kindLabel(region.kind)} className="selection-section">
+            <RegionInspector r={region} />
+          </Section>
+        )}
         <Section title={def ? def.name : 'Tool'} open={inspectorOpen} onToggle={(v) => set({ inspectorOpen: v })}>
           <ToolOptions />
+        </Section>
+        <Section title="Lands & seas" open={geoListOpen} onToggle={(v) => set({ geoListOpen: v })}>
+          <LandsList />
         </Section>
         <Section title={`Layers · ${objectCount} objects`} open={layersOpen} onToggle={(v) => set({ layersOpen: v })}>
           <LayersPanel />

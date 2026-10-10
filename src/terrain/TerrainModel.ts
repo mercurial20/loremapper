@@ -109,7 +109,7 @@ export class TerrainModel {
     const yi = Math.floor(y / this.biome.scale);
     let best = -1;
     let bestW = 40;
-    for (let c = 0; c < BIOME_CHANNELS - 1; c++) {
+    for (let c = 0; c < BIOME_CHANNELS; c++) {
       const w = this.biome.get(xi, yi, c);
       if (w > bestW) {
         bestW = w;

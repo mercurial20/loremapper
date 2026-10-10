@@ -30,6 +30,8 @@ export interface OverlayState {
   marquee: { x0: number; y0: number; x1: number; y1: number } | null;
   hover: SelectionRef | null;
   stampPreview: { x: number; y: number; w: number; h: number; rotation: number } | null;
+  /** outline of the inspected landmass / water body: segments [x1, y1, x2, y2, …] */
+  region: Float32Array | null;
 }
 
 const ACCENT = 0xf2b14a;
@@ -47,7 +49,7 @@ export class OverlayLayer implements WorldLayer {
     fill: '#ffffff',
     stroke: { color: '#1b1612', width: 3.5, join: 'round' },
   });
-  state: OverlayState = { brush: null, draft: null, measure: null, marquee: null, hover: null, stampPreview: null };
+  state: OverlayState = { brush: null, draft: null, measure: null, marquee: null, hover: null, stampPreview: null, region: null };
   private doc: MapDocument | null = null;
   private selection: SelectionRef[] = [];
   private dirty = true;
@@ -110,6 +112,18 @@ export class OverlayLayer implements WorldLayer {
     let ti = 0;
     const doc = this.doc;
     const s = this.state;
+
+    // inspected landmass or water body: a soft glow under a crisp line
+    if (s.region && s.region.length) {
+      const r = s.region;
+      for (const [w, alpha] of [
+        [6, 0.25],
+        [1.8, 1],
+      ] as const) {
+        for (let i = 0; i < r.length; i += 4) g.moveTo(r[i], r[i + 1]).lineTo(r[i + 2], r[i + 3]);
+        g.stroke({ width: w * px, color: ACCENT, alpha, cap: 'round' });
+      }
+    }
 
     // selection
     if (doc) {

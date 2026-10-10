@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, BringToFront, Copy, FlipHorizontal2, Lock, LockOpen, Plus, SendToBack, Trash2, Eye, EyeOff, X } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useAssets } from '../../assets/library';
 import { formatKm, formatLatLon, formatMeters } from '../../core/geo';
 import {
@@ -12,6 +12,7 @@ import {
   updateObjects,
 } from '../../editor/commands';
 import { editor } from '../../editor/Editor';
+import { defaultName, ensureGeography, formatArea, freshGeography, landInside, regionName } from '../../editor/geography';
 import {
   TERRITORY_TYPES,
   TERRITORY_TYPE_LABELS,
@@ -240,8 +241,39 @@ function PathInspector({ p }: { p: PathFeature }) {
   );
 }
 
+function TerritoryLand({ t }: { t: Territory }) {
+  const geography = useEditor((s) => s.geography);
+  const units = useEditor((s) => s.units);
+  const names = useDoc((s) => s.doc.regionNames);
+  useEffect(() => {
+    void ensureGeography();
+  });
+  const g = geography ? freshGeography() : null;
+  const land = useMemo(() => (g ? landInside(g, sampleSpline(t.points, 1, true, 2), (y) => geo().cellAreaKm2(y)) : null), [g, t.points]);
+  if (!land || !g || !geography) return null;
+  const parts = [...land.byRegion.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([id, km2]) => `${regionName(g, g.land[id], names)?.name || defaultName(geography, g.land[id])} ${Math.round((km2 / Math.max(1, land.km2)) * 100)}%`);
+  return (
+    <>
+      <div className="kv">
+        <span>Land inside</span>
+        <b>{formatArea(land.km2, units)}</b>
+      </div>
+      {parts.length > 0 && (
+        <div className="kv">
+          <span>On</span>
+          <b>{parts.join(', ')}</b>
+        </div>
+      )}
+    </>
+  );
+}
+
 function TerritoryInspector({ t }: { t: Territory }) {
   const zoom = useViewInfo((s) => s.zoom);
+  const units = useEditor((s) => s.units);
   const upd = (patch: Partial<Territory>, key: string) => updateFeature('territory', t.id, patch, 'Edit territory', `${key}:${t.id}`);
   const g = geo();
   // area on the sphere: sum cell areas inside the polygon would be costly; use per-row trapezoids
@@ -259,9 +291,10 @@ function TerritoryInspector({ t }: { t: Territory }) {
       <TextField label="Name" value={t.name} onChange={(v) => upd({ name: v }, 'name')} />
       <Select<TerritoryType> label="Type" value={t.type} options={TERRITORY_TYPES.map((x) => ({ value: x, label: TERRITORY_TYPE_LABELS[x] }))} onChange={(v) => upd({ type: v }, 'type')} />
       <div className="kv">
-        <span>Approx. area</span>
-        <b>{Math.round(area).toLocaleString()} km²</b>
+        <span>Area inside the border</span>
+        <b>{formatArea(area, units)}</b>
       </div>
+      <TerritoryLand t={t} />
       <ColorField label="Fill colour" value={t.color} swatches={SWATCHES} onChange={(v) => upd({ color: v }, 'color')} />
       <Slider label="Fill opacity" value={t.fillOpacity} min={0} max={0.9} onChange={(v) => upd({ fillOpacity: v }, 'fill')} format={(v) => `${Math.round(v * 100)}%`} />
       <ColorField label="Border colour" value={t.borderColor} swatches={['#2b2016', '#5a1f14', '#1f3550', '#2a4d30', '#ffffff']} onChange={(v) => upd({ borderColor: v }, 'bcolor')} />

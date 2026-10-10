@@ -57,9 +57,10 @@ export const BIOMES = [
   { id: 'swamp', name: 'Swamp', key: '5' },
   { id: 'snow', name: 'Snow & ice', key: '6' },
   { id: 'rock', name: 'Rocky ground', key: '7' },
+  { id: 'steppe', name: 'Steppe', key: '8' },
 ] as const;
 export type BiomeId = (typeof BIOMES)[number]['id'];
-/** Number of biome weight channels stored per cell (7 used + 1 spare). */
+/** Number of biome weight channels stored per cell. */
 export const BIOME_CHANNELS = 8;
 export function biomeIndex(id: BiomeId): number {
   return BIOMES.findIndex((b) => b.id === id);

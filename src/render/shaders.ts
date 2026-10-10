@@ -162,20 +162,27 @@ vec4 bspline(float t) {
     t3 / 6.0);
 }
 
-float hSmooth(vec2 w) {
+// height and its gradient (m per cell) from the same B-spline, so close-up
+// shading is smooth instead of faceted along cell edges
+vec3 hSmoothGrad(vec2 w) {
   vec2 t = w - uTexOrigin - 0.5;
   vec2 i = floor(t);
   vec2 f = t - i;
   vec4 wx = bspline(f.x);
   vec4 wy = bspline(f.y);
+  vec4 dx = vec4(-0.5 * (1.0 - f.x) * (1.0 - f.x), 1.5 * f.x * f.x - 2.0 * f.x, 0.5 + f.x - 1.5 * f.x * f.x, 0.5 * f.x * f.x);
+  vec4 dy = vec4(-0.5 * (1.0 - f.y) * (1.0 - f.y), 1.5 * f.y * f.y - 2.0 * f.y, 0.5 + f.y - 1.5 * f.y * f.y, 0.5 * f.y * f.y);
   ivec2 p = ivec2(clamp(i, vec2(1.0), vec2(uTexSize - 3.0)));
-  float s = 0.0;
+  vec3 s = vec3(0.0);
   for (int y = 0; y < 4; y++) {
     float row = 0.0;
+    float drow = 0.0;
     for (int x = 0; x < 4; x++) {
-      row += wx[x] * texelFetch(uHeight, p + ivec2(x - 1, y - 1), 0).r;
+      float v = texelFetch(uHeight, p + ivec2(x - 1, y - 1), 0).r;
+      row += wx[x] * v;
+      drow += dx[x] * v;
     }
-    s += wy[y] * row;
+    s += vec3(wy[y] * row, wy[y] * drow, dy[y] * row);
   }
   return s;
 }
@@ -284,23 +291,28 @@ void main() {
   float W = uWorldSize.x;
   float px = 1.0 / uZoom; // cells per screen pixel
 
-  // gradient (m per cell) for hillshade and coast detail
-  float e = clamp(px, 0.75, 3.0);
-  float hx = hAt(w + vec2(e, 0.0)) - hAt(w - vec2(e, 0.0));
-  float hy = hAt(w + vec2(0.0, e)) - hAt(w - vec2(0.0, e));
-  vec2 grad = vec2(hx, hy) / (2.0 * e);
-  float gmag = length(grad);
-
-  // zoomed out (several cells per pixel): box-filter the height so coasts don't alias
+  // height and gradient (m per cell) for hillshade and coast detail
   float h;
+  vec2 grad;
   if (px > 0.7) {
+    // zoomed out (several cells per pixel): wide differences and a box-filtered
+    // height so coasts don't alias
+    float e = clamp(px, 0.75, 3.0);
+    float hx = hAt(w + vec2(e, 0.0)) - hAt(w - vec2(e, 0.0));
+    float hy = hAt(w + vec2(0.0, e)) - hAt(w - vec2(0.0, e));
+    grad = vec2(hx, hy) / (2.0 * e);
     float o = 0.35 * px;
     h = 0.25 * (hAt(w + vec2(-o, -o * 0.4)) + hAt(w + vec2(o, o * 0.4)) + hAt(w + vec2(-o * 0.4, o)) + hAt(w + vec2(o * 0.4, -o)));
   } else {
-    h = hSmooth(w);
+    vec3 hg = hSmoothGrad(w);
+    h = hg.x;
+    grad = hg.yz;
   }
-  // fractal detail so coastlines and contours stay crisp & organic when zoomed in
-  float hD = h + coastDetail(w) * min(gmag, 3000.0) * 1.3;
+  float gmag = length(grad);
+  // fractal detail so coastlines and contours stay crisp & organic when zoomed in;
+  // it fades out in deeper water so steep undersea slopes never sprout phantom coasts
+  float nearSurface = h < uSea ? 1.0 - smoothstep(15.0, 150.0, uSea - h) : 1.0;
+  float hD = h + coastDetail(w) * min(gmag, 3000.0) * 1.3 * nearSurface;
 
   float s = hD - uSea;
   float fw = max(fwidth(s), 1e-4);
@@ -311,7 +323,9 @@ void main() {
   float elev0 = max(s, 0.0) / uMaxElev;
   float mtn = smoothstep(0.08, 0.45, elev0);
   if (uZoom > 0.6) {
-    float amp = (40.0 + 700.0 * mtn) * smoothstep(-20.0, 60.0, s);
+    // only where the terrain is actually uneven: flat plains stay flat
+    float uneven = smoothstep(4.0, 60.0, gmag);
+    float amp = (40.0 * uneven + 700.0 * mtn) * smoothstep(-20.0, 60.0, s);
     float ed = 0.5 * px;
     float dxp = reliefDetail(w + vec2(ed, 0.0), mtn);
     float dxm = reliefDetail(w - vec2(ed, 0.0), mtn);
@@ -346,6 +360,13 @@ void main() {
   vec3 grass = biomeColor(0.0) * (0.9 + 0.2 * fbmW(w, 2.3, 0.0, 3));
   grass *= 1.0 - 0.12 * lodFine * step(0.82, hashP(floor(w * 6.0), W * 6.0));
   land = mix(land, grass, bA.r);
+  // steppe: dry, pale grass with wind-combed streaks and sparse tufts
+  if (bB.a > 0.003) {
+    vec3 steppe = biomeColor(7.0) * (0.92 + 0.14 * fbmW(w * vec2(0.35, 1.6), 1.4, 23.0, 3));
+    float tuft = step(0.9, hashP(floor(w * 5.0), W * 5.0)) * lodFine;
+    steppe = mix(steppe, steppe * 0.78, tuft);
+    land = mix(land, steppe, bB.a);
+  }
   // farmland
   if (bA.b > 0.003) {
     float fl = lodLevel(26.0);

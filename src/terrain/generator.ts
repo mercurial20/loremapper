@@ -1,7 +1,22 @@
-import { clamp, fbm, mulberry32, ridged, smoothstep } from '../core/math';
+import { clamp, mulberry32, smoothstep } from '../core/math';
+import { Simplex3, subSeed } from '../core/noise3';
 import { BIOME_CHANNELS } from '../core/planet';
+import { biomeWeights, climate, type Climate } from './gen/climate';
+import { components, distanceField, makeGrid, resample, sampleAt, sphereTables, thresholdForFraction, type Grid } from './gen/grid';
+import { accumulate, diffuse, drain, erode, traceRivers, type Drainage } from './gen/hydrology';
+import { layoutMismatch, plateBase, tectonics, type Layout, type Tectonics } from './gen/plates';
+
+/**
+ * World generator, version 2: plate tectonics, plains / hills / mountain
+ * belts, wind-driven climate, drainage-basin rivers and (at higher realism)
+ * stream-power erosion. Deterministic: one version + settings + seed = one map.
+ */
+export const GENERATOR_VERSION = 2;
 
 export type GenType = 'continents' | 'pangaea' | 'island' | 'archipelago';
+export type Realism = 'easy' | 'medium' | 'high' | 'ultra';
+/** Whole-world layouts beyond the basic types. */
+export type Template = 'none' | 'twoWorlds' | 'innerSea' | 'polar' | 'shattered' | 'mainland';
 
 export interface GenParams {
   type: GenType;
@@ -12,7 +27,7 @@ export interface GenParams {
   landFraction: number;
   /** 0..1 — how much of the maximum elevation mountain ranges reach. */
   mountains: number;
-  /** 0..1 — small-scale relief. */
+  /** 0..1 — hills between the plains (0 = flat plains and steppes almost everywhere). */
   roughness: number;
   seaLevel: number;
   maxElevation: number;
@@ -21,7 +36,21 @@ export interface GenParams {
   /** Cell rectangle to generate into (island / archipelago); whole world otherwise. */
   region: { x0: number; y0: number; x1: number; y1: number } | null;
   biomes: boolean;
+  /** Maximum number of rivers (0 = none). */
   rivers: number;
+  realism?: Realism;
+  template?: Template;
+  radiusKm?: number;
+  /** −1 colder … +1 warmer */
+  warmth?: number;
+  /** −1 drier … +1 wetter */
+  wetness?: number;
+}
+
+export interface GenRiver {
+  points: [number, number][];
+  /** width at the mouth, km */
+  widthKm: number;
 }
 
 export interface GenResult {
@@ -31,289 +60,592 @@ export interface GenResult {
   biome: Uint8Array | null;
   biomeRegion: { x0: number; y0: number; w: number; h: number };
   region: { x0: number; y0: number; w: number; h: number };
-  rivers: [number, number][][];
+  rivers: GenRiver[];
 }
 
-/** Bilinear upsampling helper for low-resolution noise fields. */
-function upsample(src: Float32Array, sw: number, sh: number, x: number, y: number, wrapX: boolean): number {
-  const u = x - 0.5;
-  const v = clamp(y - 0.5, 0, sh - 1.001);
-  let x0 = Math.floor(u);
-  const y0 = Math.floor(v);
-  const fx = u - x0;
-  const fy = v - y0;
-  let x1 = x0 + 1;
-  if (wrapX) {
-    x0 = ((x0 % sw) + sw) % sw;
-    x1 = ((x1 % sw) + sw) % sw;
-  } else {
-    x0 = clamp(x0, 0, sw - 1);
-    x1 = clamp(x1, 0, sw - 1);
+export type Progress = (stage: string, fraction: number) => void;
+
+function layoutFor(p: GenParams): Layout {
+  if (p.template && p.template !== 'none') return p.template;
+  if (p.type === 'pangaea') return 'pangaea';
+  if (p.type === 'archipelago') return 'archipelago';
+  if (p.type === 'island') return 'mainland';
+  return 'continents';
+}
+
+const gauss = (x: number, w: number) => Math.exp(-(x / w) * (x / w));
+/** Erodibility for the stream-power law (per √km² of rain-weighted upstream area, per km). */
+const ERODE_K = 0.02;
+/** World position (cells) of the centre of grid cell k. */
+const gridXY = (g: Grid, k: number): [number, number] => [g.x0 + ((k % g.w) + 0.5) * g.step, g.y0 + (((k / g.w) | 0) + 0.5) * g.step];
+
+/** Evaluate a function of the unit-sphere position on every cell of a grid. */
+function lowField(g: Grid, f: (x: number, y: number, z: number) => number): Float32Array {
+  const T = sphereTables(g);
+  const out = new Float32Array(g.w * g.h);
+  for (let j = 0; j < g.h; j++)
+    for (let i = 0; i < g.w; i++) out[j * g.w + i] = f(T.cosLat[j] * T.cosLon[i], T.cosLat[j] * T.sinLon[i], T.sinLat[j]);
+  return out;
+}
+
+/** Fields the elevation model needs, on the working ("mid") grid. */
+interface Shape {
+  landness: Float32Array;
+  crust: Float32Array;
+  orogen: Float32Array;
+  arc: Float32Array;
+  trench: Float32Array;
+  ridge: Float32Array;
+  rift: Float32Array;
+  old: Float32Array;
+  hot: Float32Array;
+}
+
+/** Hotspot volcanoes splatted onto a grid. */
+function splatHotspots(g: Grid, t: Tectonics): Float32Array {
+  const out = new Float32Array(g.w * g.h);
+  const T = sphereTables(g);
+  for (const s of t.hotspots) {
+    const lat = Math.asin(s.p[2]);
+    const lon = Math.atan2(s.p[1], s.p[0]);
+    const rr = (s.radiusKm * 2.6) / g.R;
+    const yc = ((Math.PI / 2 - lat) / Math.PI) * g.H;
+    const xc = ((((lon / (2 * Math.PI)) % 1) + 1) % 1) * g.W;
+    const dy = (rr / Math.PI) * g.H;
+    const dx = Math.min(g.W / 2, ((rr / (2 * Math.PI)) * g.W) / Math.max(0.05, Math.cos(lat)));
+    const j0 = Math.max(0, Math.floor((yc - dy - g.y0) / g.step));
+    const j1 = Math.min(g.h - 1, Math.ceil((yc + dy - g.y0) / g.step));
+    const i0 = Math.floor((xc - dx - g.x0) / g.step);
+    const i1 = Math.ceil((xc + dx - g.x0) / g.step);
+    for (let j = j0; j <= j1; j++)
+      for (let ii = i0; ii <= i1; ii++) {
+        let i = ii;
+        if (g.wrap) i = ((i % g.w) + g.w) % g.w;
+        else if (i < 0 || i >= g.w) continue;
+        const x = T.cosLat[j] * T.cosLon[i];
+        const y = T.cosLat[j] * T.sinLon[i];
+        const z = T.sinLat[j];
+        const chord = Math.hypot(x - s.p[0], y - s.p[1], z - s.p[2]);
+        const v = s.strength * gauss(chord * g.R, s.radiusKm);
+        const k = j * g.w + i;
+        if (v > out[k]) out[k] = v;
+      }
   }
-  const y1 = Math.min(sh - 1, y0 + 1);
-  const a = src[y0 * sw + x0];
-  const b = src[y0 * sw + x1];
-  const c = src[y1 * sw + x0];
-  const d = src[y1 * sw + x1];
-  return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
+  return out;
 }
 
-export function generate(p: GenParams): GenResult {
+/** Whole-world shape from plate tectonics, retrying plate layouts that don't fit the requested type. */
+function worldShape(p: GenParams, layout: Layout, mid: Grid, R: number, progress: Progress): Shape {
+  const coarse = makeGrid(p.W, p.H, R, p.W / 512);
+  let best: Tectonics | null = null;
+  let bestScore = Infinity;
+  progress('Moving tectonic plates', 0);
+  const base = plateBase(coarse, p.seed);
+  for (let a = 0; a < 8 && bestScore > 0; a++) {
+    progress('Moving tectonic plates', (a + 1) / 9);
+    const t = tectonics(coarse, subSeed(p.seed, 100 + a), layout, p.landFraction, base);
+    const s = layoutMismatch(coarse, t.landness, p.landFraction, layout);
+    if (s < bestScore) {
+      best = t;
+      bestScore = s;
+    }
+  }
+  const t = best!;
+  progress('Shaping coasts', 0);
+  const up = (f: Float32Array) => resample(f, coarse, mid, 'bspline');
+  const shape: Shape = {
+    landness: up(t.landness),
+    crust: up(t.crust),
+    orogen: up(t.orogen),
+    arc: up(t.arc),
+    trench: up(t.trench),
+    ridge: up(t.ridge),
+    rift: up(t.rift),
+    old: up(t.old),
+    hot: splatHotspots(mid, t),
+  };
+  const n = new Simplex3(subSeed(p.seed, 20));
+  const T = sphereTables(mid);
+  const arch = layout === 'archipelago';
+  // island groups: a slow "where" field times a fast "which islands" field
+  const groups = arch ? resample(lowField(coarse, (x, y, z) => smoothstep(-0.15, 0.45, n.fbm(x, y + 7, z, 2.6, 3))), coarse, mid, 'bspline') : null;
+  // fine coastline noise only matters near the coast: estimate where that is first
+  const t0 = thresholdForFraction(shape.landness, mid, p.landFraction);
+  for (let j = 0; j < mid.h; j++)
+    for (let i = 0; i < mid.w; i++) {
+      const k = j * mid.w + i;
+      const x = T.cosLat[j] * T.cosLon[i];
+      const y = T.cosLat[j] * T.sinLon[i];
+      const z = T.sinLat[j];
+      let L = shape.landness[k];
+      if (shape.arc[k] > 0.01) L += (arch ? 0.9 : 0.75) * shape.arc[k] * smoothstep(-0.05, 0.45, n.fbm(x, y, z, 17, 3));
+      L += (arch ? 1.1 : 0.95) * shape.hot[k];
+      if (arch) L += groups![k] * (0.35 + 0.45 * n.fbm(x, y - 3.3, z, 9, 4));
+      else if (Math.abs(L - t0) < 0.5) L += 0.13 * n.fbm(x + 2.7, y, z, 5.5, 3) + 0.06 * n.fbm(x, y + 1.9, z, 22, 2);
+      shape.landness[k] = L;
+    }
+  return shape;
+}
+
+/** Island or archipelago shaped inside a rectangle of the map. */
+function regionShape(p: GenParams, mid: Grid): Shape {
+  const N = mid.w * mid.h;
+  const rnd = mulberry32(subSeed(p.seed, 30));
+  const n = new Simplex3(subSeed(p.seed, 31));
+  const T = sphereTables(mid);
+  const span = Math.max(mid.w, mid.h);
+  const f = (2 * Math.PI) / ((span * mid.step * 2 * Math.PI) / p.W); // one wavelength across the region
+  const s: Shape = {
+    landness: new Float32Array(N),
+    crust: new Float32Array(N),
+    orogen: new Float32Array(N),
+    arc: new Float32Array(N),
+    trench: new Float32Array(N),
+    ridge: new Float32Array(N),
+    rift: new Float32Array(N),
+    old: new Float32Array(N),
+    hot: new Float32Array(N),
+  };
+  const ang = rnd() * Math.PI;
+  const ca = Math.cos(ang);
+  const sa = Math.sin(ang);
+  const elong = 0.55 + 0.4 * rnd();
+  const blobs: [number, number, number][] = [];
+  if (p.type === 'archipelago') {
+    const count = 6 + Math.floor(rnd() * 9);
+    for (let b = 0; b < count; b++) blobs.push([0.15 + 0.7 * rnd(), 0.15 + 0.7 * rnd(), 0.04 + 0.09 * rnd()]);
+  }
+  const arcR = 0.5 + rnd() * 0.6;
+  const arcC: [number, number] = [0.5 + Math.cos(ang) * arcR, 0.5 + Math.sin(ang) * arcR];
+  for (let j = 0; j < mid.h; j++)
+    for (let i = 0; i < mid.w; i++) {
+      const k = j * mid.w + i;
+      const x = T.cosLat[j] * T.cosLon[i];
+      const y = T.cosLat[j] * T.sinLon[i];
+      const z = T.sinLat[j];
+      const u = (i + 0.5) / mid.w - 0.5;
+      const v = (j + 0.5) / mid.h - 0.5;
+      const edge = Math.min(0.5 - Math.abs(u), 0.5 - Math.abs(v));
+      const fade = smoothstep(0.02, 0.14, edge);
+      const warp = 0.18 * n.fbm(x, y, z, f * 1.3, 3);
+      if (p.type === 'island') {
+        const a = (u * ca + v * sa) / 0.5;
+        const b = (-u * sa + v * ca) / (0.5 * elong);
+        const d = Math.hypot(a, b) + warp;
+        s.crust[k] = 1 - smoothstep(0.3, 0.95, d);
+        // a mountain spine along the long axis
+        const spine = Math.abs(b + 0.25 * n.fbm(x, y, z, f * 1.1, 2)) * elong;
+        s.orogen[k] = gauss(spine, 0.13) * s.crust[k] * (0.55 + 0.45 * n.fbm(x + 4, y, z, f * 2, 2));
+        s.landness[k] = s.crust[k] + 0.22 * n.fbm(x + 2.7, y, z, f * 3.5, 5) + 0.2 * s.orogen[k];
+      } else {
+        let best = 0;
+        for (const [bx, by, br] of blobs) best = Math.max(best, gauss(Math.hypot(u + 0.5 - bx, v + 0.5 - by) + warp * 0.4, br));
+        const arcD = Math.abs(Math.hypot(u + 0.5 - arcC[0], v + 0.5 - arcC[1]) - arcR);
+        s.arc[k] = gauss(arcD, 0.035) * smoothstep(-0.05, 0.45, n.fbm(x, y, z, f * 9, 3));
+        s.crust[k] = best * 0.5;
+        s.landness[k] = best * 0.8 + 0.28 * n.fbm(x + 2.7, y, z, f * 4, 5) + 0.7 * s.arc[k];
+      }
+      s.landness[k] = s.landness[k] * fade - (1 - fade) * 0.8;
+    }
+  return s;
+}
+
+/** Densify a polyline to points at most `step` cells apart. */
+function densify(pts: [number, number][], step: number): [number, number][] {
+  const out: [number, number][] = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, ay] = pts[i - 1];
+    const [bx, by] = pts[i];
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / step));
+    for (let s = 1; s <= n; s++) out.push([ax + ((bx - ax) * s) / n, ay + ((by - ay) * s) / n]);
+  }
+  return out;
+}
+
+/**
+ * Cut each river's bed into the full-resolution heights (metres above sea):
+ * the bed never rises from source to mouth, and a shallow valley follows it.
+ */
+export function carveRivers(g: Grid, height: Float32Array, rivers: GenRiver[], cellKm: number) {
+  // the bed follows the terrain as it was, not the trench already cut behind it
+  const terrain = height.slice();
+  for (const r of rivers) {
+    const widthCells = r.widthKm / cellKm;
+    const radius = Math.min(4, 1.6 + widthCells * 0.7);
+    const depth = 4 + 3 * widthCells;
+    let bed = Infinity;
+    for (const [x, y] of densify(r.points, 0.5)) {
+      const here = sampleAt(terrain, g, x, y);
+      if (here <= 0) break;
+      bed = Math.min(bed, here);
+      const cut = Math.max(1, bed - depth);
+      const ci = Math.floor(x - g.x0);
+      const cj = Math.floor(y - g.y0);
+      const R = Math.ceil(radius);
+      for (let dj = -R; dj <= R; dj++) {
+        const j = cj + dj;
+        if (j < 0 || j >= g.h) continue;
+        for (let di = -R; di <= R; di++) {
+          let i = ci + di;
+          if (g.wrap) i = ((i % g.w) + g.w) % g.w;
+          else if (i < 0 || i >= g.w) continue;
+          const k = j * g.w + i;
+          const v = height[k];
+          if (v <= 0 || v <= cut) continue;
+          // a flat bed about a cell wide, then the valley sides
+          const d = Math.hypot(g.x0 + ci + di + 0.5 - x, g.y0 + j + 0.5 - y);
+          if (d >= radius) continue;
+          const sideT = Math.max(0, d - 0.8) / Math.max(0.01, radius - 0.8);
+          height[k] = Math.min(v, cut + sideT * sideT * (v - cut));
+        }
+      }
+    }
+  }
+}
+
+/** Biome weights from climate, relief and water (rivers, flow, coasts). */
+function paintBiomes(
+  p: GenParams,
+  mid: Grid,
+  h: Float32Array,
+  clim: Climate,
+  coastKm: Float32Array,
+  flow: Float32Array,
+  maxFlow: number,
+  rivers: GenRiver[],
+  bg: { x0: number; y0: number; w: number; h: number },
+): Uint8Array {
+  const N = mid.w * mid.h;
+  // slope (m per km) on the working grid
+  const slope = new Float32Array(N);
+  const dy = (mid.step * Math.PI * mid.R) / mid.H;
+  for (let j = 0; j < mid.h; j++) {
+    const dx = Math.max(1, ((mid.step * 2 * Math.PI * mid.R) / mid.W) * Math.cos(Math.PI / 2 - ((mid.y0 + (j + 0.5) * mid.step) / mid.H) * Math.PI));
+    for (let i = 0; i < mid.w; i++) {
+      const k = j * mid.w + i;
+      const l = mid.wrap ? j * mid.w + ((i - 1 + mid.w) % mid.w) : j * mid.w + Math.max(0, i - 1);
+      const r = mid.wrap ? j * mid.w + ((i + 1) % mid.w) : j * mid.w + Math.min(mid.w - 1, i + 1);
+      const u = Math.max(0, j - 1) * mid.w + i;
+      const d = Math.min(mid.h - 1, j + 1) * mid.w + i;
+      slope[k] = Math.hypot((Math.max(0, h[r]) - Math.max(0, h[l])) / (2 * dx), (Math.max(0, h[d]) - Math.max(0, h[u])) / (2 * dy));
+    }
+  }
+  // distance to the nearest river, and how big that river is
+  const onRiver = new Uint8Array(N);
+  const size = new Float32Array(N);
+  for (const r of rivers)
+    for (const [x, y] of densify(r.points, mid.step * 0.5)) {
+      let i = Math.floor((x - mid.x0) / mid.step);
+      const j = Math.floor((y - mid.y0) / mid.step);
+      if (mid.wrap) i = ((i % mid.w) + mid.w) % mid.w;
+      if (i < 0 || i >= mid.w || j < 0 || j >= mid.h) continue;
+      const k = j * mid.w + i;
+      onRiver[k] = 1;
+      size[k] = Math.max(size[k], r.widthKm);
+    }
+  const riv = distanceField(mid, onRiver, 2000);
+  const patchN = new Simplex3(subSeed(p.seed, 70));
+  const out = new Uint8Array(bg.w * bg.h * BIOME_CHANNELS);
+  const wts = new Float32Array(BIOME_CHANNELS);
+  const logMax = Math.log(maxFlow);
+  for (let j = 0; j < bg.h; j++)
+    for (let i = 0; i < bg.w; i++) {
+      const wx = (bg.x0 + i) * 2 + 1;
+      const wy = (bg.y0 + j) * 2 + 1;
+      const e = sampleAt(h, mid, wx, wy);
+      if (e <= 0) continue;
+      // nearest working-grid cell for the discrete fields
+      let mi = Math.floor((wx - mid.x0) / mid.step);
+      const mj = Math.min(mid.h - 1, Math.max(0, Math.floor((wy - mid.y0) / mid.step)));
+      mi = mid.wrap ? ((mi % mid.w) + mid.w) % mid.w : Math.min(mid.w - 1, Math.max(0, mi));
+      const mk = mj * mid.w + mi;
+      const dRiver = riv.dist[mk];
+      const bigness = riv.near[mk] >= 0 ? smoothstep(3, 9, size[riv.near[mk]]) : 0;
+      const lat = Math.PI / 2 - (wy / mid.H) * Math.PI;
+      const lon = (wx / mid.W) * 2 * Math.PI;
+      biomeWeights(
+        {
+          t: sampleAt(clim.temp, mid, wx, wy),
+          r: sampleAt(clim.rain, mid, wx, wy),
+          elev: e,
+          slope: slope[mk],
+          flow: flow[mk] > 1 ? Math.max(0, Math.log(flow[mk]) / logMax) : 0,
+          river: Math.exp(-dRiver / 110),
+          bigRiver: Math.exp(-dRiver / 75) * bigness,
+          coast: coastKm[mk],
+          patch: 0.5 + 0.5 * patchN.fbm(Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat), 40, 2),
+        },
+        wts,
+      );
+      let total = 0;
+      for (let c = 0; c < BIOME_CHANNELS; c++) total += wts[c];
+      total = Math.max(1, total);
+      const o = (j * bg.w + i) * BIOME_CHANNELS;
+      for (let c = 0; c < BIOME_CHANNELS; c++) out[o + c] = (wts[c] / total) * 235;
+    }
+  return out;
+}
+
+/**
+ * Generate a world (or land inside a region). `progress` reports stages for
+ * the busy indicator.
+ */
+export function generate(p: GenParams, progress: Progress = () => {}): GenResult {
+  const R = p.radiusKm ?? 7410;
+  const realism: Realism = p.realism ?? 'easy';
   const whole = !p.region || p.type === 'continents' || p.type === 'pangaea';
   const rx0 = whole ? 0 : Math.max(0, Math.floor(p.region!.x0));
   const ry0 = whole ? 0 : Math.max(0, Math.floor(p.region!.y0));
-  const rw = whole ? p.W : Math.max(8, Math.min(p.W, Math.ceil(p.region!.x1 - p.region!.x0)));
-  const rh = whole ? p.H : Math.max(8, Math.min(p.H - ry0, Math.ceil(p.region!.y1 - p.region!.y0)));
-  const seed = p.seed % 100000;
-  const rand = mulberry32(p.seed);
+  const rw = whole ? p.W : Math.max(16, Math.min(p.W, Math.ceil(p.region!.x1 - p.region!.x0)));
+  const rh = whole ? p.H : Math.max(16, Math.min(p.H - ry0, Math.ceil(p.region!.y1 - p.region!.y0)));
+  const region = whole ? undefined : { x0: rx0, y0: ry0, w: rw, h: rh };
+  const midStep = Math.max(rw, rh) >= 1024 ? 2 : 1;
+  const mid = makeGrid(p.W, p.H, R, midStep, region);
+  const layout = layoutFor(p);
+  const N = mid.w * mid.h;
 
-  // ---- low-resolution macro field (continent shapes)
-  const Q = 4;
-  const qw = Math.ceil(rw / Q);
-  const qh = Math.ceil(rh / Q);
-  const macro = new Float32Array(qw * qh);
-  const P = p.type === 'archipelago' ? 18 : p.type === 'island' ? 3 : 7; // lattice periods around the world
-  const scale = whole ? p.W / P : Math.max(rw, rh) / P;
-  const periodX = whole ? P : 0;
-  const pangaeaCx = rand() * p.W;
-  const pangaeaCy = p.H * (0.35 + rand() * 0.3);
-  for (let j = 0; j < qh; j++) {
-    for (let i = 0; i < qw; i++) {
-      const x = rx0 + (i + 0.5) * Q;
-      const y = ry0 + (j + 0.5) * Q;
-      const sx = x / scale;
-      const sy = y / scale;
-      // domain warp for organic coastlines
-      const wx = fbm(sx + 5.2, sy + 1.3, seed + 11, 3, periodX) - 0.5;
-      const wy = fbm(sx + 9.7, sy + 4.1, seed + 23, 3, periodX) - 0.5;
-      let v = fbm(sx + wx * 1.4, sy + wy * 1.4, seed, 7, periodX);
-      if (whole) {
-        const lat = Math.abs(90 - (y / p.H) * 180);
-        v -= 0.12 * smoothstep(55, 88, lat);
-        if (p.type === 'pangaea') {
-          let dx = Math.abs(x - pangaeaCx);
-          dx = Math.min(dx, p.W - dx);
-          const d = Math.hypot(dx / (p.W * 0.28), (y - pangaeaCy) / (p.H * 0.38));
-          v += 0.35 * (1 - smoothstep(0.2, 1.2, d));
-        }
-      } else {
-        // radial mask confines land to the region
-        const nx = (x - rx0) / rw - 0.5;
-        const ny = (y - ry0) / rh - 0.5;
-        const d = Math.hypot(nx, ny) * 2;
-        const fall = p.type === 'island' ? 1 - smoothstep(0.25, 0.95, d) : 1 - smoothstep(0.55, 1.0, d);
-        v = v * (0.45 + 0.55 * fall) - (1 - fall) * 0.35;
-      }
-      macro[j * qw + i] = v;
+  // ---- shape: where land goes
+  const s = whole ? worldShape(p, layout, mid, R, progress) : regionShape(p, mid);
+  const t = thresholdForFraction(s.landness, mid, p.landFraction);
+  const isCoast = new Uint8Array(N);
+  const land = new Uint8Array(N);
+  for (let k = 0; k < N; k++) land[k] = s.landness[k] > t ? 1 : 0;
+  // pockets of sea inside the land read as noise, not lakes: keep only real inland seas
+  {
+    const water = new Uint8Array(N);
+    for (let k = 0; k < N; k++) water[k] = land[k] ? 0 : 1;
+    const wc = components(mid, water);
+    let biggest = 0;
+    for (let c = 1; c < wc.count; c++) if (wc.area[c] > wc.area[biggest]) biggest = c;
+    const minSea = 4 * Math.PI * R * R * 1.5e-3;
+    for (let k = 0; k < N; k++) {
+      const c = wc.label[k];
+      if (c >= 0 && c !== biggest && wc.area[c] < minSea) land[k] = 1;
     }
   }
-
-  // ---- threshold so land covers the requested share of true surface area
-  let vmin = Infinity;
-  let vmax = -Infinity;
-  for (const v of macro) {
-    if (v < vmin) vmin = v;
-    if (v > vmax) vmax = v;
-  }
-  const BINS = 2048;
-  const hist = new Float64Array(BINS);
-  let totalW = 0;
-  for (let j = 0; j < qh; j++) {
-    const y = ry0 + (j + 0.5) * Q;
-    const w = Math.cos(((90 - (y / p.H) * 180) * Math.PI) / 180);
-    for (let i = 0; i < qw; i++) {
-      const b = Math.min(BINS - 1, Math.floor(((macro[j * qw + i] - vmin) / (vmax - vmin + 1e-9)) * BINS));
-      hist[b] += w;
-      totalW += w;
+  for (let j = 0; j < mid.h; j++)
+    for (let i = 0; i < mid.w; i++) {
+      const k = j * mid.w + i;
+      const r = mid.wrap ? j * mid.w + ((i + 1) % mid.w) : i + 1 < mid.w ? k + 1 : k;
+      const d = j + 1 < mid.h ? k + mid.w : k;
+      if (land[r] !== land[k]) isCoast[k] = isCoast[r] = 1;
+      if (land[d] !== land[k]) isCoast[k] = isCoast[d] = 1;
     }
-  }
-  let acc = 0;
-  let t = vmax;
-  for (let b = BINS - 1; b >= 0; b--) {
-    acc += hist[b];
-    if (acc >= totalW * p.landFraction) {
-      t = vmin + ((b + 0.5) / BINS) * (vmax - vmin);
-      break;
-    }
-  }
+  const coastKm = distanceField(mid, isCoast, 4000).dist;
 
-  // ---- half-resolution mountain field
-  const Hh = 2;
-  const hw = Math.ceil(rw / Hh);
-  const hh = Math.ceil(rh / Hh);
-  const mount = new Float32Array(hw * hh);
-  const mScale = whole ? p.W / 44 : Math.max(18, Math.max(rw, rh) / 9);
-  const mPeriod = whole ? 44 : 0;
-  const beltScale = whole ? p.W / 9 : Math.max(rw, rh) / 2.2;
-  const beltPeriod = whole ? 9 : 0;
-  for (let j = 0; j < hh; j++) {
-    for (let i = 0; i < hw; i++) {
-      const x = rx0 + (i + 0.5) * Hh;
-      const y = ry0 + (j + 0.5) * Hh;
-      const r = ridged(x / mScale, y / mScale, seed + 101, 5, mPeriod);
-      // mountain belts: only some regions get ranges
-      const belt = smoothstep(0.42, 0.62, fbm(x / beltScale + 3.3, y / beltScale + 7.7, seed + 202, 3, beltPeriod));
-      const t = Math.min(1, Math.max(0, (r - 0.12) / 0.7));
-      mount[j * hw + i] = Math.pow(t * t * (3 - 2 * t), 1.5) * belt;
-    }
-  }
-
-  // ---- full-resolution composition
-  const height = new Float32Array(rw * rh);
-  const sea = p.seaLevel;
+  // ---- elevation (metres above sea level) on the working grid
+  progress('Raising mountains', 0);
+  const h = new Float32Array(N);
+  const rug = new Float32Array(N);
+  const nA = new Simplex3(subSeed(p.seed, 40));
+  const nB = new Simplex3(subSeed(p.seed, 41));
+  const nC = new Simplex3(subSeed(p.seed, 42));
+  const T = sphereTables(mid);
+  // slow-varying fields are computed 4× coarser and interpolated
+  const lo = makeGrid(p.W, p.H, R, midStep * 4, region);
+  const up = (f: (x: number, y: number, z: number) => number) => resample(lowField(lo, f), lo, mid, 'bspline');
+  const plateauN = up((x, y, z) => smoothstep(0.12, 0.42, nA.fbm(x, y, z, 2.4, 3)));
+  const hillN = up((x, y, z) => smoothstep(-0.05, 0.4, nA.fbm(x + 6.1, y, z, 3.2, 3)));
+  const seaN = up((x, y, z) => 1.05 + 0.12 * nA.fbm(x, y, z, 2.2, 3) + 0.03 * nB.fbm(x, y, z, 9, 2));
   const maxE = p.maxElevation;
-  const detailScale = whole ? p.W / 512 : 6;
-  for (let j = 0; j < rh; j++) {
-    const y = ry0 + j + 0.5;
-    for (let i = 0; i < rw; i++) {
-      const x = rx0 + i + 0.5;
-      const v = upsample(macro, qw, qh, (x - rx0) / Q, (y - ry0) / Q, whole);
-      const m = upsample(mount, hw, hh, (x - rx0) / Hh, (y - ry0) / Hh, whole);
-      const det = fbm(x / detailScale, y / detailScale, seed + 303, 2, whole ? 512 : 0) - 0.5;
-      let h: number;
-      if (v >= t) {
-        const e = (v - t) / (vmax - t + 1e-9);
-        const inland = smoothstep(0.02, 0.35, e);
-        h = 30 + 1400 * Math.pow(e, 1.25) + m * maxE * 0.92 * p.mountains * (0.25 + 0.75 * inland) + det * (100 + 700 * p.roughness) * inland;
-        h = Math.max(h, 8);
+  const rough = clamp(p.roughness, 0, 1);
+  const mtnTop = maxE * clamp(p.mountains, 0, 1);
+  const abyssBase = Math.max(2500, -p.oceanFloor + p.seaLevel);
+  const deepest = Math.max(abyssBase + 500, p.seaLevel - p.minElevation);
+  for (let j = 0; j < mid.h; j++)
+    for (let i = 0; i < mid.w; i++) {
+      const k = j * mid.w + i;
+      const x = T.cosLat[j] * T.cosLon[i];
+      const y = T.cosLat[j] * T.sinLon[i];
+      const z = T.sinLat[j];
+      const d = coastKm[k];
+      if (land[k]) {
+        const o = Math.max(0, s.orogen[k]);
+        const inland = smoothstep(0, 900, d);
+        const base = 6 + 170 * Math.pow(inland, 0.75);
+        // broad flat uplands (high plains / plateaus) away from coasts and ranges
+        const plateau = 620 * plateauN[k] * smoothstep(120, 600, d) * (1 - Math.min(1, o * 1.5));
+        // where hills grow at all; elsewhere the land stays flat (plains, steppe)
+        const hillZone = hillN[k];
+        const r = clamp(0.03 + 0.04 * rough + hillZone * (0.1 + 0.75 * rough) + 1.1 * o + 0.7 * s.old[k] + 0.5 * s.arc[k] + 0.5 * s.hot[k], 0, 1);
+        rug[k] = r;
+        const hills = r * (120 + 520 * rough) * (0.5 + 0.5 * nB.fbm(x, y, z, 16, 4));
+        const wx = 0.08 * nC.fbm(x, y, z, 5, 2);
+        const ridges = o > 0.01 ? nB.ridged(x + wx, y - wx, z + wx, 11, 5) : 0;
+        const mtn = mtnTop * Math.pow(Math.min(1, o), 1.15) * (0.28 + 0.8 * ridges);
+        const oldM = s.old[k] > 0.01 ? 1700 * clamp(p.mountains, 0, 1) * s.old[k] * (0.3 + 0.7 * nB.ridged(x - 3, y, z, 13, 4)) : 0;
+        const volc = (s.arc[k] > 0.01 ? 2400 * s.arc[k] * (0.35 + 0.65 * smoothstep(-0.2, 0.6, nC.fbm(x, y, z, 20, 2))) : 0) + 3600 * Math.pow(s.hot[k], 1.6);
+        const coastSoft = 0.45 + 0.55 * smoothstep(0, 60, d);
+        h[k] = Math.max(2, base + plateau + (hills + mtn + oldM + volc) * coastSoft);
       } else {
-        const d = (t - v) / (t - vmin + 1e-9);
-        h = -(60 + 4400 * smoothstep(0.0, 0.35, d) + 1600 * d) + det * 200;
-        h = Math.min(h, -10);
+        const crust = s.crust[k];
+        const shelfW = 45 + 190 * crust * (1 - 0.6 * Math.min(1, s.orogen[k] * 2));
+        const shelf = 20 + 130 * smoothstep(0, shelfW, d);
+        const abyss = abyssBase * seaN[k];
+        let depth = shelf + (abyss - shelf) * smoothstep(shelfW, shelfW + 420, d);
+        depth -= 2300 * s.ridge[k] + 2400 * s.hot[k] + 1800 * Math.max(0, s.arc[k]);
+        depth += (deepest - abyss) * 0.92 * s.trench[k];
+        // seamounts and ridges stay submerged away from the coast (no almost-islands awash at the surface)
+        h[k] = -clamp(depth, 3 + Math.min(60, 0.45 * d), deepest);
+        rug[k] = 0.15;
       }
-      height[j * rw + i] = clamp(sea + h, p.minElevation, sea + maxE);
     }
+
+  // ---- climate: prevailing winds and rain shadows at every realism level, so previews match the result
+  progress('Simulating climate', 0);
+  const clim = climate(mid, h, coastKm, { warmth: p.warmth ?? 0, wetness: p.wetness ?? 0, winds: true, seed: subSeed(p.seed, 50) });
+
+  // ---- stream-power erosion: grid (relative to the working grid), iterations and erodibility
+  const ER: Record<Realism, { coarser: boolean; iters: number } | null> = {
+    easy: null,
+    medium: { coarser: true, iters: 10 },
+    high: { coarser: false, iters: 24 },
+    ultra: { coarser: false, iters: 24 },
+  };
+  const er = ER[realism];
+  if (er) {
+    const eg = er.coarser ? makeGrid(p.W, p.H, R, midStep * 2, region) : mid;
+    const eh = er.coarser ? resample(h, mid, eg, 'bspline') : h.slice();
+    if (er.coarser) for (let k = 0; k < eh.length; k++) if (eh[k] <= 0 && sampleAt(h, mid, ...gridXY(eg, k)) > 0) eh[k] = 1;
+    const before = eh.slice();
+    const rain = er.coarser ? resample(clim.rain, mid, eg, 'bspline') : clim.rain;
+    erode(eg, eh, rain, er.iters, ERODE_K, (i) => progress('Eroding valleys', (i + 1) / er.iters));
+    if (!er.coarser) diffuse(eg, eh, 1);
+    const delta = new Float32Array(eh.length);
+    for (let k = 0; k < eh.length; k++) delta[k] = eh[k] - before[k];
+    const dm = er.coarser ? resample(delta, eg, mid, 'bspline') : delta;
+    for (let k = 0; k < N; k++) if (land[k]) h[k] = Math.max(2, h[k] + dm[k]);
   }
 
-  // ---- biomes
-  let biome: Uint8Array | null = null;
-  // biomes live on a half-resolution grid
+  // ---- drainage: closed basins fill into flat alluvial plains; upstream area feeds rivers, swamps and farmland
+  progress('Tracing rivers', 0);
+  const midCellKm = (midStep * 2 * Math.PI * R) / p.W;
+  const minRiverArea = 24 * midCellKm * midCellKm;
+  const drained = drain(mid, h, true);
+  const flow = accumulate(mid, drained, clim.rain);
+  let maxFlow = 1;
+  for (let k = 0; k < N; k++) if (h[k] > 0 && flow[k] > maxFlow) maxFlow = flow[k];
+  const trace = (g: Grid, d: Drainage, A: Float32Array, hh: Float32Array, maxA: number): GenRiver[] =>
+    traceRivers(g, d, A, hh, p.rivers, Math.max(minRiverArea, maxA * 0.004)).map((r) => ({ points: r.points, widthKm: 2.5 + 16 * Math.sqrt(r.area / maxA) }));
+  let rivers: GenRiver[] = realism === 'ultra' || p.rivers <= 0 ? [] : trace(mid, drained, flow, h, maxFlow);
+
+  // ---- full resolution: smooth interpolation plus fine detail where the land is rough
+  progress('Adding detail', 0);
+  const full = makeGrid(p.W, p.H, R, 1, region);
+  const height = midStep === 1 ? h.slice() : resample(h, mid, full, 'catmull');
+  const rugF = midStep === 1 ? rug : resample(rug, mid, full, 'bspline');
+  const coarseH = midStep === 1 ? null : h;
+  const nD = new Simplex3(subSeed(p.seed, 60));
+  const FT = sphereTables(full);
+  // about one full-resolution cell per feature
+  const fineF = p.W / 7;
+  const amp = 40 + 260 * rough;
+  for (let j = 0; j < full.h; j++)
+    for (let i = 0; i < full.w; i++) {
+      const k = j * full.w + i;
+      let v = height[k];
+      // keep the coastline where the working grid put it
+      const wasLand = coarseH ? sampleAt(coarseH, mid, full.x0 + i + 0.5, full.y0 + j + 0.5) > 0 : v > 0;
+      const r = rugF[k];
+      if (wasLand && r > 0.06) {
+        const x = FT.cosLat[j] * FT.cosLon[i];
+        const y = FT.cosLat[j] * FT.sinLon[i];
+        const z = FT.sinLat[j];
+        v += r * r * amp * nD.fbm(x, y, z, fineF, 2);
+      }
+      height[k] = wasLand ? Math.max(1, v) : Math.min(-2, v);
+    }
+  if (realism === 'ultra') {
+    // fine valleys cut into the full-resolution relief, then rivers that follow them
+    const rainF = resample(clim.rain, mid, full, 'bspline');
+    erode(full, height, rainF, 10, ERODE_K, (i) => progress('Carving fine valleys', (i + 1) / 10));
+    progress('Tracing rivers', 0);
+    if (p.rivers > 0) {
+      const d = drain(full, height, true);
+      const A = accumulate(full, d, rainF);
+      let mA = 1;
+      for (let k = 0; k < A.length; k++) if (height[k] > 0 && A[k] > mA) mA = A[k];
+      rivers = trace(full, d, A, height, mA);
+    }
+  }
+  // every river runs downhill in its own bed
+  carveRivers(full, height, rivers, (2 * Math.PI * R) / p.W);
+
+  // ---- biomes on the half-resolution biome grid, from climate, terrain and water
+  progress('Painting biomes', 0);
+  const bx0 = Math.floor(rx0 / 2);
+  const by0 = Math.floor(ry0 / 2);
   const bw = Math.ceil(rw / 2);
   const bh = Math.ceil(rh / 2);
-  if (p.biomes) {
-    biome = new Uint8Array(bw * bh * BIOME_CHANNELS);
-    const bs = whole ? p.W / 60 : Math.max(12, Math.max(rw, rh) / 8);
-    const bp = whole ? 60 : 0;
-    for (let j = 0; j < bh; j++) {
-      const y = ry0 + j * 2 + 1;
-      const lat = Math.abs(90 - (y / p.H) * 180);
-      const r0 = Math.min(rh - 1, j * 2);
-      const r1 = Math.min(rh - 1, j * 2 + 1);
-      for (let i = 0; i < bw; i++) {
-        const c0 = Math.min(rw - 1, i * 2);
-        const c1 = Math.min(rw - 1, i * 2 + 1);
-        const hm = (height[r0 * rw + c0] + height[r0 * rw + c1] + height[r1 * rw + c0] + height[r1 * rw + c1]) / 4;
-        const h = hm - sea;
-        if (h <= 0) continue;
-        const x = rx0 + i * 2 + 1;
-        const e = h / maxE;
-        const n = fbm(x / bs, y / bs, seed + 404, 3, bp);
-        const moist = fbm(x / bs + 17, y / bs + 9, seed + 505, 4, bp);
-        // climate: noisy latitude so zones never form straight bands
-        const latN = lat + (n - 0.5) * 26;
-        const temp = 1 - latN / 72 - e * 1.5;
-        const snow = smoothstep(0.1, -0.04, temp);
-        const rock = smoothstep(0.3, 0.46, e) * (1 - snow);
-        const desert = smoothstep(0.48, 0.66, temp) * smoothstep(0.5, 0.36, moist) * (1 - rock) * (1 - snow);
-        const swamp = smoothstep(0.6, 0.7, moist) * smoothstep(0.05, 0.015, e) * (1 - desert) * (1 - snow);
-        const forest = smoothstep(0.44, 0.58, moist) * (1 - desert) * (1 - snow) * (1 - rock) * (1 - swamp) * smoothstep(-0.05, 0.12, temp);
-        const used = snow + rock + desert + swamp + forest;
-        const grass = Math.max(0, 1 - used) * 0.85;
-        const total = Math.max(1, used + grass);
-        const o = (j * bw + i) * BIOME_CHANNELS;
-        biome[o] = (grass / total) * 235;
-        biome[o + 1] = (forest / total) * 235;
-        biome[o + 3] = (desert / total) * 235;
-        biome[o + 4] = (swamp / total) * 235;
-        biome[o + 5] = (snow / total) * 235;
-        biome[o + 6] = (rock / total) * 235;
-      }
-    }
-  }
+  let biome: Uint8Array | null = null;
+  if (p.biomes) biome = paintBiomes(p, mid, h, clim, coastKm, flow, maxFlow, rivers, { x0: bx0, y0: by0, w: bw, h: bh });
 
-  // ---- rivers: from a highland source, repeatedly step to the lowest
-  // unvisited neighbouring cell until the sea. Visiting each cell once lets
-  // the walk fill and spill out of small basins; a climb budget rejects
-  // sources trapped in large ones.
-  const rivers: [number, number][][] = [];
-  if (p.rivers > 0) {
-    const idx = (x: number, y: number) => {
-      const xi = whole ? ((x % rw) + rw) % rw : x;
-      return y * rw + xi;
-    };
-    const inside = (x: number, y: number) => y >= 0 && y < rh && (whole || (x >= 0 && x < rw));
-    const NB = [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-      [1, 1],
-      [-1, 1],
-      [1, -1],
-      [-1, -1],
-    ];
-    const visited = new Uint32Array(rw * rh);
-    let walkId = 0;
-    for (let attempt = 0; attempt < p.rivers * 60 && rivers.length < p.rivers; attempt++) {
-      let x = Math.floor(rand() * rw);
-      let y = 8 + Math.floor(rand() * (rh - 16));
-      const rise = height[idx(x, y)] - sea;
-      if (rise < 900 || rise > maxE * 0.7) continue;
-      const sx = rx0 + x + 0.5;
-      const sy = ry0 + y + 0.5;
-      if (rivers.some((r) => Math.hypot(r[0][0] - sx, r[0][1] - sy) < 25)) continue;
-      walkId++;
-      const line: [number, number][] = [[sx, sy]];
-      let climb = 0;
-      let reachedSea = false;
-      for (let k = 0; k < 4000; k++) {
-        visited[idx(x, y)] = walkId;
-        const here = height[idx(x, y)];
-        let bx = -1;
-        let by = -1;
-        let bh = Infinity;
-        for (const [ox, oy] of NB) {
-          const nx = x + ox;
-          const ny = y + oy;
-          if (!inside(nx, ny) || visited[idx(nx, ny)] === walkId) continue;
-          // a little noise makes the course meander
-          const nh = height[idx(nx, ny)] + (rand() - 0.5) * 12;
-          if (nh < bh) {
-            bh = nh;
-            bx = nx;
-            by = ny;
-          }
-        }
-        if (bx < 0) break;
-        climb += Math.max(0, height[idx(bx, by)] - here);
-        if (climb > 600) break;
-        x = bx;
-        y = by;
-        if (k % 2 === 1) line.push([rx0 + x + 0.5, ry0 + y + 0.5]);
-        if (height[idx(x, y)] <= sea) {
-          line.push([rx0 + x + 0.5, ry0 + y + 0.5]);
-          reachedSea = true;
-          break;
-        }
-      }
-      if (!reachedSea) continue;
-      // cut out loops left where the walk wandered while filling a basin
-      const clean: [number, number][] = [];
-      for (let i = 0; i < line.length; i++) {
-        let j = line.length - 1;
-        while (j > i + 2 && Math.hypot(line[j][0] - line[i][0], line[j][1] - line[i][1]) > 3) j--;
-        clean.push(line[i]);
-        if (j > i + 2) i = j - 1;
-      }
-      if (clean.length > 12) rivers.push(clean);
-    }
-  }
-
+  for (let k = 0; k < height.length; k++) height[k] = clamp(p.seaLevel + height[k], p.minElevation, p.seaLevel + maxE);
+  progress('Done', 1);
   return {
     height,
     biome,
-    biomeRegion: { x0: Math.floor(rx0 / 2), y0: Math.floor(ry0 / 2), w: bw, h: bh },
+    biomeRegion: { x0: bx0, y0: by0, w: bw, h: bh },
     region: { x0: rx0, y0: ry0, w: rw, h: rh },
     rivers,
   };
+}
+
+/** Small RGBA picture of a generated world for previews (biomes, depth and hill shading). */
+export function previewImage(r: GenResult, w: number): Uint8ClampedArray {
+  const H = r.region.h;
+  const out = new Uint8ClampedArray(w * H * 4);
+  const pal: [number, number, number][] = [
+    [150, 170, 104],
+    [79, 116, 62],
+    [190, 170, 110],
+    [214, 190, 135],
+    [104, 120, 84],
+    [240, 242, 246],
+    [140, 132, 120],
+    [196, 184, 120],
+  ];
+  for (let j = 0; j < H; j++)
+    for (let i = 0; i < w; i++) {
+      const k = j * w + i;
+      const v = r.height[k];
+      const o = k * 4;
+      if (v <= 0) {
+        const d = Math.min(1, -v / 5000);
+        out[o] = 92 - 50 * d;
+        out[o + 1] = 140 - 60 * d;
+        out[o + 2] = 170 - 50 * d;
+      } else {
+        let cr = 0;
+        let cg = 0;
+        let cb = 0;
+        let tw = 0;
+        if (r.biome) {
+          const bo = (Math.min(r.biomeRegion.h - 1, j >> 1) * r.biomeRegion.w + Math.min(r.biomeRegion.w - 1, i >> 1)) * BIOME_CHANNELS;
+          for (let c = 0; c < BIOME_CHANNELS; c++) {
+            const wv = r.biome[bo + c];
+            cr += pal[c][0] * wv;
+            cg += pal[c][1] * wv;
+            cb += pal[c][2] * wv;
+            tw += wv;
+          }
+        }
+        if (tw < 1) {
+          [cr, cg, cb] = [160, 170, 115];
+          tw = 1;
+        }
+        const e = Math.min(1, v / 6000);
+        out[o] = (cr / tw) * (1 - e * 0.3) + 200 * e * 0.3;
+        out[o + 1] = (cg / tw) * (1 - e * 0.3) + 190 * e * 0.3;
+        out[o + 2] = (cb / tw) * (1 - e * 0.3) + 180 * e * 0.3;
+      }
+      const l = r.height[j * w + ((i - 1 + w) % w)];
+      const u = r.height[Math.max(0, j - 1) * w + i];
+      const shade = clamp(1 + ((Math.max(0, l) - Math.max(0, v)) + (Math.max(0, u) - Math.max(0, v))) / 1800, 0.6, 1.3);
+      out[o] *= shade;
+      out[o + 1] *= shade;
+      out[o + 2] *= shade;
+      out[o + 3] = 255;
+    }
+  return out;
 }

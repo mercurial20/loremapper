@@ -51,6 +51,7 @@ export function normalizeDoc(d: Partial<MapDocument> | undefined): MapDocument {
     territories: d.territories ?? {},
     labels: d.labels ?? {},
     peaks: d.peaks ?? {},
+    regionNames: d.regionNames ?? {},
     objectLayers: d.objectLayers?.length ? d.objectLayers : e.objectLayers,
     systemLayers: { ...e.systemLayers, ...(d.systemLayers ?? {}) },
     view: { ...defaultView(), ...(d.view ?? {}) },

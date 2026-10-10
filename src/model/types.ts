@@ -138,12 +138,21 @@ export interface ViewSettings {
   coastRipples: boolean;
 }
 
+/** A name given to a landmass or body of water, pinned to a point inside it. */
+export interface RegionName {
+  id: string;
+  x: number;
+  y: number;
+  name: string;
+}
+
 export interface MapDocument {
   objects: Record<string, MapObject>;
   paths: Record<string, PathFeature>;
   territories: Record<string, Territory>;
   labels: Record<string, MapLabel>;
   peaks: Record<string, PeakAnnotation>;
+  regionNames: Record<string, RegionName>;
   objectLayers: ObjectLayer[];
   systemLayers: Record<SystemLayerId, SystemLayerState>;
   view: ViewSettings;
@@ -186,6 +195,7 @@ export function emptyDocument(): MapDocument {
     territories: {},
     labels: {},
     peaks: {},
+    regionNames: {},
     objectLayers: [
       { id: 'layer-settlements', name: 'Settlements', visible: true, locked: false, opacity: 1 },
       { id: 'layer-features', name: 'Features', visible: true, locked: false, opacity: 1 },

@@ -1,4 +1,5 @@
 import { assetLibrary } from '../assets/library';
+import { refreshGeographyIfShown, resetGeography } from './geography';
 import { defaultPlanet, type GridPreset } from '../core/planet';
 import { history } from '../model/history';
 import { normalizeDoc, normalizeMeta } from '../model/serialization';
@@ -127,6 +128,7 @@ class Editor {
     clearTimeout(this.peakTimer);
     this.detected = [];
     this.model = model;
+    resetGeography();
     useEditor.getState().set({ selection: [], peaks: [], saveStatus: 'saved', lastSavedAt: Date.now() });
     useDoc.getState().load(meta, doc);
 
@@ -253,6 +255,7 @@ class Editor {
     this.detected = detectPeaks(model, 300, 160);
     const anns = Object.values(useDoc.getState().doc.peaks);
     useEditor.getState().set({ peaks: resolvePeaks(model, this.detected, anns), landStats: this.landStats(model) });
+    refreshGeographyIfShown();
   }
 
   /** Land area on the sphere (cells weighted by their true area). */

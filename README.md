@@ -10,7 +10,7 @@ A free fantasy map editor that runs in your browser.<br/>
 Sculpt real terrain, paint forests and deserts, draw rivers, roads and borders,<br/>
 drop in castles and dragons, and hide the unexplored under fog of war.
 
-[![Version](https://img.shields.io/badge/version-1.0.0--beta.1-e6a94f)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.0--beta.2-e6a94f)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-3f8f5a)](LICENSE)
 [![Try it online](https://img.shields.io/badge/try%20it-online-e6a94f?logo=github)](https://mercurial20.github.io/loremapper/)
 [![Self-hosted](https://img.shields.io/badge/self--hosted-docker%20compose%20up-2f5d9a)](#b-docker)
@@ -28,7 +28,7 @@ drop in castles and dragons, and hide the unexplored under fog of war.
 ## ✨ Why Loremapper?
 
 - **Terrain is real, not just painted.** Every point has an elevation in metres. Mountains cast shade, peaks label themselves ("7,192 m"), coastlines follow the sea level, and contour lines come for free.
-- **Start from an empty ocean or a seed.** Sculpt by hand, or type a seed like `amber-drake-7` and get continents, rivers and climates in seconds. Then keep editing everything by hand.
+- **Start from an empty ocean or a seed.** Sculpt by hand, or type a seed like `amber-drake-7` and get a whole planet built by plate tectonics: mountain ranges where plates collide, rivers that drain real basins, and deserts, steppes, forests and farmland where the climate puts them. Then keep editing everything by hand.
 - **Your art is welcome.** It ships with 57 illustrated map icons, and you can drop in your own PNG, WebP or SVG files. They stay in your library.
 - **Built for game masters.** Paint fog of war over unexplored lands and export a player-safe version of the map.
 - **Nothing leaves your computer.** There's no account and no cloud. Maps are saved automatically in your browser. Use it [online](https://mercurial20.github.io/loremapper/) with nothing to install, or run your own copy with one command.
@@ -196,8 +196,8 @@ Actions variable named `CF_BEACON_TOKEN` in your fork.
 <td><b>1. Create a world.</b><br/>Open <b>Maps → New map</b>. Name your world and choose its size: <b>Standard</b> (each terrain cell is ~11 km) or <b>High detail</b> (~5.7 km). You can also change the planet radius and the highest possible peaks. Every map starts as an open ocean.</td>
 </tr>
 <tr>
-<td><img src="docs/images/generate.jpg" alt="The Generate terrain dialog with a seed and options" /></td>
-<td><b>2. Generate or sculpt.</b><br/>Click <b>Generate</b> for continents, a supercontinent, an island or an archipelago. Type any <b>seed</b> (or roll the dice) and choose the land share, mountain height and ruggedness, plus optional biomes, rivers and named settlements. The same seed always gives the same world. Prefer full control? Press <kbd>R</kbd> and paint land yourself.</td>
+<td><img src="docs/images/generate.jpg" alt="The Generate world dialog: world types and templates, realism levels, a live preview and six seed variants" /></td>
+<td><b>2. Generate or sculpt.</b><br/>Click <b>Generate</b> and pick a world: continents, a supercontinent, an ocean world, or a template such as <i>Old &amp; New World</i>, <i>Inner sea</i>, <i>Polar continent</i>, <i>Shattered continent</i> or <i>Mainland &amp; isles</i>. You can also add an island or an archipelago to the current view. Type any <b>seed</b>, roll the dice or click <b>Variants</b> to compare six worlds; the live preview shows exactly what you'll get. Choose a <b>realism</b> level from <i>Easy</i> (about 2 seconds) to <i>Ultra</i> (about 10 seconds or more, cancellable). In <i>Advanced settings</i> you can set land share, mountains, hills, temperature, rainfall, rivers and named settlements. The same seed and settings always give the same world. Prefer full control? Press <kbd>R</kbd> and paint land yourself.</td>
 </tr>
 <tr>
 <td><img src="docs/images/world.jpg" alt="A generated planet with several continents" /></td>
@@ -221,13 +221,26 @@ Actions variable named `CF_BEACON_TOKEN` in your fork.
 
 ## 🧭 Features
 
+### A world that makes sense
+
+The generator builds a planet the way geology and weather would.
+
+| | |
+|---|---|
+| **Tectonic plates** | Continental plates become continents. Where plates collide, mountain ranges and volcanic island arcs rise, with deep-sea trenches offshore. Where they pull apart, there are mid-ocean ridges and rift seas. Old, worn-down ranges run through continent interiors. The world type is a guarantee: a supercontinent really is one landmass, and an ocean world has only islands. |
+| **Plains and mountains** | Most land is flat lowland, steppe or high plateau. Hills and peaks gather in mountain belts, not everywhere. |
+| **Climate** | Temperature follows latitude and altitude. Prevailing winds carry moisture from the sea, so windward coasts are wet and the land behind mountains lies in a rain shadow. |
+| **Rivers** | Rivers drain real basins from the highlands to the sea, with tributaries joining them. Each one runs downhill in its own valley. Closed basins fill up into flat river plains. At higher realism, rivers carve their valleys. |
+| **Biomes** | Biomes follow climate, relief and water. Moisture against heat gives desert, then steppe, grassland and forest. Cold gives tundra and ice. Swamps form where water gathers in warm lowlands. Farmland lies on flat, watered land along rivers and coasts, and a great river keeps a green strip alive through the desert. |
+| **Settlements** | Optional named settlements are placed logically. Capitals and towns sit on rivers, river mouths and coasts among fields. Castles sit on hills and watchtowers in mountain passes. None are placed on ice, in swamps, or in deserts away from water. |
+
 ### Terrain you can feel
 
 | | |
 |---|---|
 | **Brushes** | Raise <kbd>R</kbd>, Lower <kbd>L</kbd>, Mountain range <kbd>M</kbd>, Smooth <kbd>S</kbd> and Flatten <kbd>F</kbd>. Brush size is in kilometres. Strength, softness, a per-stroke height cap and ragged natural edges are all adjustable. Hold the mouse still to keep building. |
 | **Elevation** | Heights are real metres (up to 10,000 m by default) with an adjustable sea level. Peaks are detected automatically; you can name them, mark them as significant or remove them. |
-| **Biomes** | Grassland, forest, farmland, desert, swamp, snow and rock, with soft edges. Forests grow painted tree crowns and farmland becomes a patchwork of fields. |
+| **Biomes** | Grassland, forest, farmland, desert, swamp, snow, rock and steppe, with soft edges. Forests grow painted tree crowns and farmland becomes a patchwork of fields. |
 | **Rivers & roads** | Draw them freehand or point by point, then drag the points to reshape them. Rivers taper towards the source; roads can be dashed, paved, dotted or double. |
 
 <img src="docs/images/elevation.jpg" alt="Left: contour lines; right: colour-coded height overlay" />
@@ -276,6 +289,16 @@ Switch styles any time from **View**: parchment, colourful fantasy atlas, clean
 political or shaded relief. You can also toggle contour lines, the height
 overlay, a latitude/longitude grid, peak markers and coastal ripples.
 
+### How big is it?
+
+With the Select tool (<kbd>V</kbd>), click any land or water on the map. The whole continent, island, sea or lake is outlined, and the panel shows:
+
+- its **area**, measured on the sphere, and its share of all land;
+- its coastline, its highest or deepest point and its mean height;
+- how far it reaches in latitude and longitude, and which realms lie on it.
+
+You can name it there and write the name on the map as a normal label. **Lands & seas** in the right panel lists every landmass and body of water by size; click one to fly to it. A selected territory also shows how much land lies inside its border and which landmasses it covers. Units switch between metric (km², km, m) and imperial (mi², mi, ft).
+
 ### Also included
 
 - **Layers**: show, hide, lock and fade terrain, biomes, borders, rivers, objects, labels, peaks and fog. You can create your own object layers.
@@ -297,7 +320,7 @@ overlay, a latitude/longitude grid, peak markers and coastal ripples.
 | <kbd>M</kbd> | Mountain range | <kbd>G</kbd> | Territory |
 | <kbd>S</kbd> | Smooth | <kbd>X</kbd> | Fog of war |
 | <kbd>F</kbd> | Flatten | <kbd>P</kbd> | Peaks |
-| <kbd>B</kbd> | Paint biome (<kbd>1</kbd>–<kbd>7</kbd> pick one) | <kbd>U</kbd> | Measure |
+| <kbd>B</kbd> | Paint biome (<kbd>1</kbd>–<kbd>8</kbd> pick one) | <kbd>U</kbd> | Measure |
 | <kbd>E</kbd> | Eraser | <kbd>[</kbd> <kbd>]</kbd> | Brush size |
 
 <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redo · <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicate · <kbd>Delete</kbd> remove · hold <kbd>Shift</kbd> or <kbd>Alt</kbd> while painting to invert a brush
@@ -376,28 +399,37 @@ So far testing has been on macOS. Windows and Linux reports are very welcome.
 ## 🚧 Current beta limitations
 
 - A map's resolution is chosen when it's created and can't be changed later. You can't sculpt details smaller than one terrain cell (~11 km on Standard); biome paint and fog use cells twice that size.
-- Rivers and roads sit on top of the terrain; they don't carve valleys.
+- Generated rivers sit in their own valleys, but rivers and roads you draw by hand sit on top of the terrain. Lakes aren't drawn as water yet: closed basins fill up into flat plains instead.
 - Neighbouring borders don't snap together.
 - Undo history is cleared when you reload the page or switch maps.
 - Curved labels are selected using their straight outline.
 - Project files of fully generated worlds are large (about 20–25 MB).
+- Each Loremapper version may build a different world from the same seed. Within one version, the same seed and settings always give the same world. In other browsers it can differ very slightly.
 - Very large image exports (over ~160 megapixels) are disabled.
 - Near the poles, brushes keep their real size in km, so they look very wide on the flat map.
 - Desktop only, with no touch support yet.
 
 ## ✅ Testing done for this beta
 
-- A clean install from a fresh clone, with lint, type-check, 20 unit tests and the production build all passing.
-- `docker compose up -d` starts the app on `localhost:8080`, and a build served from the GitHub Pages sub-path (`/loremapper/`) passes the same checks.
-- Automated browser runs in Chrome, Firefox and WebKit covered:
+- Lint, type-check, 31 unit tests and the production build all pass. The tests cover:
+  - deterministic worlds: one seed and one set of settings give the same world;
+  - world types that hold, and rivers that always run downhill;
+  - true areas on the sphere.
+- `docker compose up -d` starts the app on `localhost:8080` (checked by CI on every push), and a build served from the GitHub Pages sub-path (`/loremapper/`) passes the same checks.
+- Automated browser runs in Chrome 154, Firefox 157 and WebKit 27.2 (macOS) covered:
   - painting terrain and biomes;
   - placing and editing objects;
   - importing PNG and SVG assets and replacing artwork;
   - reloading, with maps, assets and the camera all restored;
   - all three exports and re-importing a project;
   - switching maps.
+- In all three browsers, the runs also covered the new parts:
+  - every world type at every realism level;
+  - cancelling a generation;
+  - an island in the current view;
+  - measuring continents and territories.
 
-  The runs produced no console errors and no requests to any outside server.
+  All three gave identical areas. The runs produced no console errors and no requests to any outside server. Firefox logs a few harmless WebGL notices.
 
 ## 🐞 Reporting bugs and contributing
 

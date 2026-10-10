@@ -37,7 +37,7 @@ export const TOOL_GROUPS: ToolDef[][] = [
     { id: 'flatten', name: 'Flatten', key: 'F', icon: FlattenIcon, help: 'Level terrain to the height under the first click, or to a fixed height.' },
   ],
   [
-    { id: 'paint', name: 'Paint biome', key: 'B', icon: BiomeIcon, help: 'Paint forests, grassland, farmland, desert, swamp, snow or rock. Keys 1–7 pick a biome. Shift/Alt erases.' },
+    { id: 'paint', name: 'Paint biome', key: 'B', icon: BiomeIcon, help: 'Paint forests, grassland, farmland, desert, swamp, snow, rock or steppe. Keys 1–8 pick a biome. Shift/Alt erases.' },
     { id: 'erase', name: 'Eraser', key: 'E', icon: Eraser, help: 'Erase painted biomes and (optionally) objects, path points and labels under the brush.' },
   ],
   [

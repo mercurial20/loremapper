@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { RegionInfo } from '../terrain/geography';
 import type { BrushParams } from '../terrain/brushes';
 import type { ResolvedPeak } from '../terrain/peaks';
 import type { BorderStyle, LabelFont, RoadStyle, SelectionRef, TerritoryType } from '../model/types';
@@ -95,12 +96,30 @@ interface EditorState {
   /** True-area land statistics of the current map. */
   landStats: { areaKm2: number; fraction: number; highest: number } | null;
   busy: string | null;
+  /** When set, the busy overlay offers a Cancel button that calls it. */
+  busyCancel: (() => void) | null;
+  /** Landmass or water body shown in the inspector (found again by its anchor after edits). */
+  inspect: { land: boolean; id: number; anchorX: number; anchorY: number } | null;
+  /** Landmasses and water bodies of the current terrain (null until first measured). */
+  geography: { land: RegionInfo[]; water: RegionInfo[]; landKm2: number; planetKm2: number } | null;
+  geoBusy: boolean;
+  geoListOpen: boolean;
+  /** Units for areas and distances in the geography panels. */
+  units: 'metric' | 'imperial';
 
   setTool(t: ToolId): void;
   setBrush(g: BrushGroup, p: Partial<BrushParams>): void;
   set(p: Partial<EditorState>): void;
   select(sel: SelectionRef[]): void;
   notify(text: string, kind?: 'info' | 'error'): void;
+}
+
+function storedUnits(): 'metric' | 'imperial' {
+  try {
+    return localStorage.getItem('loremapper.units') === 'imperial' ? 'imperial' : 'metric';
+  } catch {
+    return 'metric';
+  }
 }
 
 export const useEditor = create<EditorState>((set, get) => ({
@@ -144,6 +163,12 @@ export const useEditor = create<EditorState>((set, get) => ({
   focusLabel: null,
   landStats: null,
   busy: null,
+  busyCancel: null,
+  inspect: null,
+  geography: null,
+  geoBusy: false,
+  geoListOpen: false,
+  units: storedUnits(),
 
   setTool(t) {
     const cur = get().tool;
@@ -157,7 +182,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     set(p);
   },
   select(selection) {
-    set({ selection });
+    set(selection.length ? { selection, inspect: null } : { selection });
   },
   notify(text, kind = 'info') {
     set({ toast: { id: Date.now(), text, kind } });
