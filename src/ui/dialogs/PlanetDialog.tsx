@@ -1,5 +1,5 @@
 import { surfaceAreaKm2 } from '../../core/planet';
-import { formatArea, formatLength } from '../../core/units';
+import { formatArea, formatHeight, formatLength } from '../../core/units';
 import { useDoc } from '../../store/docStore';
 import { useEditor } from '../../store/editorStore';
 import { MeasureField, NumberField } from '../controls/controls';
@@ -66,11 +66,25 @@ export function PlanetDialog() {
         <MeasureField label={flat ? 'Deepest water' : 'Deepest ocean'} kind="height" value={p.minElevation} min={-30000} max={-100} step={{ metric: 100, imperial: 500 }} onChange={(v) => upd({ minElevation: v })} />
         <NumberField label="Generator land share" value={Math.round(p.landFraction * 100)} min={5} max={70} step={1} suffix="%" onChange={(v) => upd({ landFraction: v / 100 })} />
       </div>
+      {!flat && (
+        <p className="hint">
+          With {p.gravity.toFixed(2)} g, the tallest mountains could stand about {formatHeight(8849 / Math.max(0.05, p.gravity), units)} (Everest scaled by 1 / gravity, since rock
+          can carry a mountain only so high: Weisskopf 1975).
+          {Math.abs(p.maxElevation - 8849 / Math.max(0.05, p.gravity)) > 0.35 * (8849 / Math.max(0.05, p.gravity)) && (
+            <>
+              {' '}
+              <button className="btn ghost small" onClick={() => upd({ maxElevation: Math.round(8849 / Math.max(0.05, p.gravity) / 100) * 100 })}>
+                Use it as max elevation
+              </button>
+            </>
+          )}
+        </p>
+      )}
       <p className="hint">
         Raising the sea level floods coasts without changing stored elevations: heights are kept relative to a fixed datum.{' '}
         {flat
           ? 'The size of a flat map is fixed when it is created; switching units never changes it.'
-          : 'The radius sets every distance, scale bar and area. Gravity is recorded for reference.'}
+          : 'The radius sets every distance, scale bar and area.'}
       </p>
     </Modal>
   );

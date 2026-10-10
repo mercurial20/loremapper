@@ -35,6 +35,8 @@ Planned as v1.1: map types, a welcoming start, global units and a phone / tablet
   - its river-basin shape: Hack's exponent ≈ 0.44–0.48, against 0.39–0.45 before and Earth's 0.56.
 
   The same seed builds a different world than in version 2.
+- **More natural plates and coasts.** Plate sizes follow a power law, as on Earth (a few giant plates among many small ones). Coastlines stay fractal down to full resolution.
+- **Gravity suggests a mountain height.** Map settings show how tall mountains could stand at the planet's gravity (Everest scaled by 1 / g) and can apply it as the maximum elevation.
 - **Ocean currents and dry summers in generated climates.** Wind-driven gyres put cold currents off western coasts in the subtropics (coastal deserts) and warm ones off eastern coasts (humid subtropics), and flip at high latitudes. Western coasts at 30–45° get Mediterranean dry summers, with scrub and grassland rather than forest.
 - New planets default to Earth's radius, 6,371 km. Existing maps keep their own.
 - A click on empty map with the Select tool now only clears the selection; measuring land and water moved to the Info tool.

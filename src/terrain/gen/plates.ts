@@ -239,12 +239,14 @@ function chooseContinents(layout: Layout, plates: Plate[], target: number, rnd: 
  */
 export function tectonics(g: Grid, seed: number, layout: Layout, landFraction: number, base: PlateBase, plateScale = 1): Tectonics {
   const rnd = mulberry32(subSeed(seed, 1));
-  const nPlates = Math.round(PLATES[layout] * plateScale);
+  const nPlates = Math.round(PLATES[layout] * plateScale * 1.5);
   const seeds: V3[] = [];
   const weights: number[] = [];
+  // plate areas follow a power law (Bird 2003): a few giant plates among many small ones.
+  // Area grows as weight², so a Pareto-like weight gives a heavy-tailed size distribution.
   for (let p = 0; p < nPlates; p++) {
     seeds.push(randomUnit(rnd));
-    weights.push(0.6 + 0.8 * rnd());
+    weights.push(Math.min(2.2, 0.6 * Math.pow(1 - 0.94 * rnd(), -0.45)));
   }
   const plateOf = partition(base.q, seeds, weights);
   const N = g.w * g.h;
