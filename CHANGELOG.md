@@ -24,6 +24,7 @@ Planned as v1.1: map types, a welcoming start, Earth, global units and a phone /
   - edits are refused in the logic, not just hidden;
   - a one-line note points to the desktop for editing.
 - **Community links** in the top bar: GitHub, issues and Reddit.
+- **Kinds of land for the Raise brush:** Plains (the default), Hills, Plateau and Mountains. Plains, hills and plateaus level off at a natural height instead of rising forever, so a beginner's first strokes make believable lowlands. Moving a slider turns the choice into Custom.
 
 ### Changed
 
@@ -32,6 +33,7 @@ Planned as v1.1: map types, a welcoming start, Earth, global units and a phone /
 
 ### Fixed
 
+- **Painting on flat maps is fast again.** The search for summits used a radius in kilometres that, on a fine flat grid, spanned over a thousand cells; it now scales with the map, and an edit's main-thread work dropped from about 10 s to 0.1 s.
 - **No more lag when selecting a large landmass.** The outline is now traced once in the analysis worker and simplified per zoom step. On a 8192 × 4096 map, zoom frames with an outline went from a 117 ms p95 to 17 ms, with no main-thread long tasks.
 
 ### Compatibility

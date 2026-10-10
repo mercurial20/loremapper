@@ -102,6 +102,8 @@ interface EditorState {
   busyCancel: (() => void) | null;
   /** First launch (no maps in this browser): show the welcome screen. */
   welcome: boolean;
+  /** Which raise-brush preset the terrain brush follows ('custom' once a slider is moved). */
+  terrainPreset: TerrainPreset;
   /** Read-only viewer (phones and tablets): look around, no editing. */
   readOnly: boolean;
   /** Landmass or water body shown in the inspector (found again by its anchor after edits). */
@@ -121,6 +123,19 @@ interface EditorState {
 }
 
 /** Switch display units everywhere (and remember the choice in this browser). */
+export type TerrainPreset = 'plains' | 'hills' | 'plateau' | 'mountains' | 'custom';
+
+/**
+ * Raise-brush presets: each builds a kind of land and stops at a sensible
+ * height, so a first map looks right without touching a slider.
+ */
+export const TERRAIN_PRESETS: Record<Exclude<TerrainPreset, 'custom'>, { label: string; hint: (h: string) => string; params: Omit<BrushParams, 'radiusKm'> }> = {
+  plains: { label: 'Plains', hint: (h) => `Low, flat land that levels off around ${h}.`, params: { strength: 0.6, falloff: 0.8, opacity: 1, roughness: 0.15, ceiling: 180, ceilingVar: 0.25 } },
+  hills: { label: 'Hills', hint: (h) => `Rolling uplands that rise to about ${h}.`, params: { strength: 0.5, falloff: 0.75, opacity: 1, roughness: 0.3, ceiling: 900, ceilingVar: 0.6 } },
+  plateau: { label: 'Plateau', hint: (h) => `A high, level tableland around ${h}.`, params: { strength: 0.6, falloff: 0.5, opacity: 1, roughness: 0.15, ceiling: 1600, ceilingVar: 0.12 } },
+  mountains: { label: 'Mountains', hint: () => 'Keeps rising while you paint: build peaks (or use the Mountain range tool).', params: { strength: 0.75, falloff: 0.85, opacity: 1, roughness: 0.5 } },
+};
+
 export function setUnits(units: Units) {
   useEditor.getState().set({ units });
   try {
@@ -142,7 +157,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   tool: detectViewer() ? 'select' : 'raise',
   prevTool: null,
   brushes: {
-    terrain: { radiusKm: 260, strength: 0.5, falloff: 0.7, opacity: 1, roughness: 0.55 },
+    terrain: { ...TERRAIN_PRESETS.plains.params, radiusKm: 260 },
     paint: { radiusKm: 220, strength: 0.6, falloff: 0.6, opacity: 1 },
     fog: { radiusKm: 400, strength: 0.7, falloff: 0.6, opacity: 1 },
     erase: { radiusKm: 200, strength: 0.8, falloff: 0.3, opacity: 1 },
@@ -181,6 +196,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   busy: null,
   busyCancel: null,
   welcome: false,
+  terrainPreset: 'plains',
   readOnly: detectViewer(),
   inspect: null,
   geography: null,

@@ -305,7 +305,10 @@ class Editor {
   private computePeaks() {
     const model = this.model;
     if (!model) return;
-    this.detected = detectPeaks(model, 300, 160);
+    // a summit is the highest point within ~160 km on a planet; on a flat map,
+    // within a fortieth of its width (the search cost grows with the radius in cells)
+    const geo = model.geo;
+    this.detected = detectPeaks(model, 300, geo.flat ? (geo.W * geo.cellKm) / 40 : 160);
     const anns = Object.values(useDoc.getState().doc.peaks);
     useEditor.getState().set({ peaks: resolvePeaks(model, this.detected, anns), landStats: this.landStats(model) });
     refreshGeographyIfShown();

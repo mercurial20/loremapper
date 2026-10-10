@@ -9,8 +9,8 @@ import { TERRITORY_TYPES, TERRITORY_TYPE_LABELS, type BorderStyle, type LabelFon
 import { FONT_LABEL } from '../../render/fonts';
 import { STYLE_PRESETS } from '../../render/styles';
 import { useDoc } from '../../store/docStore';
-import { brushGroupOf, useEditor, type BrushGroup } from '../../store/editorStore';
-import { raiseRate } from '../../terrain/brushes';
+import { brushGroupOf, TERRAIN_PRESETS, useEditor, type BrushGroup, type TerrainPreset } from '../../store/editorStore';
+import { raiseRate, type BrushParams } from '../../terrain/brushes';
 import { pushTileChange } from '../../tools/ToolController';
 import { ALL_TOOLS } from '../toolDefs';
 import { ColorField, Hint, MeasureField, Segmented, Select, Slider, Toggle } from '../controls/controls';
@@ -18,15 +18,53 @@ import { ColorField, Hint, MeasureField, Segmented, Select, Slider, Toggle } fro
 const SWATCHES = ['#b5452f', '#2f5d9a', '#3f8f5a', '#c79a2e', '#7a4aa0', '#2a8a8a', '#8f3a5c', '#5a5a5a'];
 const PATH_SWATCHES = ['#4f86ad', '#2e5f86', '#6aa5c8', '#7a5532', '#4b3a2a', '#9a7b52', '#8a2e2e', '#2b2016'];
 
+/** Kind-of-land presets for the raise brush: plains by default. */
+function TerrainPresets() {
+  const preset = useEditor((s) => s.terrainPreset);
+  const units = useEditor((s) => s.units);
+  const b = useEditor((s) => s.brushes.terrain);
+  const pick = (id: Exclude<TerrainPreset, 'custom'>) => {
+    // presets without a ceiling clear it explicitly (setBrush merges)
+    useEditor.getState().setBrush('terrain', { ceiling: undefined, ceilingVar: undefined, ...TERRAIN_PRESETS[id].params });
+    useEditor.getState().set({ terrainPreset: id });
+  };
+  const current = preset === 'custom' ? null : TERRAIN_PRESETS[preset];
+  const presetHint = (id: Exclude<TerrainPreset, 'custom'>) => {
+    const c = TERRAIN_PRESETS[id].params.ceiling;
+    return TERRAIN_PRESETS[id].hint(c === undefined ? '' : formatHeight(c, units));
+  };
+  return (
+    <>
+      <Segmented
+        label="Land to build"
+        value={preset}
+        onChange={(v) => v !== 'custom' && pick(v)}
+        options={[
+          ...(Object.keys(TERRAIN_PRESETS) as Exclude<TerrainPreset, 'custom'>[]).map((id) => ({ value: id, label: TERRAIN_PRESETS[id].label, title: presetHint(id) })),
+          ...(preset === 'custom' ? [{ value: 'custom' as const, label: 'Custom' }] : []),
+        ]}
+      />
+      <Hint>
+        {current ? presetHint(preset as Exclude<TerrainPreset, 'custom'>) : b.ceiling !== undefined ? `Your own settings, levelling off near ${formatHeight(b.ceiling, units)}.` : 'Your own settings.'}
+      </Hint>
+    </>
+  );
+}
+
 function BrushControls({ group, showOpacity = true }: { group: BrushGroup; showOpacity?: boolean }) {
   const b = useEditor((s) => s.brushes[group]);
-  const setBrush = useEditor((s) => s.setBrush);
   const tool = useEditor((s) => s.tool);
+  // moving a slider of the raise brush turns its preset into "custom"
+  const setBrush = (g: BrushGroup, p: Partial<BrushParams>) => {
+    useEditor.getState().setBrush(g, p);
+    if (g === 'terrain' && tool === 'raise' && !('radiusKm' in p && Object.keys(p).length === 1)) useEditor.getState().set({ terrainPreset: 'custom' });
+  };
   const units = useEditor((s) => s.units);
   useDoc((s) => s.meta);
   const range = editor.model ? brushRange(editor.model.geo) : { min: 5, max: 6000 };
   return (
     <>
+      {tool === 'raise' && group === 'terrain' && <TerrainPresets />}
       <Slider
         label="Radius"
         value={Math.min(range.max, Math.max(range.min, b.radiusKm))}
@@ -280,7 +318,7 @@ export function ToolOptions() {
       )}
       {tool === 'peak' && (
         <>
-          <Hint>Peaks are detected automatically as the highest point within ~{formatLength(160, st.units)} and update as you sculpt.</Hint>
+          <Hint>Peaks are detected automatically as the highest point nearby and update as you sculpt.</Hint>
           {suppressed > 0 && (
             <button className="btn" onClick={() => restoreSuppressedPeaks()}>
               Restore {suppressed} removed peak{suppressed > 1 ? 's' : ''}

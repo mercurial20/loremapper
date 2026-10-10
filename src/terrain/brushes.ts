@@ -16,6 +16,10 @@ export interface BrushParams {
   opacity: number;
   /** Raise/lower: 0 = perfectly round dabs, 1 = ragged natural edges. */
   roughness?: number;
+  /** Raise: build land up to about this many metres above sea level, then level off. */
+  ceiling?: number;
+  /** Raise: how much the ceiling rolls across the land, 0 = flat plains … 1 = hills. */
+  ceilingVar?: number;
 }
 
 export interface StrokeOptions {
@@ -142,6 +146,9 @@ export class Stroke {
     const ridgeOctaves = Math.max(1, Math.min(5, Math.floor(Math.log2(ridgeScale / 1.5)) + 1));
     const ridgePeriod = Math.max(1, Math.round(W / ridgeScale));
     const ridgeCell = W / ridgePeriod;
+    // rolling ceilings vary over ~60 km of ground, seamless around the planet
+    const ceilPeriod = Math.max(1, Math.round(W / Math.max(2, 60 / kmY)));
+    const ceilCell = W / ceilPeriod;
     const flow = clamp(strength * amount, 0, 1);
     const seed = this.opts.seed ?? 1;
     const biomeCh = this.opts.biome ?? 0;
@@ -220,6 +227,14 @@ export class Stroke {
               delta *= 1 + 2 * t * t * (3 - 2 * t);
             }
             let nh = h + delta;
+            // presets like Plains raise land up to a ceiling and then level it off, so it stays flat
+            if (op === 'raise' && this.params.ceiling !== undefined) {
+              const v = this.params.ceilingVar ?? 0;
+              const roll = v > 0 ? fbm(x / ceilCell, y / ceilCell, seed + 29, 3, ceilPeriod) * 2 - 1 : 0;
+              const top = sea + this.params.ceiling * Math.max(0.15, 1 + v * roll);
+              if (h >= top) nh = h;
+              else nh = Math.min(nh, top);
+            }
             nh = clamp(nh, b - heightCap, b + heightCap);
             t[li] = clamp(nh, minH, Math.max(maxH, b));
             break;
