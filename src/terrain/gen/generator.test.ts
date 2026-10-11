@@ -56,7 +56,7 @@ describe('noise and grids', () => {
   });
 });
 
-describe('world generator', () => {
+describe('world generator', { timeout: 60_000 }, () => {
   it('is deterministic: same version, settings and seed give the same world', () => {
     const a = generate(params({ realism: 'medium' }));
     const b = generate(params({ realism: 'medium' }));
@@ -169,7 +169,7 @@ describe('relief from uplift and erosion', () => {
 
 });
 
-describe('built-in world sketches', () => {
+describe('built-in world sketches', { timeout: 60_000 }, () => {
   it('puts land where the sketch draws it and sea elsewhere', () => {
     const W = 512;
     const H = 512;

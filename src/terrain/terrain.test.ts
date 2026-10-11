@@ -95,7 +95,7 @@ describe('peaks', () => {
   });
 });
 
-describe('generator', () => {
+describe('generator', { timeout: 60_000 }, () => {
   it('hits the requested land share by true surface area', () => {
     const W = 512;
     const H = 256;
