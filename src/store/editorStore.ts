@@ -1,3 +1,4 @@
+import type { ProjectionParams } from '../core/projections';
 import { create } from 'zustand';
 import { detectViewer } from './viewer';
 import type { Units } from '../core/units';
@@ -117,6 +118,8 @@ interface EditorState {
   units: Units;
   /** The right-hand panel is hidden to give the map more room (remembered per browser). */
   panelHidden: boolean;
+  /** Planets: looking at the map in another projection (null = the editable equirectangular map). */
+  viewProjection: ProjectionParams | null;
 
   setTool(t: ToolId): void;
   setBrush(g: BrushGroup, p: Partial<BrushParams>): void;
@@ -230,12 +233,18 @@ export const useEditor = create<EditorState>((set, get) => ({
   geoListOpen: false,
   units: storedUnits(),
   panelHidden: storedPanelHidden(),
+  viewProjection: null,
 
   setTool(t) {
     const cur = get().tool;
     if (t === cur) return;
     // the viewer only looks: select (to inspect) and pan
     if (get().readOnly && t !== 'select' && t !== 'pan') return;
+    // other projections are for looking; editing goes back to the editable map
+    if (get().viewProjection && !get().readOnly && t !== 'info' && t !== 'pan') {
+      set({ viewProjection: null });
+      get().notify('Back to the editable map: editing works in the equirectangular view');
+    }
     set({ tool: t, prevTool: cur, assetPanelOpen: t === 'object' ? true : get().assetPanelOpen });
   },
   setBrush(g, p) {

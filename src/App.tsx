@@ -1,4 +1,5 @@
-import { LoaderCircle, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Globe2, LoaderCircle, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { PROJECTIONS } from './core/projections';
 import { useEffect, useState } from 'react';
 import { surfaceAreaKm2 } from './core/planet';
 import { formatArea } from './core/units';
@@ -14,6 +15,7 @@ import { ShortcutsDialog } from './ui/dialogs/ShortcutsDialog';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { CompassRose } from './ui/icons';
 import { MapView } from './ui/MapView';
+import { MiniGlobe } from './ui/MiniGlobe';
 import { NewMapFlow, WelcomeScreen } from './ui/NewMap';
 import { Modal } from './ui/dialogs/Modal';
 import { AssetPanel } from './ui/panels/AssetPanel';
@@ -34,6 +36,23 @@ function Toast() {
   return (
     <div className={'toast ' + toast.kind} role="status" key={toast.id}>
       {toast.text}
+    </div>
+  );
+}
+
+/** Shown while a planet is viewed in another projection. */
+function ProjectionBanner() {
+  const vp = useEditor((s) => s.viewProjection);
+  const readOnly = useEditor((s) => s.readOnly);
+  const set = useEditor((s) => s.set);
+  if (!vp) return null;
+  const name = PROJECTIONS.find((p) => p.id === vp.id)?.name ?? vp.id;
+  return (
+    <div className="projection-banner" role="status">
+      <Globe2 size={14} /> <b>{name}</b> <span>{readOnly ? 'Drag to turn, pinch to zoom' : 'View only: drag to look around, Info shows what is there'}</span>
+      <button className="btn small" onClick={() => set({ viewProjection: null })}>
+        {readOnly ? 'Flat map' : 'Edit map'}
+      </button>
     </div>
   );
 }
@@ -155,10 +174,11 @@ export default function App() {
   const welcome = useEditor((s) => s.welcome);
   const readOnly = useEditor((s) => s.readOnly);
   const panelHidden = useEditor((s) => s.panelHidden);
+  const projected = useEditor((s) => s.viewProjection !== null);
   const style = useDoc((s) => s.doc.view.style);
   const preset = STYLE_PRESETS[style] ?? STYLE_PRESETS.parchment;
   return (
-    <div className={'app' + (readOnly ? ' viewer' : '') + (panelHidden ? ' panel-hidden' : '')}>
+    <div className={'app' + (readOnly ? ' viewer' : '') + (panelHidden ? ' panel-hidden' : '') + (projected ? ' projected' : '')}>
       <ErrorBoundary label="Top bar">
         <TopBar />
       </ErrorBoundary>
@@ -179,6 +199,8 @@ export default function App() {
             <ScaleBar />
           </div>
           <PanelToggle />
+          <ProjectionBanner />
+          <MiniGlobe />
           <Toast />
           {readOnly ? <ViewerNotice /> : <Welcome />}
           <Busy />

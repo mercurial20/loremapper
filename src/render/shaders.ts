@@ -577,3 +577,133 @@ void main() {
   finalColor = vec4(col * a, a);
 }
 `;
+
+/** Full-screen quad for the projected view: positions in CSS pixels. */
+export const PROJECT_VERTEX = /* glsl */ `#version 300 es
+in vec2 aPosition;
+out vec2 vScreen;
+
+uniform mat3 uProjectionMatrix;
+uniform mat3 uWorldTransformMatrix;
+uniform mat3 uTransformMatrix;
+
+void main() {
+  mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
+  gl_Position = vec4((mvp * vec3(aPosition, 1.0)).xy, 0.0, 1.0);
+  vScreen = aPosition;
+}
+`;
+
+/**
+ * The projected view: every screen pixel is taken back through the inverse
+ * of the map projection to a longitude and latitude, and coloured from an
+ * equirectangular render of that part of the planet (src/core/projections.ts
+ * has the same formulas in TypeScript).
+ */
+export const PROJECT_FRAGMENT = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 vScreen;
+out vec4 finalColor;
+
+uniform sampler2D uSrc;
+uniform float uProj;      // 0 equirect, 1 Mercator, 2 Mollweide, 3 Equal Earth, 4 globe, 5 azimuthal, 6 Gott
+uniform float uLon0;
+uniform float uSinP0;
+uniform float uCosP0;
+uniform float uReach;     // azimuthal: radius of the map in radians
+uniform float uGottCx;    // Gott: distance of each disk's centre from the middle
+uniform vec2 uView;       // canvas size, CSS px
+uniform vec2 uPlane;      // plane point at the centre of the view
+uniform float uScale;     // CSS px per plane unit
+uniform vec4 uSrcRect;    // first longitude, longitude span, top latitude, latitude span (radians)
+uniform vec3 uBg;
+uniform vec3 uRim;
+
+const float PI = 3.141592653589793;
+const float HALF = 1.5707963267948966;
+
+float eeY(float t) { float t2 = t * t; return t * (1.340264 - 0.081106 * t2 + t2 * t2 * t2 * (0.000893 + 0.003796 * t2)); }
+float eeDY(float t) { float t2 = t * t; return 1.340264 - 3.0 * 0.081106 * t2 + t2 * t2 * t2 * (7.0 * 0.000893 + 9.0 * 0.003796 * t2); }
+
+vec2 azInverse(vec2 p, float c) {
+  float rho = length(p);
+  if (rho < 1e-9) return vec2(uLon0, asin(uSinP0));
+  float sc = sin(c);
+  float cc = cos(c);
+  float lat = asin(clamp(cc * uSinP0 + p.y * sc * uCosP0 / rho, -1.0, 1.0));
+  float lon = uLon0 + atan(p.x * sc, rho * uCosP0 * cc - p.y * uSinP0 * sc);
+  return vec2(lon, lat);
+}
+
+// longitude and latitude of a plane point; .z = 1 when it's on the map
+vec3 unproject(vec2 p) {
+  int id = int(uProj + 0.5);
+  if (id == 1) {
+    if (abs(p.x) > PI || abs(p.y) > PI) return vec3(0.0);
+    return vec3(p.x + uLon0, 2.0 * atan(exp(p.y)) - HALF, 1.0);
+  }
+  if (id == 2) {
+    float S2 = 1.4142135623730951;
+    if (abs(p.y) > S2) return vec3(0.0);
+    float t = asin(p.y / S2);
+    float ct = cos(t);
+    float l = ct < 1e-6 ? 0.0 : PI * p.x / (2.0 * S2 * ct);
+    if (abs(l) > PI) return vec3(0.0);
+    return vec3(l + uLon0, asin(clamp((2.0 * t + sin(2.0 * t)) / PI, -1.0, 1.0)), 1.0);
+  }
+  if (id == 3) {
+    float M = 0.8660254037844386;
+    float yMax = eeY(asin(M));
+    if (abs(p.y) > yMax) return vec3(0.0);
+    float t = p.y / 1.340264;
+    for (int i = 0; i < 6; i++) t -= (eeY(t) - p.y) / eeDY(t);
+    float l = M * p.x * eeDY(t) / cos(t);
+    if (abs(l) > PI) return vec3(0.0);
+    return vec3(l + uLon0, asin(clamp(sin(t) / M, -1.0, 1.0)), 1.0);
+  }
+  if (id == 4) {
+    float rho = length(p);
+    if (rho > 1.0) return vec3(0.0);
+    return vec3(azInverse(p, asin(rho)), 1.0);
+  }
+  if (id == 5) {
+    float rho = length(p);
+    if (rho > uReach) return vec3(0.0);
+    return vec3(azInverse(p, rho), 1.0);
+  }
+  if (id == 6) {
+    bool south = p.x > 0.0;
+    float dx = south ? p.x - uGottCx : p.x + uGottCx;
+    float c = length(vec2(dx, p.y));
+    if (c > HALF) return vec3(0.0);
+    float l = south ? atan(-dx, -p.y) : atan(dx, -p.y);
+    return vec3(l + uLon0, south ? c - HALF : HALF - c, 1.0);
+  }
+  if (abs(p.x) > PI || abs(p.y) > HALF) return vec3(0.0);
+  return vec3(p.x + uLon0, p.y, 1.0);
+}
+
+void main() {
+  vec2 p = uPlane + vec2(vScreen.x - uView.x * 0.5, uView.y * 0.5 - vScreen.y) / uScale;
+  vec3 ll = unproject(p);
+  if (ll.z < 0.5) {
+    finalColor = vec4(uBg, 1.0);
+    return;
+  }
+  float lonRel = mod(ll.x - uSrcRect.x, 2.0 * PI);
+  vec2 uv = vec2(lonRel / uSrcRect.y, (uSrcRect.z - ll.y) / uSrcRect.w);
+  vec3 col = texture(uSrc, clamp(uv, vec2(0.0), vec2(1.0))).rgb;
+  int id = int(uProj + 0.5);
+  if (id == 4) {
+    // a globe darkens a little towards its rim, like a sphere lit from the front
+    col *= 0.8 + 0.2 * sqrt(max(0.0, 1.0 - dot(p, p)));
+  }
+  // a fine ink rim along the map's edge
+  float edge = 1e9;
+  if (id == 4) edge = (1.0 - length(p)) * uScale;
+  else if (id == 5) edge = (uReach - length(p)) * uScale;
+  else if (id == 6) edge = (HALF - length(vec2(p.x > 0.0 ? p.x - uGottCx : p.x + uGottCx, p.y))) * uScale;
+  col = mix(col, uRim, (1.0 - smoothstep(0.6, 1.6, edge)) * 0.8);
+  finalColor = vec4(col, 1.0);
+}
+`;

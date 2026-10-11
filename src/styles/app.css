@@ -2303,3 +2303,194 @@ input[type='range']::-moz-range-thumb {
   flex-wrap: nowrap;
   white-space: nowrap;
 }
+
+/* ------------------------------------------------------------ projected export */
+
+.projection-setup {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.projection-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.projection-preview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 160px;
+  padding: 8px;
+  border-radius: 10px;
+  background: #0c0f14;
+  border: 1px solid var(--border);
+}
+.projection-preview canvas {
+  width: 100%;
+  height: auto;
+  touch-action: none;
+}
+.projection-preview.movable canvas {
+  cursor: grab;
+}
+.projection-preview.movable canvas:active {
+  cursor: grabbing;
+}
+.projection-preview small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.projection-preview-wait {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+@media (max-width: 720px) {
+  .projection-setup {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ------------------------------------------------------------ projected view */
+
+.projected-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.app.projected .map-chrome.scale,
+.app.projected .map-chrome.compass,
+.app.projected .sb-scale {
+  display: none;
+}
+.projection-banner {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 120px);
+  padding: 5px 6px 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: rgba(14, 16, 20, 0.88);
+  color: var(--text);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.projection-banner span {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.projection-banner svg {
+  color: var(--accent-2);
+  flex: none;
+}
+@media (max-width: 760px) {
+  /* the viewer's note sits at the top on phones */
+  .app.viewer .projection-banner {
+    top: auto;
+    bottom: 12px;
+    max-width: calc(100% - 24px);
+  }
+  .app.viewer .projection-banner span {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------ mini globe */
+
+.mini-globe {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 6px 5px;
+  border-radius: 14px;
+  border: 1px solid var(--border-2);
+  background: rgba(14, 16, 20, 0.72);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+.mini-globe canvas {
+  display: block;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.mini-globe-wait {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 172px;
+  height: 172px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #3a4552, #1b2027);
+}
+.mini-globe-bar {
+  display: flex;
+  gap: 2px;
+}
+.mini-globe-bar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mini-globe-bar button:hover {
+  color: var(--text);
+}
+.mini-globe-bar button.on {
+  background: var(--panel-3);
+  color: var(--accent-2);
+}
+.mini-globe-open {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-2);
+  background: rgba(14, 16, 20, 0.78);
+  color: var(--muted);
+  cursor: pointer;
+}
+.mini-globe-open:hover {
+  color: var(--text);
+}
+@media (max-width: 760px) {
+  .app.viewer .mini-globe,
+  .app.viewer .mini-globe-open {
+    display: none;
+  }
+}

@@ -25,7 +25,8 @@ import { UnitsSwitch } from './UnitsSwitch';
 import { formatHeight } from '../core/units';
 import { COMMUNITY_LINKS } from '../community';
 import { editor } from '../editor/Editor';
-import { Segmented, Slider } from './controls/controls';
+import { PROJECTIONS, type ProjectionId, type ProjectionParams } from '../core/projections';
+import { Segmented, Select, Slider } from './controls/controls';
 import { APP_VERSION } from '../version';
 import { CompassRose, GitHubMark, RedditMark } from './icons';
 
@@ -85,6 +86,71 @@ function StyleThumb({ s }: { s: (typeof STYLE_PRESETS)[StylePresetId] }) {
   );
 }
 
+/** Planets: look at the map in another projection (editing stays on the equirectangular map). */
+function ProjectionControls() {
+  const vp = useEditor((s) => s.viewProjection);
+  const set = useEditor((s) => s.set);
+  const id: ProjectionId = vp?.id ?? 'equirectangular';
+  const choose = (next: ProjectionId) => {
+    if (next === 'equirectangular') return set({ viewProjection: null });
+    const lat0 = next === 'azimuthal' ? 90 : next === 'orthographic' ? 25 : (vp?.lat0 ?? 0);
+    set({ viewProjection: { id: next, lon0: vp?.lon0 ?? 0, lat0, extent: vp?.extent ?? 180 } });
+  };
+  const upd = (p: Partial<ProjectionParams>) => vp && set({ viewProjection: { ...vp, ...p } });
+  const centred = id === 'orthographic' || id === 'azimuthal';
+  return (
+    <>
+      <h4>Projection</h4>
+      <Select<ProjectionId>
+        label=""
+        value={id}
+        options={PROJECTIONS.map((p) => ({ value: p.id, label: p.id === 'equirectangular' ? 'Equirectangular (editable)' : p.name }))}
+        onChange={choose}
+      />
+      {vp && (
+        <>
+          <p className="style-desc">{PROJECTIONS.find((p) => p.id === id)?.description} Drag the map to {centred ? 'turn it' : 'move around'}; Info works here, and any editing tool brings back the editable map.</p>
+          <Slider
+            label={centred ? 'Centre longitude' : 'Central meridian'}
+            value={vp.lon0}
+            min={-180}
+            max={180}
+            step={1}
+            onChange={(v) => upd({ lon0: v })}
+            format={(v) => `${Math.abs(Math.round(v))}° ${v < 0 ? 'W' : 'E'}`}
+          />
+          {centred && (
+            <Slider
+              label="Centre latitude"
+              value={vp.lat0}
+              min={-90}
+              max={90}
+              step={1}
+              onChange={(v) => upd({ lat0: v })}
+              format={(v) => (Math.round(v) === 90 ? 'North pole' : Math.round(v) === -90 ? 'South pole' : `${Math.abs(Math.round(v))}° ${v < 0 ? 'S' : 'N'}`)}
+            />
+          )}
+          {id === 'azimuthal' && (
+            <>
+              <div className="view-chips">
+                <button className={'view-chip' + (vp.lat0 === 90 ? ' on' : '')} onClick={() => upd({ lat0: 90 })}>
+                  North pole
+                </button>
+                <button className={'view-chip' + (vp.lat0 === -90 ? ' on' : '')} onClick={() => upd({ lat0: -90 })}>
+                  South pole
+                </button>
+                <button className={'view-chip' + (vp.extent === 90 ? ' on' : '')} onClick={() => upd({ extent: vp.extent === 90 ? 180 : 90 })}>
+                  One hemisphere
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 function ViewMenu() {
   const view = useDoc((s) => s.doc.view);
   const setView = useDoc((s) => s.setView);
@@ -112,6 +178,7 @@ function ViewMenu() {
         })}
       </div>
       <p className="style-desc">{current.description}</p>
+      {!flat && <ProjectionControls />}
       <h4>Relief</h4>
       <Slider label="Hill shading" value={view.hillshade} min={0} max={2} step={0.05} onChange={(v) => setView({ hillshade: v })} format={(v) => `${Math.round(v * 100)}%`} />
       <h4>Show on map</h4>

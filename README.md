@@ -10,7 +10,7 @@ A free fantasy map editor that runs in your browser.<br/>
 Sculpt real terrain, paint forests and deserts, draw rivers, roads and borders,<br/>
 drop in castles and dragons, and hide the unexplored under fog of war.
 
-[![Version](https://img.shields.io/badge/version-1.1.0-e6a94f)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.0--alpha.1-e6a94f)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-3f8f5a)](LICENSE)
 [![Try it online](https://img.shields.io/badge/try%20it-online-e6a94f?logo=github)](https://mercurial20.github.io/loremapper/)
 [![Self-hosted](https://img.shields.io/badge/self--hosted-docker%20compose%20up-2f5d9a)](#b-docker)
@@ -296,7 +296,7 @@ underneath it.
 
 <img src="docs/images/styles.jpg" alt="The same map in eight styles: parchment, fantasy atlas, clean political, shaded relief, anime, strategy game, pixel art and antique engraving" />
 
-Switch styles any time from **View**: parchment, colourful fantasy atlas, clean
+A **mini globe** in the corner keeps the whole planet in view, with the part on screen outlined; click it to go somewhere. **View → Projection** shows a planet as a globe you can turn, a polar map, Gott's double-sided disks, Equal Earth, Mollweide or Mercator; editing tools bring back the editable map. Switch styles any time from **View**: parchment, colourful fantasy atlas, clean
 political, shaded relief, cel-shaded anime, strategy game, pixel art or antique
 engraving. You can also toggle contour lines, the height
 overlay, a latitude/longitude grid, peak markers and coastal ripples.
@@ -372,7 +372,7 @@ You can name it there and write the name on the map as a normal label. **Lands &
 
 | Export | What you get | Editable later? |
 |---|---|:-:|
-| **Map image** | PNG up to 12,288 px wide: current view or whole planet, complete or revealed-only | ✗ |
+| **Map image** | PNG up to 12,288 px wide: current view or whole planet, complete or revealed-only; planets also in Equal Earth, Mollweide, Mercator, globe, polar azimuthal or Gott double-sided projections | ✗ |
 | **Heightmap** | 16- or 8-bit greyscale PNG of the elevation, for game engines and 3D tools | ✗ |
 | **Editable project** | A `.loremap` file with everything, including your custom images | ✓ |
 
@@ -440,15 +440,16 @@ So far testing has been on macOS. Windows and Linux reports are very welcome.
 - Very large image exports (over ~160 megapixels) are disabled.
 - Near the poles, brushes keep their real size in km, so they look very wide on the flat map.
 - Editing is desktop-only; phones and tablets get a read-only viewer.
-- Planets are shown and exported in the equirectangular projection only; polar and globe projections aren't available yet.
+- Planets are edited in the equirectangular projection only; other projections (globe, polar, Equal Earth and more) are for viewing and exporting.
 
 ## ✅ Testing done for this release
 
-- Lint, type-check, 43 unit tests and the production build all pass. The tests cover:
+- Lint, type-check, 68 unit tests and the production build all pass. The tests cover:
   - deterministic worlds: one seed and one set of settings give the same world;
   - world types that hold, rivers that always run downhill, and the uplift-and-erosion relief;
   - built-in world sketches: land where they draw it, ranges where they put them;
-  - true areas on the sphere and on flat maps, units and project migration.
+  - true areas on the sphere and on flat maps, units and project migration;
+  - every map projection, forward and back, for several centres, and equal areas where a projection promises them.
 - The generator was measured against Earth's real relief (NOAA ETOPO1) at the same resolution: land elevations, slopes and river-basin shape come out close to Earth's (see the [changelog](CHANGELOG.md)).
 - Automated desktop runs in Chrome 154, Firefox 157 and WebKit 27.2 (macOS), starting from the welcome screen, covered:
   - painting terrain and biomes, placing and editing objects, importing PNG and SVG assets and replacing artwork;
@@ -457,8 +458,9 @@ So far testing has been on macOS. Windows and Linux reports are very welcome.
 
   All 19 checks passed in Chrome and WebKit. Firefox passed them too and logged only its usual WebGL notices; no browser logged errors.
 - In Chrome, the runs also covered the new parts: flat maps, every built-in world (flat and planet), every realism level, the eight styles and the View menu, the Info tool, hiding the panel, metric and imperial units, and painting with each kind of land.
+- Map projections: the live view (turning the globe, zoom, Info, back to editing) and image exports in all six projections, in Chrome, Firefox and WebKit; exports up to 8192 px, the mini globe and touch on a phone in Chrome.
 - Phones and tablets (iPhone 13 and iPad Pro 11 emulation): the viewer pans, pinch-zooms and answers taps; the panel starts hidden and opens on tap; lists and cards scroll by touch.
-- Projects and browser-saved maps from v1.0.0-beta.2 open unchanged.
+- Projects and browser-saved maps from v1.0.0-beta.2 open unchanged; this release doesn't change the project format.
 
 ## 🐞 Reporting bugs and contributing
 

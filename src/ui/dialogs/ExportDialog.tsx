@@ -3,11 +3,16 @@ import { useState } from 'react';
 import { exportHeightmap, exportImage, exportProject, exportSize, type FogExport } from '../../editor/exporter';
 import { useEditor } from '../../store/editorStore';
 import { useDoc } from '../../store/docStore';
-import { Segmented, Toggle } from '../controls/controls';
+import { PROJECTIONS, type ProjectionId, type ProjectionParams } from '../../core/projections';
+import { exportProjectedImage, projectedSize } from '../../editor/projectedExport';
+import { Segmented, Select, Slider, Toggle } from '../controls/controls';
+import { ProjectionPreview } from './ProjectionPreview';
 import { Modal } from './Modal';
 import { shouldOfferShare } from '../share';
 
 const WIDTHS = [1024, 2048, 4096, 8192, 12288];
+/** Projected images are drawn on one canvas, so they stay within what browsers handle comfortably. */
+const PROJECTED_WIDTHS = [1024, 2048, 4096, 8192];
 
 export function ExportDialog() {
   const set = useEditor((s) => s.set);
@@ -21,8 +26,19 @@ export function ExportDialog() {
   const [bits, setBits] = useState<'16' | '8'>('16');
   const [hmWidth, setHmWidth] = useState(meta?.planet.gridWidth ?? 4096);
   const flat = meta?.planet.mapType === 'flat';
+  // start from what's on screen: the projection being viewed, centred as it is
+  const viewing = useEditor((s) => s.viewProjection);
+  const [projection, setProjection] = useState<ProjectionParams>(viewing ?? { id: 'equirectangular', lon0: 0, lat0: 90, extent: 180 });
+  const projected = !flat && projection.id !== 'equirectangular';
   const close = () => set({ dialog: null });
-  const size = exportSize({ region, width });
+  const size = projected ? projectedSize(projection, Math.min(width, 8192)) : exportSize({ region, width });
+  const pickProjection = (id: ProjectionId) =>
+    setProjection((p) => ({
+      ...p,
+      id,
+      // sensible starting centres: the north pole for polar maps, a tilted view for the globe
+      lat0: id === 'azimuthal' ? 90 : id === 'orthographic' ? 25 : p.lat0,
+    }));
   const mp = (size.width * size.height) / 1e6;
   const run = async (fn: () => Promise<void>, offerShare = false) => {
     close();
@@ -54,16 +70,76 @@ export function ExportDialog() {
       </div>
       {tab === 'image' && (
         <div className="export-body">
+          {!flat && (
+            <>
+              <Select<ProjectionId> label="Projection" value={projection.id} options={PROJECTIONS.map((p) => ({ value: p.id, label: p.name }))} onChange={pickProjection} />
+              <p className="hint">{PROJECTIONS.find((p) => p.id === projection.id)?.description}</p>
+            </>
+          )}
+          {projected ? (
+            <div className="projection-setup">
+              <ProjectionPreview params={projection} fog={fog} peaks={peaks} onChange={(p) => setProjection((q) => ({ ...q, ...p }))} />
+              <div className="projection-controls">
+                <Slider
+                  label={projection.id === 'orthographic' || projection.id === 'azimuthal' ? 'Centre longitude' : 'Central meridian'}
+                  value={projection.lon0}
+                  min={-180}
+                  max={180}
+                  step={1}
+                  onChange={(v) => setProjection((p) => ({ ...p, lon0: v }))}
+                  format={(v) => `${Math.abs(Math.round(v))}° ${v < 0 ? 'W' : 'E'}`}
+                />
+                {(projection.id === 'orthographic' || projection.id === 'azimuthal') && (
+                  <Slider
+                    label="Centre latitude"
+                    value={projection.lat0}
+                    min={-90}
+                    max={90}
+                    step={1}
+                    onChange={(v) => setProjection((p) => ({ ...p, lat0: v }))}
+                    format={(v) => (Math.round(v) === 90 ? 'North pole' : Math.round(v) === -90 ? 'South pole' : `${Math.abs(Math.round(v))}° ${v < 0 ? 'S' : 'N'}`)}
+                  />
+                )}
+                {projection.id === 'azimuthal' && (
+                  <>
+                    <div className="btn-row">
+                      <button className="btn small" onClick={() => setProjection((p) => ({ ...p, lat0: 90 }))}>
+                        North pole
+                      </button>
+                      <button className="btn small" onClick={() => setProjection((p) => ({ ...p, lat0: -90 }))}>
+                        South pole
+                      </button>
+                    </div>
+                    <Segmented
+                      label="Shows"
+                      value={String(projection.extent)}
+                      onChange={(v) => setProjection((p) => ({ ...p, extent: Number(v) }))}
+                      options={[
+                        { value: '90', label: 'One hemisphere' },
+                        { value: '180', label: 'The whole planet' },
+                      ]}
+                    />
+                  </>
+                )}
+              </div>
+            </div>
+          ) : (
+            <Segmented
+              label="Area"
+              value={region}
+              onChange={setRegion}
+              options={[
+                { value: 'view', label: 'Current view' },
+                { value: 'world', label: flat ? 'Whole map' : 'Whole planet' },
+              ]}
+            />
+          )}
           <Segmented
-            label="Area"
-            value={region}
-            onChange={setRegion}
-            options={[
-              { value: 'view', label: 'Current view' },
-              { value: 'world', label: flat ? 'Whole map' : 'Whole planet' },
-            ]}
+            label="Width"
+            value={String(projected ? Math.min(width, 8192) : width)}
+            onChange={(v) => setWidth(Number(v))}
+            options={(projected ? PROJECTED_WIDTHS : WIDTHS).map((w) => ({ value: String(w), label: `${w}px` }))}
           />
-          <Segmented label="Width" value={String(width)} onChange={(v) => setWidth(Number(v))} options={WIDTHS.map((w) => ({ value: String(w), label: `${w}px` }))} />
           <Segmented
             label="Fog of war"
             value={fog}
@@ -78,7 +154,13 @@ export function ExportDialog() {
             Output: {size.width.toLocaleString()} × {size.height.toLocaleString()} px ({mp.toFixed(1)} MP). Large images are rendered in tiles and may take a moment.
           </p>
           <div className="btn-row end">
-            <button className="btn primary" disabled={mp > 160} onClick={() => run(() => exportImage({ region, width, fog, includePeaks: peaks }), true)}>
+            <button
+              className="btn primary"
+              disabled={mp > (projected ? 70 : 160)}
+              onClick={() =>
+                run(() => (projected ? exportProjectedImage({ projection, width: Math.min(width, 8192), fog, includePeaks: peaks }) : exportImage({ region, width, fog, includePeaks: peaks })), true)
+              }
+            >
               <Image size={14} /> Export PNG
             </button>
           </div>

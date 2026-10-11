@@ -38,6 +38,11 @@ export class TerritoryLayer implements WorldLayer {
     for (const e of this.entries.values()) this.draw(e);
   }
 
+  /** Show or hide the realm names (the projected view draws them itself). */
+  setLabelsVisible(v: boolean) {
+    this.labels.visible = v;
+  }
+
   sync(doc: MapDocument) {
     const seen = new Set<string>();
     for (const t of Object.values(doc.territories)) {

@@ -258,8 +258,15 @@ export class MapRenderer {
     this.renderFrame();
   };
 
+  /** When set, draws the frame instead of the usual view (the projected view). */
+  frameOverride: (() => void) | null = null;
+
   /** Render the world (all wrap copies) to the screen. */
   renderFrame() {
+    if (this.frameOverride) {
+      this.frameOverride();
+      return;
+    }
     const cam = this.camera;
     this.drawWorld(cam.zoom, cam.x, cam.y, cam.viewW, cam.viewH);
   }

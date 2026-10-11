@@ -6,6 +6,28 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0-alpha.1] — 2026-10-11
+
+An early look at map projections: view a planet as a globe, a polar map or
+a world map, keep a mini globe in the corner, and export in any of them.
+
+### Added
+
+- **Mini globe.** A small globe in the corner of planet maps shows the whole world with the part on screen outlined. It turns to follow the view (or shows the north or south pole from above), refreshes a moment after edits, and a click moves the view there. It can be hidden.
+- **Look at a planet in other projections, live.** *View → Projection* shows the map as a globe, a polar (azimuthal) map, Gott's double-sided disks, Equal Earth, Mollweide or Mercator. Drag to turn the globe or move around, scroll or pinch to zoom; Info and the status bar keep working, and phones and tablets can use it too. It's for looking: picking an editing tool brings back the editable equirectangular map, and the map's data never changes. Export starts from the projection and centre on screen.
+- **Export planets in other map projections.** *Export → Map image* now offers, besides the editor's own equirectangular grid:
+  - **Equal Earth** and **Mollweide**, world maps with true areas;
+  - **Mercator**, with true shapes (cut at 85°);
+  - **Globe** (orthographic), the planet as seen from space;
+  - **Azimuthal** (equidistant), centred on a pole or anywhere, showing one hemisphere or the whole planet;
+  - **Gott double-sided** (Gott, Goldberg & Vanderbei, 2021), the northern and southern hemispheres as two disks that meet along the equator.
+
+  A live preview shows the result; drag it to turn the globe or move the centre. Terrain, biomes and the players' fog are reprojected; rivers, roads, borders, symbols, labels and peaks are drawn in the projection itself, so text stays upright and sharp. Images go up to 8192 px wide.
+
+### Fixed
+
+- Map label font lists were changed in place by the renderer, which could leave later text in a fallback font.
+
 ## [1.1.0] — 2026-10-11
 
 Flat maps and built-in worlds, a generator that shapes relief like real
@@ -135,7 +157,8 @@ First public beta.
 - Export to PNG (current view or whole planet, complete map or revealed areas only), 16/8-bit heightmap PNG, and `.loremap` project archives with re-import.
 - Docker image (nginx) and `compose.yaml` for one-command self-hosting.
 
-[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.2.0-alpha.1...HEAD
+[1.2.0-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.1.0...v1.2.0-alpha.1
 [1.1.0]: https://github.com/mercurial20/loremapper/compare/v1.0.0-beta.2...v1.1.0
 [1.0.0-beta.2]: https://github.com/mercurial20/loremapper/compare/v1.0.0-beta.1...v1.0.0-beta.2
 [1.0.0-beta.1]: https://github.com/mercurial20/loremapper/releases/tag/v1.0.0-beta.1

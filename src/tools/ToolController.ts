@@ -141,7 +141,37 @@ export class ToolController {
 
   private world(e: { clientX: number; clientY: number }): Vec2 {
     const r = this.canvas!.getBoundingClientRect();
+    if (editor.projView) {
+      // off the projected map there is no world point; callers in projected mode check for that
+      return (editor.projView.screenToWorld(e.clientX - r.left, e.clientY - r.top) ?? null) as unknown as Vec2;
+    }
     return editor.renderer!.camera.screenToWorld(e.clientX - r.left, e.clientY - r.top);
+  }
+
+  /** Projected view: a drag in progress (it turns or slides the view; a press without moving is a click). */
+  private projDrag: { x: number; y: number; sx: number; sy: number; moved: boolean } | null = null;
+
+  private projectedMove(e: PointerEvent) {
+    const pv = editor.projView!;
+    const d = this.projDrag;
+    if (d) {
+      if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return;
+      d.moved = true;
+      this.syncProjection(pv.drag(e.clientX - d.x, e.clientY - d.y));
+      d.x = e.clientX;
+      d.y = e.clientY;
+      this.canvas!.style.cursor = 'grabbing';
+      return;
+    }
+    const w = this.world(e);
+    const r = this.canvas!.getBoundingClientRect();
+    this.pointer = { sx: e.clientX - r.left, sy: e.clientY - r.top, x: w?.[0] ?? 0, y: w?.[1] ?? 0, inside: !!w };
+    this.updateCursorInfo();
+  }
+
+  /** A turned globe moves the projection's centre: keep the menus in step. */
+  private syncProjection(p: ReturnType<NonNullable<typeof editor.projView>['drag']>) {
+    if (p) useEditor.getState().set({ viewProjection: p });
   }
 
   private hitCtx(): HitContext {
@@ -274,6 +304,10 @@ export class ToolController {
       this.viewerDown(e);
       return;
     }
+    if (editor.projView) {
+      this.projDrag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false };
+      return;
+    }
     this.shift = e.shiftKey;
     this.alt = e.altKey;
     const [x, y] = this.world(e);
@@ -329,6 +363,10 @@ export class ToolController {
     if (!editor.renderer || !editor.model) return;
     if (useEditor.getState().readOnly && this.touches.has(e.pointerId)) {
       this.viewerMove(e);
+      return;
+    }
+    if (editor.projView) {
+      this.projectedMove(e);
       return;
     }
     this.shift = e.shiftKey;
@@ -418,6 +456,20 @@ export class ToolController {
       this.viewerUp(e);
       return;
     }
+    if (editor.projView) {
+      const d = this.projDrag;
+      this.projDrag = null;
+      if (d && !d.moved && this.tool === 'info') {
+        const w = this.world(e);
+        if (w) {
+          useEditor.getState().select([]);
+          if (useEditor.getState().panelHidden) togglePanel(true);
+          void inspectAt(w[0], w[1]);
+        }
+      }
+      this.updateCursorStyle();
+      return;
+    }
     const d = this.drag;
     this.drag = null;
     if (!d || !editor.model) {
@@ -453,6 +505,11 @@ export class ToolController {
     const r = editor.renderer;
     if (!r) return;
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+    if (editor.projView) {
+      const rect = this.canvas!.getBoundingClientRect();
+      editor.projView.zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * unit * (e.ctrlKey ? 0.012 : 0.0018)));
+      return;
+    }
     const dy = e.deltaY * unit;
     if (e.altKey && brushGroupOf(this.tool)) {
       const g = brushGroupOf(this.tool)!;
@@ -472,6 +529,7 @@ export class ToolController {
   };
 
   private onDblClick = (e: MouseEvent) => {
+    if (editor.projView) return;
     const [x, y] = this.world(e);
     const t = this.tool;
     if (this.draft) {
@@ -1027,6 +1085,22 @@ export class ToolController {
     this.touches.set(e.pointerId, [e.clientX, e.clientY]);
     const cam = editor.renderer!.camera;
     const rect = this.canvas!.getBoundingClientRect();
+    const pv = editor.projView;
+    if (pv) {
+      if (this.pinch && this.touches.size >= 2) {
+        const [a, b] = [...this.touches.values()];
+        const dist = Math.max(1, Math.hypot(a[0] - b[0], a[1] - b[1]));
+        const mx = (a[0] + b[0]) / 2;
+        const my = (a[1] + b[1]) / 2;
+        this.syncProjection(pv.drag(mx - this.pinch.mx, my - this.pinch.my));
+        pv.zoomAt(mx - rect.left, my - rect.top, dist / this.pinch.dist);
+        this.pinch = { dist, mx, my };
+      } else {
+        this.syncProjection(pv.drag(e.clientX - prev[0], e.clientY - prev[1]));
+        if (this.tap && Math.hypot(e.clientX - this.tap.x, e.clientY - this.tap.y) > 8) this.tap = null;
+      }
+      return;
+    }
     if (this.pinch && this.touches.size >= 2) {
       const [a, b] = [...this.touches.values()];
       const dist = Math.max(1, Math.hypot(a[0] - b[0], a[1] - b[1]));
@@ -1048,7 +1122,9 @@ export class ToolController {
     const tap = this.tap;
     this.tap = null;
     if (!tap || this.touches.size || performance.now() - tap.t > 500 || !editor.model) return;
-    const [x, y] = this.world(e);
+    const w = this.world(e);
+    if (!w) return;
+    const [x, y] = w;
     const hit = hitAny(this.hitCtx(), x, y);
     if (hit) useEditor.getState().select([hit]);
     else {

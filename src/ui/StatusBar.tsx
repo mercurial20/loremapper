@@ -116,7 +116,7 @@ export function StatusBar() {
             : 'All water — raise land or use Generate'}
         </span>
       )}
-      <span className="sb-item mono" title="Ground distance per screen pixel (north–south)">1 px ≈ {formatLength(kmPerPx, units)}</span>
+      <span className="sb-item mono sb-scale" title="Ground distance per screen pixel (north–south)">1 px ≈ {formatLength(kmPerPx, units)}</span>
       {meta && (
         <span className="sb-item muted" title={geo?.flat ? 'Flat map' : 'Planet'}>
           {geo?.flat

@@ -67,7 +67,8 @@ export class TextLabel extends Container {
     this.removeChildren();
     const text = o.uppercase ? o.text.toUpperCase() : o.text;
     this.style = new TextStyle({
-      fontFamily: FONT_STACK[o.font],
+      // a copy: Pixi quotes the names in place
+      fontFamily: [...FONT_STACK[o.font]],
       fontSize: BASE,
       fontStyle: o.italic ? 'italic' : 'normal',
       fontWeight: o.font === 'display' ? '600' : '400',

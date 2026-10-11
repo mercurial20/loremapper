@@ -19,6 +19,8 @@ import { useDoc } from '../store/docStore';
 import { useEditor, useViewInfo } from '../store/editorStore';
 import { renderThumbnail } from './exporter';
 import { detectPeaks, resolvePeaks, type DetectedPeak } from '../terrain/peaks';
+import type { ProjectionParams } from '../core/projections';
+import { ProjectedView } from './projectedView';
 import { TerrainModel } from '../terrain/TerrainModel';
 
 export interface Layers {
@@ -157,6 +159,8 @@ class Editor {
   private teardown() {
     for (const u of this.unsubs) u();
     this.unsubs = [];
+    this.projView?.destroy();
+    this.projView = null;
     this.layers?.objects.dispose();
     this.renderer?.destroy();
     this.renderer = null;
@@ -193,6 +197,9 @@ class Editor {
 
     this.syncDoc(useDoc.getState().doc, null);
     this.applyView();
+    // a projection the user was looking at carries over to another planet, not to a flat map
+    if (model.geo.flat && useEditor.getState().viewProjection) useEditor.getState().set({ viewProjection: null });
+    this.applyProjection(useEditor.getState().viewProjection, true);
     // return to where the user left this map
     const cam = await getSetting<{ x: number; y: number; zoom: number } | null>('camera:' + meta.id, null);
     if (seq !== this.mountSeq) return;
@@ -217,6 +224,11 @@ class Editor {
           renderer.requestRender();
         }
         if (s.fogPreview !== prev.fogPreview) renderer.setFogPreview(s.fogPreview);
+        if (s.viewProjection !== prev.viewProjection) {
+          const a = s.viewProjection;
+          const b = prev.viewProjection;
+          this.applyProjection(a, !b || !a || a.id !== b.id || a.extent !== b.extent);
+        }
         if (s.peaks !== prev.peaks) this.pushPeaks();
         if (s.units !== prev.units) {
           this.layers?.peaks.invalidate();
@@ -407,6 +419,27 @@ class Editor {
   }
 
   // ------------------------------------------------------------ helpers
+
+  /** The live view in another projection, while one is chosen (planets only). */
+  projView: ProjectedView | null = null;
+
+  private applyProjection(p: ProjectionParams | null, refit: boolean) {
+    const r = this.renderer;
+    if (!r || !this.model) return;
+    if (p && !this.model.geo.flat) {
+      if (!this.projView) this.projView = new ProjectedView(r, this.host!, p);
+      else this.projView.setParams(p, refit);
+      r.frameOverride = () => this.projView?.render();
+      // the projected view is for looking: Info and Pan work there
+      const st = useEditor.getState();
+      if (!st.readOnly && st.tool !== 'info' && st.tool !== 'pan') st.set({ tool: 'info', prevTool: st.tool });
+    } else {
+      r.frameOverride = null;
+      this.projView?.destroy();
+      this.projView = null;
+    }
+    r.requestRender();
+  }
 
   requestRender() {
     this.renderer?.requestRender();

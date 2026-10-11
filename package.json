@@ -1,7 +1,7 @@
 {
   "name": "loremapper",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0-alpha.1",
   "description": "Local-first fantasy world map editor: sculpt terrain, paint biomes, place illustrated assets, draw borders and fog of war.",
   "license": "MIT",
   "type": "module",

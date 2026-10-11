@@ -121,6 +121,72 @@ async function renderToPng(x0: number, y0: number, x1: number, y1: number, outW:
   }
 }
 
+/**
+ * Render the whole world, equirectangular, into one RGBA buffer (straight
+ * alpha) with only some layers: the terrain alone (projected exports draw the
+ * vector layers themselves), the terrain with borders, rivers and roads (the
+ * mini globe), or the fog alone over a transparent background. Small images
+ * (one band) are rendered without yielding, so the view never shows a frame
+ * with layers hidden.
+ */
+export async function renderWorldPixels(outW: number, outH: number, what: 'terrain' | 'map' | 'fog', onProgress?: (f: number) => void): Promise<Uint8ClampedArray> {
+  const r = editor.renderer!;
+  const L = editor.layers!;
+  const m = editor.model!;
+  const vectorRoots = (what === 'map' ? [L.objects, L.labels, L.peaks, L.overlay] : [L.territories, L.paths, L.objects, L.labels, L.peaks, L.overlay]).map((l) => l.container);
+  if (what === 'map') L.territories.setLabelsVisible(false);
+  const saved = vectorRoots.map((c) => c.visible);
+  const terrainVisible = r.terrain.container.visible;
+  const fogVisible = r.fog.container.visible;
+  const bgAlpha = r.renderer.background.alpha;
+  for (const c of vectorRoots) c.visible = false;
+  if (what === 'fog') {
+    // players' fog (applying the style resets layer visibility, so hide the terrain after it)
+    r.fogPreviewOverride = false;
+    r.applyStyle(useDoc.getState().doc, useDoc.getState().meta!, false);
+    r.terrain.container.visible = false;
+    r.fog.container.visible = true;
+    r.renderer.background.alpha = 0;
+  } else r.fog.container.visible = false;
+  const zoom = outW / m.W;
+  const out = new Uint8ClampedArray(outW * outH * 4);
+  const rt = RenderTexture.create({ width: Math.min(MAX_TILE, outW), height: BAND, resolution: 1 });
+  try {
+    for (let by = 0; by < outH; by += BAND) {
+      const bh = Math.min(BAND, outH - by);
+      for (let bx = 0; bx < outW; bx += MAX_TILE) {
+        const bw = Math.min(MAX_TILE, outW - bx);
+        rt.resize(bw, bh, 1);
+        r.drawWorld(zoom, (bx + bw / 2) / zoom, (by + bh / 2) / zoom, bw, bh, rt);
+        const { pixels } = r.renderer.extract.pixels(rt);
+        for (let j = 0; j < bh; j++) out.set(pixels.subarray(j * bw * 4, (j + 1) * bw * 4), ((by + j) * outW + bx) * 4);
+      }
+      onProgress?.((by + bh) / outH);
+      if (by + BAND < outH) await new Promise((res) => setTimeout(res, 0));
+    }
+    // straight alpha for compositing
+    for (let i = 0; i < out.length; i += 4) {
+      const a = out[i + 3];
+      if (a > 0 && a < 255) {
+        out[i] = (out[i] * 255) / a;
+        out[i + 1] = (out[i + 1] * 255) / a;
+        out[i + 2] = (out[i + 2] * 255) / a;
+      }
+    }
+    return out;
+  } finally {
+    rt.destroy(true);
+    vectorRoots.forEach((c, i) => (c.visible = saved[i]));
+    L.territories.setLabelsVisible(true);
+    r.terrain.container.visible = terrainVisible;
+    r.fog.container.visible = fogVisible;
+    r.renderer.background.alpha = bgAlpha;
+    r.fogPreviewOverride = null;
+    r.applyStyle(useDoc.getState().doc, useDoc.getState().meta!, useEditor.getState().fogPreview);
+    r.renderFrame();
+  }
+}
+
 export async function exportImage(o: ImageExportOptions) {
   const m = editor.model!;
   const r = editor.renderer!;
