@@ -10,7 +10,7 @@ A free fantasy map editor that runs in your browser.<br/>
 Sculpt real terrain, paint forests and deserts, draw rivers, roads and borders,<br/>
 drop in castles and dragons, and hide the unexplored under fog of war.
 
-[![Version](https://img.shields.io/badge/version-1.2.0--alpha.1-e6a94f)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.1--alpha.1-e6a94f)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-3f8f5a)](LICENSE)
 [![Try it online](https://img.shields.io/badge/try%20it-online-e6a94f?logo=github)](https://mercurial20.github.io/loremapper/)
 [![Self-hosted](https://img.shields.io/badge/self--hosted-docker%20compose%20up-2f5d9a)](#b-docker)
@@ -32,7 +32,7 @@ drop in castles and dragons, and hide the unexplored under fog of war.
 - **A planet or a flat map.** Make a whole round world, or a flat map of a kingdom or region (say 500 × 500 km).
 - **Your art is welcome.** It ships with 57 illustrated map icons, and you can drop in your own PNG, WebP or SVG files. They stay in your library.
 - **Built for game masters.** Paint fog of war over unexplored lands and export a player-safe version of the map.
-- **Nothing leaves your computer.** There's no account and no cloud. Maps are saved automatically in your browser. Use it [online](https://mercurial20.github.io/loremapper/) with nothing to install, or run your own copy with one command.
+- **Your maps never leave your computer.** There's no account and no cloud. Maps are saved automatically in your browser. Use it [online](https://mercurial20.github.io/loremapper/) with nothing to install, or run your own copy with one command.
 
 <p align="center">
   <img src="docs/images/sculpting.gif" width="680" alt="Animation: raising an island from the ocean, building a mountain range, painting a forest and drawing a river" /><br/>
@@ -74,7 +74,7 @@ the `main` branch, so it always has the latest version.
 
 > GitHub only delivers the app's files, like any website host. Your maps, images
 > and edits are never uploaded anywhere. The online copy counts anonymous visits
-> with Cloudflare Web Analytics; see [Privacy and analytics](#-privacy-and-analytics).
+> and five basic actions; see [Privacy and analytics](#-privacy-and-analytics).
 
 ### B. Docker
 
@@ -165,7 +165,9 @@ static web server (nginx, Caddy, Apache…).
 the single-page-app fallback. To serve from a sub-path such as
 `example.com/maps/`, build with `BASE_PATH=/maps/ npm run build`.
 
-Self-hosted copies and forks ship **without analytics**. If you want
+Self-hosted copies and forks ship **without analytics**; the product events
+described in [Privacy and analytics](#-privacy-and-analytics) only ever run at the
+official address. If you want
 [Cloudflare Web Analytics](https://developers.cloudflare.com/web-analytics/) on
 your own copy, build with `CF_BEACON_TOKEN=<your site token>`, or set it as an
 Actions variable named `CF_BEACON_TOKEN` in your fork.
@@ -402,16 +404,28 @@ server and not inside the Docker container.
 
 The official online version at
 [mercurial20.github.io/loremapper](https://mercurial20.github.io/loremapper/)
-uses [Cloudflare Web Analytics](https://www.cloudflare.com/web-analytics/) to
-count visits, see where visitors come from (referrers, countries) and measure page
-load speed. It doesn't use cookies or local storage. This is only so we can see
-whether people find the project useful.
+uses two small analytics services, only so we can see whether the project is useful:
 
-- Analytics only sees that the page was opened. Your maps, map names, drawings,
-  imported images, tool usage and projects are **never sent** anywhere. They stay
-  in your browser.
-- If the analytics script is blocked (for example by an ad blocker), Loremapper
-  works exactly the same.
+- [Cloudflare Web Analytics](https://www.cloudflare.com/web-analytics/) counts
+  visits, where visitors come from (referrers, countries) and page load speed.
+- [PostHog](https://posthog.com/) counts five actions: **a map was created**, **a world
+  was generated**, **a map was edited** (once per visit), **a saved map was reopened**
+  (once per visit) and **a map was exported**. Each event is only its name and time.
+
+What this means for you:
+
+- Your maps never leave your browser. Map names, terrain, drawings, labels, seeds,
+  coordinates, imported images and files are **never sent** to either service.
+- Neither service sets cookies or stores anything in your browser. PostHog gets a
+  random ID that lives only until the page is closed or reloaded: it can't recognise
+  you on your next visit, and no user profiles are created.
+- Like any website request, these services see your IP address and browser
+  (user agent) when the page talks to them; PostHog's IP storage is turned off for
+  this project. So this is minimal, not perfect, anonymity.
+- If your browser sends **Global Privacy Control** or **Do Not Track**, the product
+  events are not loaded at all.
+- If either service is blocked (for example by an ad blocker), Loremapper works
+  exactly the same.
 - Docker, Node.js and self-hosted copies, and forks, include **no analytics** at all.
 
 ## 🌐 Browser support

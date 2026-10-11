@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.1-alpha.1] — 2026-10-11
+
+### Added
+
+- **Minimal product analytics on the official site.** Five anonymous event counts (a map was created, a world generated, a map edited, a saved map reopened, a map exported), sent with PostHog only from mercurial20.github.io/loremapper. Events carry no properties beyond what PostHog needs to accept them; nothing is stored in the browser, the anonymous ID lasts one page load, and no person profiles are created. Browsers sending Global Privacy Control or Do Not Track are skipped. The SDK loads lazily in its smallest build, without autocapture, replay, surveys or remote scripts. Self-hosted copies and forks are unaffected. See *Privacy and analytics* in the README.
+
 ## [1.2.0-alpha.1] — 2026-10-11
 
 An early look at map projections: view a planet as a globe, a polar map or
@@ -157,7 +163,8 @@ First public beta.
 - Export to PNG (current view or whole planet, complete map or revealed areas only), 16/8-bit heightmap PNG, and `.loremap` project archives with re-import.
 - Docker image (nginx) and `compose.yaml` for one-command self-hosting.
 
-[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.2.0-alpha.1...HEAD
+[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.2.1-alpha.1...HEAD
+[1.2.1-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.2.0-alpha.1...v1.2.1-alpha.1
 [1.2.0-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.1.0...v1.2.0-alpha.1
 [1.1.0]: https://github.com/mercurial20/loremapper/compare/v1.0.0-beta.2...v1.1.0
 [1.0.0-beta.2]: https://github.com/mercurial20/loremapper/compare/v1.0.0-beta.1...v1.0.0-beta.2

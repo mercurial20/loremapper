@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { history } from '../model/history';
+import { track } from '../analytics';
 import { useEditor } from './editorStore';
 import {
   emptyDocument,
@@ -68,6 +69,7 @@ export const useDoc = create<DocState>((set, get) => ({
         void next;
       },
     });
+    track('first_edit');
   },
 
   setView(patch) {

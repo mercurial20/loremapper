@@ -37,6 +37,11 @@ jobs:
           # Cloudflare Web Analytics site token (public), from Settings → Secrets and variables
           # → Actions → Variables. Forks don't inherit it, so their copies ship no analytics.
           CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN }}
+          # PostHog product events (src/analytics.ts). The project token is public and write-only;
+          # the app also checks that it runs at mercurial20.github.io/loremapper/, so copies built
+          # elsewhere stay silent.
+          VITE_POSTHOG_TOKEN: phc_oTg9SvzEvmQ65JmCpfRpXwA7fBxZdsg9MeTFkyBPeakK
+          VITE_POSTHOG_HOST: https://us.i.posthog.com
       - name: Check SEO files and analytics beacon
         run: |
           for f in robots.txt sitemap.xml social-preview.jpg apple-touch-icon.png; do test -s "dist/$f"; done

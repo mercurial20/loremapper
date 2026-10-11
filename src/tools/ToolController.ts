@@ -21,6 +21,7 @@ import { editor } from '../editor/Editor';
 import { rotateHandle } from '../model/geometry';
 import { territoryLabelPos } from '../render/TerritoryLayer';
 import { history } from '../model/history';
+import { track } from '../analytics';
 import type { MapDocument, MapLabel, PathFeature, SelectionRef, Territory, Vec2 } from '../model/types';
 import { hexToNumber, STYLE_PRESETS } from '../render/styles';
 import { useDoc } from '../store/docStore';
@@ -679,6 +680,7 @@ export class ToolController {
           setVec(after);
         },
       });
+      track('first_edit');
       return;
     }
     if (!change) return;
@@ -1351,6 +1353,7 @@ export function pushTileChange(change: TileChange, label: string, model = editor
     undo: () => model.applyTiles(change, 'before'),
     redo: () => model.applyTiles(change, 'after'),
   });
+  track('first_edit');
 }
 
 export const tools = new ToolController();

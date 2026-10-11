@@ -9,6 +9,7 @@ import { Segmented, Select, Slider, Toggle } from '../controls/controls';
 import { ProjectionPreview } from './ProjectionPreview';
 import { Modal } from './Modal';
 import { shouldOfferShare } from '../share';
+import { track } from '../../analytics';
 
 const WIDTHS = [1024, 2048, 4096, 8192, 12288];
 /** Projected images are drawn on one canvas, so they stay within what browsers handle comfortably. */
@@ -44,6 +45,7 @@ export function ExportDialog() {
     close();
     try {
       await fn();
+      track('map_exported');
       if (offerShare && shouldOfferShare()) set({ dialog: 'share' });
     } catch (e) {
       notify('Export failed: ' + (e instanceof Error ? e.message : String(e)), 'error');

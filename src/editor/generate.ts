@@ -11,6 +11,7 @@ import type { RasterArray } from '../terrain/TileGrid';
 import type { TileChange } from '../terrain/TerrainModel';
 import { editor } from './Editor';
 import { newObject } from './commands';
+import { track } from '../analytics';
 
 export type RiverAmount = 'none' | 'few' | 'normal' | 'many';
 const RIVERS: Record<RiverAmount, [world: number, view: number]> = { none: [0, 0], few: [14, 4], normal: [32, 8], many: [70, 16] };
@@ -275,6 +276,7 @@ export async function generateWorld(o: GenerateOptions, opts: { sample?: boolean
       },
     });
     useEditor.getState().notify(whole ? 'World generated' : 'Land generated in view');
+    track('world_generated');
   } catch (e) {
     if (e instanceof Cancelled) useEditor.getState().notify('Generation cancelled — the map is unchanged');
     else useEditor.getState().notify('Generation failed: ' + (e instanceof Error ? e.message : String(e)), 'error');

@@ -21,6 +21,7 @@ import { renderThumbnail } from './exporter';
 import { detectPeaks, resolvePeaks, type DetectedPeak } from '../terrain/peaks';
 import type { ProjectionParams } from '../core/projections';
 import { ProjectedView } from './projectedView';
+import { track } from '../analytics';
 import { TerrainModel } from '../terrain/TerrainModel';
 
 export interface Layers {
@@ -69,8 +70,10 @@ class Editor {
     const projects = await listProjects();
     const target = projects.find((p) => p.id === last) ?? projects[0];
     // first launch: no maps yet, so the welcome screen offers how to begin
-    if (target) await this.openProject(target.id);
-    else useEditor.getState().set({ welcome: true });
+    if (target) {
+      await this.openProject(target.id);
+      track('project_reopened');
+    } else useEditor.getState().set({ welcome: true });
     useEditor.getState().set({ busy: null });
     window.addEventListener('pagehide', () => void this.saveNow());
     // warn before closing while the last edits are still being written
@@ -131,6 +134,7 @@ class Editor {
     useEditor.getState().set({ welcome: false });
     await this.mount(model, meta, doc);
     await setSetting('lastProject', meta.id);
+    track('map_created');
     return meta.id;
   }
 
