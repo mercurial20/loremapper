@@ -10,7 +10,7 @@ A free fantasy map editor that runs in your browser.<br/>
 Sculpt real terrain, paint forests and deserts, draw rivers, roads and borders,<br/>
 drop in castles and dragons, and hide the unexplored under fog of war.
 
-[![Version](https://img.shields.io/badge/version-1.0.0--beta.2-e6a94f)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.0-e6a94f)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-3f8f5a)](LICENSE)
 [![Try it online](https://img.shields.io/badge/try%20it-online-e6a94f?logo=github)](https://mercurial20.github.io/loremapper/)
 [![Self-hosted](https://img.shields.io/badge/self--hosted-docker%20compose%20up-2f5d9a)](#b-docker)
@@ -28,7 +28,7 @@ drop in castles and dragons, and hide the unexplored under fog of war.
 ## ✨ Why Loremapper?
 
 - **Terrain is real, not just painted.** Every point has an elevation in metres. Mountains cast shade, peaks label themselves ("7,192 m"), coastlines follow the sea level, and contour lines come for free.
-- **Start from an empty ocean or a seed.** Sculpt by hand, or type a seed like `amber-drake-7` and get a whole planet built by plate tectonics: mountain ranges where plates collide, rivers that drain real basins, and deserts, steppes, forests and farmland where the climate puts them. Then keep editing everything by hand.
+- **Start from an empty ocean, a seed or a built-in world.** Sculpt by hand, or type a seed like `amber-drake-7` and get a whole planet built by plate tectonics: ranges with branching valleys where plates collide, rivers that drain real basins, and deserts, steppes, forests and farmland where winds and ocean currents put them. Or begin from a ready-made world such as *Pangaea* or *The Walled Isle*. Then keep editing everything by hand.
 - **A planet or a flat map.** Make a whole round world, or a flat map of a kingdom or region (say 500 × 500 km).
 - **Your art is welcome.** It ships with 57 illustrated map icons, and you can drop in your own PNG, WebP or SVG files. They stay in your library.
 - **Built for game masters.** Paint fog of war over unexplored lands and export a player-safe version of the map.
@@ -46,7 +46,7 @@ It is **not developed for commercial purposes**: there is no paid version, no
 premium features, no ads, no tracking of you or your maps, and no plans to monetise it. The code is
 open under the [MIT License](LICENSE).
 
-> **Early beta.** Loremapper works and has been tested (see [Testing](#-testing-done-for-this-beta)), but expect rough edges.
+> **Still in beta.** Loremapper works and has been tested (see [Testing](#-testing-done-for-this-release)), but expect rough edges.
 > Please [back up](#-saving-backups-and-export) maps you care about and [tell us](#-reporting-bugs-and-contributing) what breaks.
 
 ---
@@ -294,7 +294,7 @@ underneath it.
 
 ### Eight looks, one map
 
-<img src="docs/images/styles.jpg" alt="The same map in four styles: parchment, fantasy atlas, clean political and shaded relief" />
+<img src="docs/images/styles.jpg" alt="The same map in eight styles: parchment, fantasy atlas, clean political, shaded relief, anime, strategy game, pixel art and antique engraving" />
 
 Switch styles any time from **View**: parchment, colourful fantasy atlas, clean
 political, shaded relief, cel-shaded anime, strategy game, pixel art or antique
@@ -428,7 +428,7 @@ You need a desktop browser with **WebGL 2**, and a mouse or trackpad.
 
 So far testing has been on macOS. Windows and Linux reports are very welcome.
 
-## 🚧 Current beta limitations
+## 🚧 Current limitations
 
 - A map's resolution is chosen when it's created and can't be changed later. You can't sculpt details smaller than one terrain cell (~11 km on Standard); biome paint and fog use cells twice that size.
 - Generated rivers sit in their own valleys, but rivers and roads you draw by hand sit on top of the terrain. Lakes aren't drawn as water yet: closed basins fill up into flat plains instead.
@@ -440,29 +440,25 @@ So far testing has been on macOS. Windows and Linux reports are very welcome.
 - Very large image exports (over ~160 megapixels) are disabled.
 - Near the poles, brushes keep their real size in km, so they look very wide on the flat map.
 - Editing is desktop-only; phones and tablets get a read-only viewer.
-- Planets are shown in the equirectangular projection only; polar projections aren't available yet.
+- Planets are shown and exported in the equirectangular projection only; polar and globe projections aren't available yet.
 
-## ✅ Testing done for this beta
+## ✅ Testing done for this release
 
-- Lint, type-check, 31 unit tests and the production build all pass. The tests cover:
+- Lint, type-check, 43 unit tests and the production build all pass. The tests cover:
   - deterministic worlds: one seed and one set of settings give the same world;
-  - world types that hold, and rivers that always run downhill;
-  - true areas on the sphere.
-- `docker compose up -d` starts the app on `localhost:8080` (checked by CI on every push), and a build served from the GitHub Pages sub-path (`/loremapper/`) passes the same checks.
-- Automated browser runs in Chrome 154, Firefox 157 and WebKit 27.2 (macOS) covered:
-  - painting terrain and biomes;
-  - placing and editing objects;
-  - importing PNG and SVG assets and replacing artwork;
+  - world types that hold, rivers that always run downhill, and the uplift-and-erosion relief;
+  - built-in world sketches: land where they draw it, ranges where they put them;
+  - true areas on the sphere and on flat maps, units and project migration.
+- The generator was measured against Earth's real relief (NOAA ETOPO1) at the same resolution: land elevations, slopes and river-basin shape come out close to Earth's (see the [changelog](CHANGELOG.md)).
+- Automated desktop runs in Chrome 154, Firefox 157 and WebKit 27.2 (macOS), starting from the welcome screen, covered:
+  - painting terrain and biomes, placing and editing objects, importing PNG and SVG assets and replacing artwork;
   - reloading, with maps, assets and the camera all restored;
-  - all three exports and re-importing a project;
-  - switching maps.
-- In all three browsers, the runs also covered the new parts:
-  - every world type at every realism level;
-  - cancelling a generation;
-  - an island in the current view;
-  - measuring continents and territories.
+  - all three exports (and the share dialog after an image export), re-importing a project and switching maps.
 
-  All three gave identical areas. The runs produced no console errors and no requests to any outside server. Firefox logs a few harmless WebGL notices.
+  All 19 checks passed in Chrome and WebKit. Firefox passed them too and logged only its usual WebGL notices; no browser logged errors.
+- In Chrome, the runs also covered the new parts: flat maps, every built-in world (flat and planet), every realism level, the eight styles and the View menu, the Info tool, hiding the panel, metric and imperial units, and painting with each kind of land.
+- Phones and tablets (iPhone 13 and iPad Pro 11 emulation): the viewer pans, pinch-zooms and answers taps; the panel starts hidden and opens on tap; lists and cards scroll by touch.
+- Projects and browser-saved maps from v1.0.0-beta.2 open unchanged.
 
 ## 🐞 Reporting bugs and contributing
 

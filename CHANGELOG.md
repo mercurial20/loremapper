@@ -6,7 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-Planned as v1.1: map types, a welcoming start, global units and a phone / tablet viewer.
+## [1.1.0] — 2026-10-11
+
+Flat maps and built-in worlds, a generator that shapes relief like real
+geology, eight map styles, global units and a viewer for phones and tablets.
 
 ### Added
 
@@ -37,12 +40,13 @@ Planned as v1.1: map types, a welcoming start, global units and a phone / tablet
 ### Changed
 
 - **World generator version 3: relief from uplift and erosion.** Plate tectonics now sets how fast each region rises, and the heights are the steady state of that uplift against river incision (the stream-power law, after Cordonnier et al. 2016 and Tzathas et al. 2024). Ranges get branching valleys and sharp ridges, plains stay low, and wetter land wears lower. Compared with Earth's relief (ETOPO1) at the same resolution, generated worlds now match:
-  - its distribution of land elevations (mean ≈ 650–840 m, Earth ≈ 690 m);
-  - its slopes (median ≈ 2.0–2.6 m/km, Earth 2.55);
-  - its river-basin shape: Hack's exponent ≈ 0.44–0.48, against 0.39–0.45 before and Earth's 0.56.
+  - its distribution of land elevations (mean ≈ 600–650 m, Earth ≈ 690 m, with a similar share of lowland below 200 m);
+  - its slopes (median ≈ 2.0–2.3 m/km, Earth 2.55, against 1.0–1.4 before);
+  - its river-basin shape: Hack's exponent ≈ 0.45–0.47, against 0.39–0.45 before and Earth's 0.56.
 
   The same seed builds a different world than in version 2.
-- **More natural plates and coasts.** Plate sizes follow a power law, as on Earth (a few giant plates among many small ones). Coastlines stay fractal down to full resolution.
+- **More natural plates and coasts.** Plate sizes follow a power law, as on Earth (a few giant plates among many small ones). Coastal noise has more octaves, so coasts are more irregular.
+- **Calibrated temperatures and snow line.** Sea-level temperatures by latitude follow Earth's zonal means (≈ 10 °C at 45°), and permanent snow starts around a −6 °C annual mean (≈ 2,800 m in mid-latitudes, like the Alps).
 - **Gravity suggests a mountain height.** Map settings show how tall mountains could stand at the planet's gravity (Everest scaled by 1 / g) and can apply it as the maximum elevation.
 - **Ocean currents and dry summers in generated climates.** Wind-driven gyres put cold currents off western coasts in the subtropics (coastal deserts) and warm ones off eastern coasts (humid subtropics), and flip at high latitudes. Western coasts at 30–45° get Mediterranean dry summers, with scrub and grassland rather than forest.
 - New planets default to Earth's radius, 6,371 km. Existing maps keep their own.
@@ -131,6 +135,7 @@ First public beta.
 - Export to PNG (current view or whole planet, complete map or revealed areas only), 16/8-bit heightmap PNG, and `.loremap` project archives with re-import.
 - Docker image (nginx) and `compose.yaml` for one-command self-hosting.
 
-[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.0.0-beta.2...HEAD
+[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/mercurial20/loremapper/compare/v1.0.0-beta.2...v1.1.0
 [1.0.0-beta.2]: https://github.com/mercurial20/loremapper/compare/v1.0.0-beta.1...v1.0.0-beta.2
 [1.0.0-beta.1]: https://github.com/mercurial20/loremapper/releases/tag/v1.0.0-beta.1
