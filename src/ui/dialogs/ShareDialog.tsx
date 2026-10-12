@@ -5,6 +5,7 @@ import { useEditor } from '../../store/editorStore';
 import { RedditMark } from '../icons';
 import { Modal } from './Modal';
 import { hideShareOffer } from '../share';
+import { track } from '../../analytics';
 
 /** Shown after a map image is saved: an invitation to post it on r/LoreMapper. */
 export function ShareDialog() {
@@ -26,7 +27,16 @@ export function ShareDialog() {
           <button className="btn" onClick={close}>
             Not now
           </button>
-          <a className="btn primary" href={COMMUNITY_LINKS.redditSubmit.href} target="_blank" rel="noopener noreferrer" onClick={close}>
+          <a
+            className="btn primary"
+            href={COMMUNITY_LINKS.redditSubmit.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => {
+              track('share_clicked');
+              close();
+            }}
+          >
             <RedditMark size={14} /> Share on r/LoreMapper <ExternalLink size={12} />
           </a>
         </div>

@@ -5,7 +5,7 @@ import type { MapDocument, MapObject, PathFeature } from '../model/types';
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import type { Sketch } from '../terrain/gen/sketch';
-import type { GenParams, GenResult, GenType, Realism, Template } from '../terrain/generator';
+import type { GenParams, GenResult, GenType, Realism, Surface, Template } from '../terrain/generator';
 import type { WorkerReply, WorkerRequest } from '../terrain/generator.worker';
 import type { RasterArray } from '../terrain/TileGrid';
 import type { TileChange } from '../terrain/TerrainModel';
@@ -35,6 +35,8 @@ export interface GenerateOptions {
   climateLat?: number;
   /** A built-in world's layout (replaces the plate layout). */
   sketch?: Sketch;
+  /** A waterless world of one surface (sand or snow). */
+  surface?: Surface;
 }
 
 /** Flat maps are generated as a 90°-wide patch of a virtual planet (enough room for several landmasses). */
@@ -76,9 +78,11 @@ export function genParams(o: GenerateOptions, size?: { W: number; H: number }): 
     oceanFloor: p.oceanFloor,
     region,
     biomes: o.biomes,
-    rivers: size ? 0 : RIVERS[o.rivers][whole ? 0 : 1],
+    // a waterless world has no rivers
+    rivers: size || o.surface ? 0 : RIVERS[o.rivers][whole ? 0 : 1],
     flat,
     sketch: whole ? o.sketch : undefined,
+    surface: whole ? o.surface : undefined,
   };
 }
 
@@ -276,13 +280,25 @@ export async function generateWorld(o: GenerateOptions, opts: { sample?: boolean
       },
     });
     useEditor.getState().notify(whole ? 'World generated' : 'Land generated in view');
-    track('world_generated');
+    track('world_generated', { preset: presetOf(o), realism: o.realism });
   } catch (e) {
     if (e instanceof Cancelled) useEditor.getState().notify('Generation cancelled — the map is unchanged');
-    else useEditor.getState().notify('Generation failed: ' + (e instanceof Error ? e.message : String(e)), 'error');
+    else {
+      useEditor.getState().notify('Generation failed: ' + (e instanceof Error ? e.message : String(e)), 'error');
+      track('operation_failed', { op: 'generate' });
+    }
   } finally {
     useEditor.getState().set({ busy: null, busyCancel: null });
   }
+}
+
+/** Which kind of world was generated, for the anonymous counts (built-in worlds aren't named). */
+function presetOf(o: GenerateOptions) {
+  if (o.sketch) return 'builtin' as const;
+  if (o.surface) return o.surface;
+  if (o.type === 'archipelago') return o.region === 'world' ? ('oceanWorld' as const) : ('archipelago' as const);
+  if (o.type === 'island' || o.type === 'pangaea') return o.type;
+  return o.template === 'none' ? ('continents' as const) : o.template;
 }
 
 /** Corner-cutting smoothing: takes the staircase out of grid-traced lines, keeps the ends. */

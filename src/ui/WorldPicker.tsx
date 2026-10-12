@@ -52,7 +52,7 @@ export function WorldPicker({ onBack, onCreated, sample }: { onBack: () => void;
     try {
       const m = pick.map;
       const planet = m.kind === 'planet' ? { ...defaultPlanet('standard'), radiusKm: m.radiusKm } : flatMap(m.widthKm, m.heightKm, 'standard');
-      await editor.createMap(name.trim() || pick.name, { ...planet, maxElevation: m.maxElevation }, { source: `world:${pick.id}` });
+      await editor.createMap(name.trim() || pick.name, { ...planet, maxElevation: m.maxElevation }, { source: `world:${pick.id}`, start: 'builtin' });
       onCreated?.();
       const o = pick.options;
       await generateWorld(

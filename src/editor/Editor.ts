@@ -21,6 +21,7 @@ import { renderThumbnail } from './exporter';
 import { detectPeaks, resolvePeaks, type DetectedPeak } from '../terrain/peaks';
 import type { ProjectionParams } from '../core/projections';
 import { ProjectedView } from './projectedView';
+import { ReferenceLayer } from '../render/ReferenceLayer';
 import { track } from '../analytics';
 import { TerrainModel } from '../terrain/TerrainModel';
 
@@ -31,6 +32,7 @@ export interface Layers {
   labels: LabelLayer;
   peaks: PeakLayer;
   overlay: OverlayLayer;
+  reference: ReferenceLayer;
 }
 
 const SAVE_DELAY = 900;
@@ -115,7 +117,7 @@ class Editor {
    * resolution, metres) fills the terrain. Never touches
    * other maps.
    */
-  async createMap(name: string, planet: ProjectMeta['planet'], opts: { heights?: Float32Array; source?: string } = {}) {
+  async createMap(name: string, planet: ProjectMeta['planet'], opts: { heights?: Float32Array; source?: string; start?: 'generate' | 'builtin' | 'empty' } = {}) {
     await this.saveNow();
     const now = Date.now();
     const meta: ProjectMeta = normalizeMeta({
@@ -134,7 +136,7 @@ class Editor {
     useEditor.getState().set({ welcome: false });
     await this.mount(model, meta, doc);
     await setSetting('lastProject', meta.id);
-    track('map_created');
+    track('map_created', { kind: planet.mapType === 'flat' ? 'flat' : 'planet', start: opts.start ?? 'empty' });
     return meta.id;
   }
 
@@ -196,8 +198,10 @@ class Editor {
     const labels = new LabelLayer();
     const peaks = new PeakLayer(renderer.camera, model.W);
     const overlay = new OverlayLayer(model.geo, (id) => labels.bounds(id));
-    renderer.addLayers([territories, paths, objects, labels, peaks], overlay);
-    this.layers = { objects, paths, territories, labels, peaks, overlay };
+    // the tracing picture sits on the terrain, under borders, rivers and symbols
+    const reference = new ReferenceLayer((id) => assetLibrary.referenceBlob(id), () => renderer.requestRender());
+    renderer.addLayers([reference, territories, paths, objects, labels, peaks], overlay);
+    this.layers = { objects, paths, territories, labels, peaks, overlay, reference };
 
     this.syncDoc(useDoc.getState().doc, null);
     this.applyView();
@@ -228,9 +232,14 @@ class Editor {
           renderer.requestRender();
         }
         if (s.fogPreview !== prev.fogPreview) renderer.setFogPreview(s.fogPreview);
+        if (s.referenceEdit !== prev.referenceEdit) {
+          this.layers?.reference.setEditing(s.referenceEdit);
+          renderer.requestRender();
+        }
         if (s.viewProjection !== prev.viewProjection) {
           const a = s.viewProjection;
           const b = prev.viewProjection;
+          if (a && a.id !== b?.id) track('projection_viewed', { projection: a.id as 'orthographic' });
           this.applyProjection(a, !b || !a || a.id !== b.id || a.extent !== b.extent);
         }
         if (s.peaks !== prev.peaks) this.pushPeaks();
@@ -263,6 +272,7 @@ class Editor {
     if (!prev || doc.paths !== prev.paths) L.paths.sync(doc);
     if (!prev || doc.territories !== prev.territories) L.territories.sync(doc);
     if (!prev || doc.labels !== prev.labels) L.labels.sync(doc);
+    if (!prev || doc.reference !== prev.reference) L.reference.sync(doc);
     if (prev && doc.peaks !== prev.peaks) this.resolvePeaksNow();
     if (!prev || doc.view !== prev.view || doc.systemLayers !== prev.systemLayers) this.applyView();
     // drop selections that no longer exist

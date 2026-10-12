@@ -1,5 +1,6 @@
 import { uid } from '../core/math';
 import type {
+  ReferenceImage,
   MapLabel,
   MapObject,
   ObjectLayer,
@@ -275,4 +276,19 @@ export function removePeak(id: string) {
 
 export function restoreSuppressedPeaks() {
   commit('Restore peaks', (d) => ({ peaks: Object.fromEntries(Object.entries(d.peaks).filter(([, p]) => p.mode !== 'suppressed')) }));
+}
+
+// ---------------------------------------------------------------- reference image
+
+/** Change (or with null, remove) the tracing picture; undoable. */
+export function setReference(patch: Partial<ReferenceImage> | null, label = 'Edit reference image', mergeKey?: string) {
+  commit(
+    label,
+    (d) => {
+      if (!patch) return { reference: null };
+      if (!d.reference && !patch.assetId) return {};
+      return { reference: { ...(d.reference as ReferenceImage), ...patch } };
+    },
+    mergeKey,
+  );
 }

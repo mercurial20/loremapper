@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { analyticsAllowed, createTracker, OFFICIAL_SITE, scrub, type ProductEvent } from './analytics';
+import { analyticsAllowed, cleanProps, createTracker, OFFICIAL_SITE, scrub, type ProductEvent } from './analytics';
 
 const env = { prod: true, token: 'phc_test', host: 'https://us.i.posthog.com' };
 const site = { hostname: OFFICIAL_SITE.hostname, pathname: OFFICIAL_SITE.path };
@@ -30,8 +30,8 @@ describe('where analytics may run', () => {
 });
 
 describe('what may leave the browser', () => {
-  it('drops every event but the five', () => {
-    for (const name of ['$pageview', '$pageleave', '$autocapture', '$identify', '$exception', '$web_vitals', 'map_created_extra', ''])
+  it('drops every event that is not on the list', () => {
+    for (const name of ['$pageview', '$pageleave', '$autocapture', '$identify', '$exception', '$web_vitals', 'map_created_extra', 'viewer_opened', 'toString', '__proto__', ''])
       expect(scrub({ event: name, properties: { token: 't' } })).toBeNull();
     expect(scrub(null)).toBeNull();
   });
@@ -56,15 +56,29 @@ describe('what may leave the browser', () => {
         $device_id: 'd',
         name: 'My World',
         seed: 12345,
+        format: 'image',
+        projection: 'Secret projection',
       },
       $set: { email: 'x' },
       $set_once: { first: 'y' },
     });
-    expect(out?.properties).toEqual({ token: 'phc', distinct_id: 'anon', $lib: 'web', $lib_version: '1', $process_person_profile: false });
+    expect(out?.properties).toEqual({ token: 'phc', distinct_id: 'anon', $lib: 'web', $lib_version: '1', format: 'image', projection: 'other', $process_person_profile: false });
     expect(out).not.toHaveProperty('$set');
     expect(out).not.toHaveProperty('$set_once');
     expect(out).toMatchObject({ event: 'map_exported', uuid: 'u', timestamp: 't' });
     expect(JSON.stringify(out)).not.toMatch(/Secret|My World|12345|example\.com|Chrome/);
+  });
+});
+
+describe('event properties', () => {
+  it('keeps only listed keys, with listed values; anything else becomes other', () => {
+    expect(cleanProps('map_created', { kind: 'flat', start: 'builtin' })).toEqual({ kind: 'flat', start: 'builtin' });
+    expect(cleanProps('world_generated', { preset: 'Shinobi World', realism: 'ultra', seed: 42 })).toEqual({ preset: 'other', realism: 'ultra' });
+    expect(cleanProps('tool_used', { tool: 'raise', x: 120, y: 80 })).toEqual({ tool: 'raise' });
+    expect(cleanProps('tool_used', { tool: 7 })).toEqual({ tool: 'other' });
+    expect(cleanProps('first_edit', { label: 'Raise terrain' })).toEqual({});
+    expect(cleanProps('operation_failed', { op: 'export', message: 'Failed to save My World.png' })).toEqual({ op: 'export' });
+    expect(cleanProps('nope', { a: 'b' })).toEqual({});
   });
 });
 
@@ -90,6 +104,28 @@ describe('event counting', () => {
     }
     await flush();
     expect(capture.mock.calls.map((c) => c[0])).toEqual(['project_reopened', 'first_edit']);
+  });
+
+  it('counts tools, styles and projections once per value per page load, and sends only clean properties', async () => {
+    const capture = vi.fn();
+    const track = createTracker(true, async () => ({ capture }));
+    track('tool_used', { tool: 'raise' });
+    track('tool_used', { tool: 'raise' });
+    track('tool_used', { tool: 'river' });
+    track('style_changed', { style: 'anime' });
+    track('style_changed', { style: 'anime' });
+    track('map_exported', { format: 'image', projection: 'gott' });
+    track('map_exported', { format: 'image', projection: 'gott' });
+    track('world_generated', { preset: 'Naruto' as 'sand' });
+    await flush();
+    expect(capture.mock.calls).toEqual([
+      ['tool_used', { tool: 'raise' }],
+      ['tool_used', { tool: 'river' }],
+      ['style_changed', { style: 'anime' }],
+      ['map_exported', { format: 'image', projection: 'gott' }],
+      ['map_exported', { format: 'image', projection: 'gott' }],
+      ['world_generated', { preset: 'other' }],
+    ]);
   });
 
   it('does nothing at all when disabled', async () => {

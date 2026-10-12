@@ -169,6 +169,29 @@ class AssetLibrary {
     return ids;
   }
 
+  /** Store a tracing picture (PNG, JPEG or WebP). It stays out of the asset library. */
+  async importReference(file: File): Promise<{ id: string; width: number; height: number }> {
+    const type = file.type;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(type)) throw new Error(`${file.name}: only PNG, JPEG and WebP pictures can be traced`);
+    const { width, height } = await measure(file);
+    const rec: AssetRecord = { id: uid('ref-'), kind: 'reference', name: 'Reference image', mime: type, blob: file, width, height, createdAt: Date.now() };
+    await (await db()).put('assets', await dehydrateAsset(rec));
+    this.records.set(rec.id, rec);
+    return { id: rec.id, width, height };
+  }
+
+  /** The pixel size of a tracing picture. */
+  referenceSize(id: string): { width: number; height: number } | null {
+    const r = this.records.get(id);
+    return r?.kind === 'reference' && r.width && r.height ? { width: r.width, height: r.height } : null;
+  }
+
+    /** The image file of a tracing picture. */
+  referenceBlob(id: string): Blob | null {
+    const r = this.records.get(id);
+    return r?.kind === 'reference' ? (r.blob ?? null) : null;
+  }
+
   /** Insert records coming from an imported project (keeps ids). */
   async importRecords(recs: AssetRecord[]) {
     const d = await db();

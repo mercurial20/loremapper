@@ -148,6 +148,25 @@ export interface RegionName {
   name: string;
 }
 
+/**
+ * A picture laid over the map to trace from (for example a map made in
+ * another tool). It never changes the terrain; the image itself is stored as
+ * an asset of kind 'reference'.
+ */
+export interface ReferenceImage {
+  assetId: string;
+  /** World rectangle (cells) the picture covers; on a planet it may extend past the map's edges. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  opacity: number;
+  visible: boolean;
+  locked: boolean;
+  /** Drawn into exported map images. */
+  inExport: boolean;
+}
+
 export interface MapDocument {
   objects: Record<string, MapObject>;
   paths: Record<string, PathFeature>;
@@ -158,6 +177,8 @@ export interface MapDocument {
   objectLayers: ObjectLayer[];
   systemLayers: Record<SystemLayerId, SystemLayerState>;
   view: ViewSettings;
+  /** The tracing picture, if any. */
+  reference: ReferenceImage | null;
 }
 
 export interface ProjectMeta {
@@ -201,6 +222,7 @@ export function emptyDocument(): MapDocument {
     labels: {},
     peaks: {},
     regionNames: {},
+    reference: null,
     objectLayers: [
       { id: 'layer-settlements', name: 'Settlements', visible: true, locked: false, opacity: 1 },
       { id: 'layer-features', name: 'Features', visible: true, locked: false, opacity: 1 },

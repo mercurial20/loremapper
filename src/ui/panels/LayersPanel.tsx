@@ -1,6 +1,10 @@
-import { ChevronDown, ChevronUp, Eye, EyeOff, Lock, LockOpen, Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
-import { addObjectLayer, deleteObjectLayer, moveObjectLayer, updateObjectLayer } from '../../editor/commands';
+import { ChevronDown, ChevronUp, Eye, EyeOff, ImagePlus, Lock, LockOpen, Move, Plus, Trash2 } from 'lucide-react';
+import { Fragment, useRef, useState } from 'react';
+import { assetLibrary } from '../../assets/library';
+import { editor } from '../../editor/Editor';
+import { Toggle } from '../controls/controls';
+import { track } from '../../analytics';
+import { addObjectLayer, deleteObjectLayer, moveObjectLayer, setReference, updateObjectLayer } from '../../editor/commands';
 import type { SystemLayerId } from '../../model/types';
 import { useDoc } from '../../store/docStore';
 import { useEditor } from '../../store/editorStore';
@@ -55,7 +59,10 @@ export function LayersPanel() {
         {SYSTEM.map((l) => {
           const st = doc.systemLayers[l.id];
           return (
-            <li key={l.id} className={'layer-item' + (st.visible ? '' : ' off')}>
+            <Fragment key={l.id}>
+            {/* the tracing picture is drawn just above the terrain and its biomes */}
+            {l.id === 'biomes' && <ReferenceItem />}
+            <li className={'layer-item' + (st.visible ? '' : ' off')}>
               <div className="layer-row">
                 <button className="icon-btn small" onClick={() => setSystemLayer(l.id, { visible: !st.visible })} title={st.visible ? 'Hide layer' : 'Show layer'}>
                   {st.visible ? <Eye size={14} /> : <EyeOff size={14} />}
@@ -155,9 +162,128 @@ export function LayersPanel() {
                 </ul>
               )}
             </li>
+            </Fragment>
           );
         })}
       </ul>
     </div>
   );
+}
+
+/** Where a picture lands: fitted inside the map, keeping its proportions, centred. */
+function fitToMap(width: number, height: number, stretch: boolean) {
+  const m = editor.model!;
+  if (stretch) return { x: 0, y: 0, w: m.W, h: m.H };
+  const a = height / Math.max(1, width);
+  const w = a * m.W <= m.H ? m.W : m.H / a;
+  const h = w * a;
+  return { x: (m.W - w) / 2, y: (m.H - h) / 2, w, h };
+}
+
+/** The tracing picture: add one, fade it, place it, lock it, keep it out of exports, remove it. */
+function ReferenceItem() {
+  const ref = useDoc((s) => s.doc.reference);
+  const editing = useEditor((s) => s.referenceEdit);
+  const set = useEditor((s) => s.set);
+  const notify = useEditor((s) => s.notify);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(true);
+  const pick = async (f: File) => {
+    try {
+      const { id, width, height } = await assetLibrary.importReference(f);
+      const rect = fitToMap(width, height, false);
+      setReference({ assetId: id, ...rect, opacity: 0.5, visible: true, locked: false, inExport: true }, ref ? 'Replace reference image' : 'Add reference image');
+      set({ referenceEdit: true });
+      track('reference_image_added');
+      notify('Drag the picture to place it, drag a corner to resize (Shift: free proportions). Esc when done.');
+    } catch (e) {
+      notify(e instanceof Error ? e.message : String(e), 'error');
+    }
+  };
+  const input = (
+    <input
+      ref={fileRef}
+      type="file"
+      hidden
+      accept="image/png,image/jpeg,image/webp"
+      onChange={(e) => {
+        const f = e.target.files?.[0];
+        e.target.value = '';
+        if (f) void pick(f);
+      }}
+    />
+  );
+  if (!ref)
+    return (
+      <li className="layer-item reference-empty">
+        <button className="btn small add-layer" onClick={() => fileRef.current?.click()} title="A picture to trace from, for example a map made in another tool">
+          <ImagePlus size={13} /> Add reference image…
+        </button>
+        {input}
+      </li>
+    );
+  return (
+    <li className={'layer-item' + (ref.visible ? '' : ' off')}>
+      <div className="layer-row">
+        <button className="icon-btn small" onClick={() => setReference({ visible: !ref.visible }, ref.visible ? 'Hide reference image' : 'Show reference image')} title={ref.visible ? 'Hide' : 'Show'}>
+          {ref.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+        </button>
+        <button className="layer-name" onClick={() => setOpen(!open)} title="A picture to trace from; it never changes your terrain">
+          Reference image
+        </button>
+        <button
+          className={'icon-btn small' + (ref.locked ? ' on' : '')}
+          onClick={() => {
+            setReference({ locked: !ref.locked }, ref.locked ? 'Unlock reference image' : 'Lock reference image');
+            if (!ref.locked) set({ referenceEdit: false });
+          }}
+          title={ref.locked ? 'Unlock to move or resize' : 'Lock in place'}
+        >
+          {ref.locked ? <Lock size={13} /> : <LockOpen size={13} />}
+        </button>
+      </div>
+      {open && (
+        <div className="layer-detail reference-detail">
+          <label>
+            Opacity
+            <input type="range" min={0.05} max={1} step={0.01} value={ref.opacity} onChange={(e) => setReference({ opacity: parseFloat(e.target.value) }, 'Reference opacity', 'ref-opacity')} />
+            <output>{Math.round(ref.opacity * 100)}%</output>
+          </label>
+          <div className="btn-row">
+            <button className={'btn small' + (editing ? ' on' : '')} disabled={ref.locked} onClick={() => set({ referenceEdit: !editing })} title={ref.locked ? 'Unlock it first' : 'Drag to move, drag a corner to resize'}>
+              <Move size={13} /> {editing ? 'Done' : 'Move & resize'}
+            </button>
+            <button className="btn small" disabled={ref.locked} onClick={() => setReference(fitToMapOf(ref.assetId, false), 'Fit reference image')} title="Fit inside the map, keeping its proportions">
+              Fit
+            </button>
+            <button className="btn small" disabled={ref.locked} onClick={() => setReference(fitToMap(1, 1, true), 'Stretch reference image')} title="Cover the whole map exactly (for a world map with the same proportions)">
+              Stretch to map
+            </button>
+          </div>
+          <Toggle label="Include in image exports" checked={ref.inExport} onChange={(v) => setReference({ inExport: v }, 'Reference in exports')} />
+          <div className="btn-row">
+            <button className="btn small" onClick={() => fileRef.current?.click()}>
+              <ImagePlus size={13} /> Replace…
+            </button>
+            <button
+              className="btn small danger"
+              onClick={() => {
+                set({ referenceEdit: false });
+                setReference(null, 'Remove reference image');
+              }}
+            >
+              <Trash2 size={13} /> Remove
+            </button>
+          </div>
+          {input}
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** Fit using the stored picture's own proportions. */
+function fitToMapOf(assetId: string, stretch: boolean) {
+  const info = assetLibrary.referenceSize(assetId);
+  return fitToMap(info?.width ?? 1, info?.height ?? 1, stretch);
 }

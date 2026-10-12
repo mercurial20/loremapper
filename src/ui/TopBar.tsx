@@ -29,6 +29,7 @@ import { PROJECTIONS, type ProjectionId, type ProjectionParams } from '../core/p
 import { Segmented, Select, Slider } from './controls/controls';
 import { APP_VERSION } from '../version';
 import { CompassRose, GitHubMark, RedditMark } from './icons';
+import { track } from '../analytics';
 
 function Popover({ button, children, align = 'left' }: { button: (open: boolean, toggle: () => void) => ReactNode; children: ReactNode; align?: 'left' | 'right' }) {
   const [open, setOpen] = useState(false);
@@ -170,7 +171,13 @@ function ViewMenu() {
         {(Object.keys(STYLE_PRESETS) as StylePresetId[]).map((id) => {
           const s = STYLE_PRESETS[id];
           return (
-            <button key={id} className={'style-tile' + (view.style === id ? ' on' : '')} onClick={() => setView({ style: id })} title={s.description} aria-pressed={view.style === id}>
+            <button key={id} className={'style-tile' + (view.style === id ? ' on' : '')} onClick={() => {
+                setView({ style: id });
+                track('style_changed', { style: id });
+              }}
+              title={s.description}
+              aria-pressed={view.style === id}
+            >
               <StyleThumb s={s} />
               <span>{s.name}</span>
             </button>

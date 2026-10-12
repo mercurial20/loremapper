@@ -1,6 +1,7 @@
 /**
- * Minimal product analytics for the official hosted app only: five anonymous
- * event counts (a map was created, generated, edited, reopened, exported).
+ * Minimal product analytics for the official hosted app only: anonymous counts
+ * of a few actions (a map was created, generated, edited, reopened, exported,
+ * imported; which tools, styles and projections were used; what failed).
  *
  * - Enabled only in production builds that carry a PostHog token, served from
  *   the official address, and when the browser sends no Do Not Track or
@@ -11,20 +12,67 @@
  *   load external scripts.
  * - Nothing is stored on the device: the anonymous ID lives in memory for one
  *   page load. No person profiles, no identify/alias.
- * - Every outgoing event passes `scrub`: only the five names are allowed, and
- *   only the technical fields PostHog needs to accept an event are kept.
+ * - Every outgoing event passes `scrub`: only the listed events are allowed,
+ *   with the technical fields PostHog needs plus their own properties, whose
+ *   values must come from the fixed lists in SCHEMA.
  *   Map contents, names, seeds, coordinates and URLs are never sent.
  * - Failures (blocked requests, offline, a broken SDK) are swallowed: the
  *   editor never waits for analytics.
  */
 
-export type ProductEvent = 'map_created' | 'world_generated' | 'project_reopened' | 'first_edit' | 'map_exported';
+/**
+ * Every event that may be sent, with the only properties it may carry and
+ * the only values each property may take. Values come from fixed lists in
+ * the app (map types, presets, tools…), never from anything a user types or
+ * from a map's contents; anything else becomes 'other'.
+ */
+const SCHEMA = {
+  map_created: { kind: ['planet', 'flat'], start: ['generate', 'builtin', 'empty'] },
+  world_generated: {
+    preset: ['continents', 'pangaea', 'twoWorlds', 'innerSea', 'polar', 'shattered', 'mainland', 'oceanWorld', 'island', 'archipelago', 'sand', 'snow', 'builtin'],
+    realism: ['easy', 'medium', 'high', 'ultra'],
+  },
+  project_reopened: {},
+  first_edit: {},
+  map_exported: {
+    format: ['image', 'heightmap', 'project'],
+    projection: ['flat', 'equirectangular', 'mercator', 'mollweide', 'equalEarth', 'orthographic', 'azimuthal', 'gott'],
+  },
+  project_imported: {},
+  reference_image_added: {},
+  share_clicked: {},
+  projection_viewed: { projection: ['mercator', 'mollweide', 'equalEarth', 'orthographic', 'azimuthal', 'gott'] },
+  style_changed: { style: ['parchment', 'atlas', 'political', 'relief', 'anime', 'strategy', 'pixel', 'antique'] },
+  tool_used: {
+    tool: ['select', 'info', 'pan', 'raise', 'lower', 'ridge', 'smooth', 'flatten', 'paint', 'erase', 'river', 'road', 'object', 'label', 'territory', 'fog', 'peak', 'measure'],
+  },
+  operation_failed: { op: ['generate', 'export', 'import'] },
+} as const;
 
-const EVENTS: ReadonlySet<string> = new Set<ProductEvent>(['map_created', 'world_generated', 'project_reopened', 'first_edit', 'map_exported']);
-/** Events counted at most once per page load. */
+type Schema = typeof SCHEMA;
+export type ProductEvent = keyof Schema;
+/** The properties of an event, typed from its schema (all optional). */
+export type EventProps<E extends ProductEvent> = { [K in keyof Schema[E]]?: Schema[E][K] extends readonly (infer V)[] ? V : never };
+
+/** Counted at most once per page load (whatever their properties). */
 const ONCE: ReadonlySet<ProductEvent> = new Set<ProductEvent>(['project_reopened', 'first_edit']);
-/** The only properties allowed out: what PostHog needs to accept an anonymous event. */
+/** Counted at most once per page load for each value (which tools, styles, projections were used in a visit). */
+const ONCE_PER_VALUE: ReadonlySet<ProductEvent> = new Set<ProductEvent>(['tool_used', 'style_changed', 'projection_viewed']);
+/** Technical fields PostHog needs to accept an anonymous event. */
 const KEEP = ['token', 'distinct_id', '$lib', '$lib_version', '$process_person_profile'] as const;
+
+/** An event's own properties, cut down to its schema: unknown keys dropped, unknown values made 'other'. */
+export function cleanProps(event: string, props: Record<string, unknown> | undefined): Record<string, string> {
+  const schema = (SCHEMA as Record<string, Record<string, readonly string[]>>)[event];
+  const out: Record<string, string> = {};
+  if (!schema || !props) return out;
+  for (const [k, allowed] of Object.entries(schema)) {
+    if (!(k in props)) continue;
+    const v = props[k];
+    out[k] = typeof v === 'string' && allowed.includes(v) ? v : 'other';
+  }
+  return out;
+}
 
 /** Where the official app lives; nothing is tracked anywhere else. */
 export const OFFICIAL_SITE = { hostname: 'mercurial20.github.io', path: '/loremapper/' };
@@ -51,12 +99,13 @@ export interface OutgoingEvent {
   $set_once?: unknown;
 }
 
-/** Last check before anything leaves: unknown events are dropped, properties cut down to the technical minimum. */
+/** Last check before anything leaves: unknown events are dropped; properties cut to the technical minimum plus the event's schema. */
 export function scrub<T extends OutgoingEvent>(e: T | null): T | null {
-  if (!e || !EVENTS.has(e.event)) return null;
+  if (!e || !Object.hasOwn(SCHEMA, e.event)) return null;
   const props = e.properties ?? {};
   const kept: Record<string, unknown> = {};
   for (const k of KEEP) if (k in props) kept[k] = props[k];
+  Object.assign(kept, cleanProps(e.event, props));
   // never create or update a person
   kept.$process_person_profile = false;
   const out = { ...e, properties: kept } as T;
@@ -67,22 +116,24 @@ export function scrub<T extends OutgoingEvent>(e: T | null): T | null {
 
 /** What the tracker needs from the SDK. */
 export interface AnalyticsClient {
-  capture(event: string): unknown;
+  capture(event: string, properties?: Record<string, string>): unknown;
 }
 
-/** Event counting with a lazily loaded client; at-most-once events are deduplicated per page load. */
+/** Event counting with a lazily loaded client; repeated events are deduplicated per page load where that's the point. */
 export function createTracker(enabled: boolean, load: () => Promise<AnalyticsClient | null>) {
-  const fired = new Set<ProductEvent>();
+  const fired = new Set<string>();
   let client: Promise<AnalyticsClient | null> | null = null;
-  return (event: ProductEvent) => {
-    if (ONCE.has(event)) {
-      if (fired.has(event)) return;
-      fired.add(event);
+  return <E extends ProductEvent>(event: E, props?: EventProps<E>) => {
+    const clean = cleanProps(event, props as Record<string, unknown> | undefined);
+    if (ONCE.has(event) || ONCE_PER_VALUE.has(event)) {
+      const key = ONCE.has(event) ? event : event + JSON.stringify(clean);
+      if (fired.has(key)) return;
+      fired.add(key);
     }
     if (!enabled) return;
     client ??= load().catch(() => null);
     void client
-      .then((c) => c?.capture(event))
+      .then((c) => (Object.keys(clean).length ? c?.capture(event, clean) : c?.capture(event)))
       .catch(() => {
         // analytics must never affect the editor
       });
@@ -129,5 +180,5 @@ async function loadPostHog(): Promise<AnalyticsClient | null> {
 
 const allowed = typeof window !== 'undefined' && analyticsAllowed(env, window.location, navigator as Navigator & { globalPrivacyControl?: boolean });
 
-/** Count one of the five product events (a no-op outside the official site). */
+/** Count a product event (a no-op outside the official site). */
 export const track = createTracker(allowed, loadPostHog);

@@ -28,7 +28,8 @@ export interface TileRecord {
  */
 export interface AssetRecord {
   id: string;
-  kind: 'user' | 'override';
+  /** 'reference': a tracing picture (kept with the project, not shown in the library) */
+  kind: 'user' | 'override' | 'reference';
   name?: string;
   category?: string;
   mime?: string;

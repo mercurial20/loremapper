@@ -10,7 +10,7 @@ A free fantasy map editor that runs in your browser.<br/>
 Sculpt real terrain, paint forests and deserts, draw rivers, roads and borders,<br/>
 drop in castles and dragons, and hide the unexplored under fog of war.
 
-[![Version](https://img.shields.io/badge/version-1.2.1--alpha.1-e6a94f)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.2--alpha.1-e6a94f)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-3f8f5a)](LICENSE)
 [![Try it online](https://img.shields.io/badge/try%20it-online-e6a94f?logo=github)](https://mercurial20.github.io/loremapper/)
 [![Self-hosted](https://img.shields.io/badge/self--hosted-docker%20compose%20up-2f5d9a)](#b-docker)
@@ -74,7 +74,7 @@ the `main` branch, so it always has the latest version.
 
 > GitHub only delivers the app's files, like any website host. Your maps, images
 > and edits are never uploaded anywhere. The online copy counts anonymous visits
-> and five basic actions; see [Privacy and analytics](#-privacy-and-analytics).
+> and a few basic actions; see [Privacy and analytics](#-privacy-and-analytics).
 
 ### B. Docker
 
@@ -210,7 +210,7 @@ Generated and empty maps can be a <b>Planet map</b> or a <b>Flat map</b>:
 </tr>
 <tr>
 <td><img src="docs/images/generate.jpg" alt="The Generate world dialog: world types and templates, realism levels, a live preview and six seed variants" /></td>
-<td><b>2. Generate or sculpt.</b><br/>Click <b>Generate</b> and pick a world: continents, a supercontinent, an ocean world, or a template such as <i>Old &amp; New World</i>, <i>Inner sea</i>, <i>Polar continent</i>, <i>Shattered continent</i> or <i>Mainland &amp; isles</i>. You can also add an island or an archipelago to the current view. Type any <b>seed</b>, roll the dice or click <b>Variants</b> to compare six worlds; the live preview shows exactly what you'll get. Choose a <b>realism</b> level from <i>Easy</i> (about 3 seconds) to <i>Ultra</i> (about 10 seconds or more, cancellable). In <i>Advanced settings</i> you can set land share, mountains, hills, temperature, rainfall, rivers and named settlements. The same seed and settings always give the same world. Prefer full control? Press <kbd>R</kbd> and paint land yourself.</td>
+<td><b>2. Generate or sculpt.</b><br/>Click <b>Generate</b> and pick a world: continents, a supercontinent, an ocean world, or a template such as <i>Old &amp; New World</i>, <i>Inner sea</i>, <i>Polar continent</i>, <i>Shattered continent</i> or <i>Mainland &amp; isles</i>. You can also add an island or an archipelago to the current view. New: waterless <i>Sand planet</i> and <i>Snow planet</i>. Type any <b>seed</b>, roll the dice or click <b>Variants</b> to compare six worlds; the live preview shows exactly what you'll get. Choose a <b>realism</b> level from <i>Easy</i> (about 3 seconds) to <i>Ultra</i> (about 10 seconds or more, cancellable). In <i>Advanced settings</i> you can set land share, mountains, hills, temperature, rainfall, rivers and named settlements. The same seed and settings always give the same world. Prefer full control? Press <kbd>R</kbd> and paint land yourself.</td>
 </tr>
 <tr>
 <td><img src="docs/images/world.jpg" alt="A generated planet with several continents" /></td>
@@ -334,6 +334,7 @@ You can name it there and write the name on the map as a normal label. **Lands &
 
 ### Also included
 
+- **Trace another map**: *Layers → Add reference image…* lays a picture (for example a map from another tool) over yours, faded, so you can redraw its coasts. It is saved with the map and can be kept out of exports.
 - **Layers**: show, hide, lock and fade terrain, biomes, borders, rivers, objects, labels, peaks and fog. You can create your own object layers.
 - **Undo / redo** for everything, plus copy, multi-select, z-order, lock and hide.
 - **Many maps**: each is saved separately, with thumbnails, and can be renamed or duplicated.
@@ -408,14 +409,24 @@ uses two small analytics services, only so we can see whether the project is use
 
 - [Cloudflare Web Analytics](https://www.cloudflare.com/web-analytics/) counts
   visits, where visitors come from (referrers, countries) and page load speed.
-- [PostHog](https://posthog.com/) counts five actions: **a map was created**, **a world
-  was generated**, **a map was edited** (once per visit), **a saved map was reopened**
-  (once per visit) and **a map was exported**. Each event is only its name and time.
+- [PostHog](https://posthog.com/) counts a few actions, each sent as just its name, its
+  time and at most a couple of fixed labels:
+
+  | Event | Labels (always from a fixed list) |
+  |---|---|
+  | a map was created | planet or flat; generated, built-in world or empty |
+  | a world was generated | the kind of world (e.g. continents, sand planet, built-in world) and the realism level |
+  | a map was edited, a saved map reopened (once per visit each) | — |
+  | a map was exported | image, heightmap or project; the image's projection |
+  | a project was imported, a reference image added, *Share on r/LoreMapper* clicked | — |
+  | a tool, map style or projection was used (once per visit for each) | the tool's, style's or projection's name |
+  | generating, exporting or importing failed | which of the three (never the error message) |
 
 What this means for you:
 
 - Your maps never leave your browser. Map names, terrain, drawings, labels, seeds,
-  coordinates, imported images and files are **never sent** to either service.
+  sizes, coordinates, imported images, file names and anything you type are **never
+  sent** to either service. Built-in worlds are counted as "built-in", without their names.
 - Neither service sets cookies or stores anything in your browser. PostHog gets a
   random ID that lives only until the page is closed or reloaded: it can't recognise
   you on your next visit, and no user profiles are created.

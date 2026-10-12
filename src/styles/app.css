@@ -2494,3 +2494,35 @@ input[type='range']::-moz-range-thumb {
     display: none;
   }
 }
+
+/* waterless presets: the whole card is ground, the shapes are highlands */
+.preset-glyph.sand .ground {
+  fill: #d9b97a;
+}
+.preset-glyph.sand .land {
+  fill: #b98e57;
+}
+.preset-glyph.snow .ground {
+  fill: #e8edf3;
+}
+.preset-glyph.snow .land {
+  fill: #9aa3ad;
+}
+
+/* ------------------------------------------------------------ reference image */
+
+.reference-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.reference-empty {
+  padding: 4px 0 6px;
+}
+/* the toggle keeps its usual layout inside the layer's details */
+.reference-detail label.toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  grid-template-columns: none;
+}

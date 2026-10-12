@@ -11,6 +11,7 @@ import { RASTER_LAYERS, type RasterLayer } from '../terrain/TerrainModel';
 import { APP_VERSION } from '../version';
 import { editor } from './Editor';
 import { downloadBlob, encodePng, safeFileName } from './png';
+import { track } from '../analytics';
 
 export type FogExport = 'none' | 'revealed';
 
@@ -46,7 +47,10 @@ async function renderToPng(x0: number, y0: number, x1: number, y1: number, outW:
   const overlayVisible = L.overlay.container.visible;
   const fogVisible = r.fog.container.visible;
   const peaksVisible = L.peaks.container.visible;
+  const refVisible = L.reference.container.visible;
   L.overlay.container.visible = false;
+  // the tracing picture is drawn only when it's switched on for exports
+  if (!useDoc.getState().doc.reference?.inExport) L.reference.container.visible = false;
   if (o.fog === 'none') r.fog.container.visible = false;
   else {
     r.fog.container.visible = true;
@@ -115,6 +119,7 @@ async function renderToPng(x0: number, y0: number, x1: number, y1: number, outW:
     L.overlay.container.visible = overlayVisible;
     r.fog.container.visible = fogVisible;
     L.peaks.container.visible = peaksVisible;
+    L.reference.container.visible = refVisible;
     r.fogPreviewOverride = null;
     r.applyStyle(useDoc.getState().doc, useDoc.getState().meta!, useEditor.getState().fogPreview);
     r.renderFrame();
@@ -134,6 +139,8 @@ export async function renderWorldPixels(outW: number, outH: number, what: 'terra
   const L = editor.layers!;
   const m = editor.model!;
   const vectorRoots = (what === 'map' ? [L.objects, L.labels, L.peaks, L.overlay] : [L.territories, L.paths, L.objects, L.labels, L.peaks, L.overlay]).map((l) => l.container);
+  // exports include the tracing picture only when asked to; the fog pass never does
+  if (what === 'fog' || (what === 'terrain' && !useDoc.getState().doc.reference?.inExport)) vectorRoots.push(L.reference.container);
   if (what === 'map') L.territories.setLabelsVisible(false);
   const saved = vectorRoots.map((c) => c.visible);
   const terrainVisible = r.terrain.container.visible;
@@ -321,7 +328,7 @@ function unshuffleBytes(src: Uint8Array, size: number): Uint8Array {
   return out;
 }
 
-const EXT: Record<string, string> = { 'image/png': 'png', 'image/webp': 'webp', 'image/svg+xml': 'svg' };
+const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/svg+xml': 'svg' };
 
 interface Manifest {
   /** `fantasy-cartographer-project` was written by builds before the rename. */
@@ -336,13 +343,15 @@ interface Manifest {
 }
 
 /** Save the open project (with tiles and the custom assets it uses) as one file. */
-export async function exportProject() {
+export async function exportProject(o: { includeReference?: boolean } = {}) {
   await editor.saveNow();
   const { meta } = useDoc.getState();
   const m = editor.model!;
   if (!meta) return;
-  const rec = await getProjectRecord(meta.id);
-  if (!rec) return;
+  const stored = await getProjectRecord(meta.id);
+  if (!stored) return;
+  // a file without the tracing picture (the map in this browser keeps it)
+  const rec = o.includeReference === false && stored.doc.reference ? { ...stored, doc: { ...stored.doc, reference: null } } : stored;
   useEditor.getState().set({ busy: 'Packing project…' });
   try {
     const files: Zippable = {};
@@ -357,6 +366,8 @@ export async function exportProject() {
       }
     }
     const used = new Set(Object.values(rec.doc.objects).map((o) => o.assetId));
+    // the tracing picture travels with the project
+    if (rec.doc.reference) used.add(rec.doc.reference.assetId);
     const assets: Manifest['assets'] = [];
     for (const id of used) {
       const a = await assetLibrary.exportRecord(id);
@@ -427,6 +438,10 @@ export async function importProject(file: File) {
     await writeFullProject(record, tiles);
     await editor.openProject(id);
     useEditor.getState().notify(`Imported “${record.meta.name}”`);
+    track('project_imported');
+  } catch (e) {
+    track('operation_failed', { op: 'import' });
+    throw e;
   } finally {
     useEditor.getState().set({ busy: null });
   }

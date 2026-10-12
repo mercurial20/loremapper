@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.2-alpha.1] — 2026-10-12
+
+### Added
+
+- **Reference image for tracing.** *Layers → Add reference image…* lays a PNG, JPEG or WebP picture over the map, for example a map made in another tool, so you can trace its coasts with the brushes:
+  - adjustable opacity, *Move & resize* (drag it, drag a corner; Shift frees the proportions), *Fit* and *Stretch to map*, lock, show/hide, replace and remove, all undoable;
+  - it sits on the terrain, under borders, rivers and symbols, and never changes the terrain;
+  - it is saved with the map and inside `.loremap` files, and stays out of the icon library;
+  - *Include in image exports* (on by default) decides whether exported pictures show it; the same switch is in *Export → Map image*;
+  - *Export → Editable project* can leave the picture out of that one file (its size is shown), while the map in the browser keeps it.
+- **A few more anonymous counts on the official site.** Besides the five existing events: a project was imported, a reference image added, *Share on r/LoreMapper* clicked, a tool / map style / projection used (once per visit for each), and generating, exporting or importing failed. Existing events gain fixed labels: the map type and how it was started, the kind of world and realism level, the export format and projection. Every property and value is checked against a fixed list before sending (anything else becomes "other"); nothing a user types, no map content, sizes, seeds or error messages, and built-in worlds are counted without their names. The README lists every event.
+- **Sand planet** and **Snow planet** presets in *Generate*: worlds without water. The old ocean basins become lowlands (sand seas or snowfields), mountain ranges and plateaus keep their relief, bare rock shows on slopes (and, on the snow planet, in windswept patches), and there are no rivers. Each pick starts from a new seed. Other presets build exactly the same worlds as before.
+
 ## [1.2.1-alpha.1] — 2026-10-11
 
 ### Added
@@ -163,7 +176,8 @@ First public beta.
 - Export to PNG (current view or whole planet, complete map or revealed areas only), 16/8-bit heightmap PNG, and `.loremap` project archives with re-import.
 - Docker image (nginx) and `compose.yaml` for one-command self-hosting.
 
-[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.2.1-alpha.1...HEAD
+[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.2.2-alpha.1...HEAD
+[1.2.2-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.2.1-alpha.1...v1.2.2-alpha.1
 [1.2.1-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.2.0-alpha.1...v1.2.1-alpha.1
 [1.2.0-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.1.0...v1.2.0-alpha.1
 [1.1.0]: https://github.com/mercurial20/loremapper/compare/v1.0.0-beta.2...v1.1.0

@@ -51,7 +51,7 @@ export function NewMapFlow({ onCancel, onCreated }: { onCancel?: () => void; onC
     setError(null);
     try {
       const fallback = start === 'generate' ? (kind === 'flat' ? 'New realm' : 'New world') : kind === 'flat' ? 'New map' : 'New world';
-      await editor.createMap(name.trim() || fallback, planet);
+      await editor.createMap(name.trim() || fallback, planet, { start: start === 'generate' ? 'generate' : 'empty' });
       onCreated?.();
       if (start === 'generate') set({ dialog: 'generate' });
     } catch (e) {
@@ -230,7 +230,7 @@ function ViewerStart() {
           title="Explore a sample world"
           onClick={() =>
             void run(async () => {
-              await editor.createMap('Sample world', defaultPlanet('standard'));
+              await editor.createMap('Sample world', defaultPlanet('standard'), { start: 'generate' });
               await generateWorld(
                 { type: 'continents', template: 'none', realism: 'easy', seed: 4242, landFraction: 0.29, mountains: 0.75, roughness: 0.35, warmth: 0, wetness: 0, biomes: true, rivers: 'normal', settlements: true, region: 'world' },
                 { sample: true },

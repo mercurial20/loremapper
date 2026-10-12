@@ -1,7 +1,7 @@
 import { clamp, mulberry32, smoothstep } from '../core/math';
 import { Simplex3, subSeed } from '../core/noise3';
 import { BIOME_CHANNELS } from '../core/planet';
-import { biomeWeights, climate, type Climate } from './gen/climate';
+import { BIOME_DESERT, BIOME_ROCK, BIOME_SNOW, biomeWeights, climate, type Climate } from './gen/climate';
 import { sketchClimate, sketchShape, type Shape, type Sketch } from './gen/sketch';
 import { blurKm, components, distanceField, dyKm, latOf, lonOf, makeGrid, mercatorPatch, radPerCell, resample, resampleFromSphere, sampleAt, sphereTables, thresholdForFraction, type Grid } from './gen/grid';
 import { accumulate, diffuse, drain, erode, steadyState, traceRivers, type Drainage } from './gen/hydrology';
@@ -56,7 +56,15 @@ export interface GenParams {
   flat?: { spanLonDeg: number; climateLatDeg: number; climateSpanDeg: number };
   /** A drawn layout (built-in worlds): replaces the plate layout; `landFraction` is ignored. */
   sketch?: Sketch;
+  /**
+   * A world without water, all one surface: the ocean basins become dry
+   * lowlands (sand seas, frozen plains), rivers are left out, and biomes are
+   * sand or snow with bare rock and ground. Only these presets use it.
+   */
+  surface?: Surface;
 }
+
+export type Surface = 'sand' | 'snow';
 
 export interface GenRiver {
   points: [number, number][];
@@ -444,6 +452,69 @@ function paintBiomes(
 }
 
 /**
+ * A waterless world: the old ocean floors become lowland basins between 20 m
+ * and the old coastline (now 400 m up), and the land keeps its own relief on
+ * top, so mountains stay mountains. The mid grid `h` is changed in place; the
+ * returned function applies the same mapping to other heights.
+ */
+function dryOut(h: Float32Array, maxE: number): (v: number) => number {
+  const BASIN = 20;
+  const SHORE = 400;
+  let lo = -1;
+  let hi = 1;
+  for (const v of h) {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  // land rises from the old shore; squeeze it only if it would pass the summit height
+  const up = Math.min(1, (maxE * 0.95 - SHORE) / hi);
+  const f = (v: number) => (v <= 0 ? BASIN + (SHORE - BASIN) * (1 - v / lo) : SHORE + v * up);
+  for (let i = 0; i < h.length; i++) h[i] = f(h[i]);
+  return (v) => Math.max(5, f(v));
+}
+
+/**
+ * Biomes of a waterless world. Sand: dune seas in the basins and lowlands,
+ * bare rock on slopes and in outcrops across the highlands. Snow: snowfields,
+ * with bare rock and ground on slopes and in broad windswept patches.
+ */
+function paintSurface(p: GenParams, mid: Grid, h: Float32Array, bg: { x0: number; y0: number; w: number; h: number }): Uint8Array {
+  const out = new Uint8Array(bg.w * bg.h * BIOME_CHANNELS);
+  const n = new Simplex3(subSeed(p.seed, 71));
+  const dy = dyKm(mid);
+  const sand = p.surface === 'sand';
+  // highlands: the upper part of the relief (the old continents)
+  const sorted = Float32Array.from(h).sort();
+  const q50 = sorted[Math.floor(sorted.length * 0.5)];
+  const q80 = sorted[Math.floor(sorted.length * 0.8)];
+  for (let j = 0; j < bg.h; j++)
+    for (let i = 0; i < bg.w; i++) {
+      const wx = (bg.x0 + i) * 2 + 1;
+      const wy = (bg.y0 + j) * 2 + 1;
+      // slope (m per km) from the working grid, a cell apart each way
+      const st = mid.step;
+      const e = sampleAt(h, mid, wx, wy);
+      const gx = (sampleAt(h, mid, wx + st, wy) - sampleAt(h, mid, wx - st, wy)) / (2 * dy);
+      const gy = (sampleAt(h, mid, wx, wy + st) - sampleAt(h, mid, wx, wy - st)) / (2 * dy);
+      const slope = Math.hypot(gx, gy);
+      const lat = latOf(mid, wy);
+      const lon = lonOf(mid, wx);
+      const x = Math.cos(lat) * Math.cos(lon);
+      const y = Math.cos(lat) * Math.sin(lon);
+      const z = Math.sin(lat);
+      // broad patches with ragged edges
+      const patch = 0.5 + 0.5 * (0.7 * n.fbm(x, y, z, 3.5, 4) + 0.3 * n.fbm(x + 4.1, y, z, 16, 2));
+      const steep = smoothstep(6, 26, slope);
+      const high = smoothstep(q50, q80, e);
+      const bare = sand ? Math.max(steep, high * smoothstep(0.52, 0.68, patch) * 0.9) : Math.max(steep * 0.9, smoothstep(0.56, 0.7, patch) * (0.55 + 0.35 * high));
+      const o = (j * bg.w + i) * BIOME_CHANNELS;
+      out[o + (sand ? BIOME_DESERT : BIOME_SNOW)] = (1 - bare) * 235;
+      out[o + BIOME_ROCK] = bare * 235;
+    }
+  return out;
+}
+
+/**
  * Generate a world (or land inside a region). `progress` reports stages for
  * the busy indicator.
  */
@@ -658,7 +729,13 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   const bw = Math.ceil(rw / 2);
   const bh = Math.ceil(rh / 2);
   let biome: Uint8Array | null = null;
-  if (p.biomes) biome = paintBiomes(p, mid, h, clim, coastKm, flow, maxFlow, rivers, { x0: bx0, y0: by0, w: bw, h: bh });
+  if (p.surface) {
+    // no water: lift the whole relief above sea level, ocean basins and all
+    const k = dryOut(h, maxE);
+    for (let i = 0; i < height.length; i++) height[i] = k(height[i]);
+    rivers = [];
+    if (p.biomes) biome = paintSurface(p, mid, h, { x0: bx0, y0: by0, w: bw, h: bh });
+  } else if (p.biomes) biome = paintBiomes(p, mid, h, clim, coastKm, flow, maxFlow, rivers, { x0: bx0, y0: by0, w: bw, h: bh });
 
   for (let k = 0; k < height.length; k++) height[k] = clamp(p.seaLevel + height[k], p.minElevation, p.seaLevel + maxE);
   progress('Done', 1);

@@ -120,6 +120,8 @@ interface EditorState {
   panelHidden: boolean;
   /** Planets: looking at the map in another projection (null = the editable equirectangular map). */
   viewProjection: ProjectionParams | null;
+  /** Placing the tracing picture: drag to move, corners to resize. */
+  referenceEdit: boolean;
 
   setTool(t: ToolId): void;
   setBrush(g: BrushGroup, p: Partial<BrushParams>): void;
@@ -234,6 +236,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   units: storedUnits(),
   panelHidden: storedPanelHidden(),
   viewProjection: null,
+  referenceEdit: false,
 
   setTool(t) {
     const cur = get().tool;
@@ -245,7 +248,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       set({ viewProjection: null });
       get().notify('Back to the editable map: editing works in the equirectangular view');
     }
-    set({ tool: t, prevTool: cur, assetPanelOpen: t === 'object' ? true : get().assetPanelOpen });
+    set({ tool: t, prevTool: cur, assetPanelOpen: t === 'object' ? true : get().assetPanelOpen, referenceEdit: false });
   },
   setBrush(g, p) {
     set({ brushes: { ...get().brushes, [g]: { ...get().brushes[g], ...p } } });

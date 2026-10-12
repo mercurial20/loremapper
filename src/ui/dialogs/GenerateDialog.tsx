@@ -4,7 +4,7 @@ import { seedFromString } from '../../core/math';
 import { surfaceAreaKm2 } from '../../core/planet';
 import { formatArea, formatHeight } from '../../core/units';
 import { generateWorld, genParams, PreviewWorker, type GenerateOptions, type RiverAmount } from '../../editor/generate';
-import type { GenType, Realism, Template } from '../../terrain/generator';
+import type { GenType, Realism, Surface, Template } from '../../terrain/generator';
 import { useDoc } from '../../store/docStore';
 import { useEditor } from '../../store/editorStore';
 import { Segmented, Slider, TextField, Toggle } from '../controls/controls';
@@ -24,6 +24,8 @@ interface Preset {
   land?: number;
   /** only meaningful on a planet (poles, opposite hemispheres) */
   planetOnly?: boolean;
+  /** a waterless world of one surface */
+  surface?: Surface;
   glyph: Blob[];
 }
 
@@ -45,6 +47,26 @@ const PRESETS: Preset[] = [
     template: 'none',
     land: 0.08,
     glyph: dots([[14, 12, 4], [22, 16, 2.5], [18, 22, 2], [48, 30, 5], [56, 26, 3], [54, 36, 2.5], [80, 14, 3.5], [86, 20, 2], [76, 40, 3], [30, 40, 2.5]]),
+  },
+  {
+    id: 'sand',
+    label: 'Sand planet',
+    desc: 'No water at all: endless dunes over old ocean basins, rocky plateaus and mountain walls. New every time.',
+    type: 'continents',
+    template: 'none',
+    land: 0.45,
+    surface: 'sand',
+    glyph: [[24, 18, 14, 9], [64, 30, 20, 10], [86, 12, 7, 5]],
+  },
+  {
+    id: 'snow',
+    label: 'Snow planet',
+    desc: 'No open water: snowfields and frozen basins, with bare ground on windswept ridges and slopes. New every time.',
+    type: 'continents',
+    template: 'none',
+    land: 0.45,
+    surface: 'snow',
+    glyph: [[30, 20, 18, 10], [72, 32, 16, 9], [84, 10, 6, 4]],
   },
   { id: 'island', label: 'Island', desc: 'Adds one island in the current view, keeping the rest of the map.', type: 'island', template: 'none', view: true, land: 0.35, glyph: [[50, 25, 17, 11]] },
   {
@@ -77,10 +99,10 @@ const CLIMATE_ZONES = [
 
 const describe = (v: number, labels: string[]) => labels[Math.min(labels.length - 1, Math.floor(((v + 1) / 2) * labels.length))];
 
-function Glyph({ blobs, view }: { blobs: Blob[]; view?: boolean }) {
+function Glyph({ blobs, view, surface }: { blobs: Blob[]; view?: boolean; surface?: Surface }) {
   return (
-    <svg className="preset-glyph" viewBox="0 0 100 50" aria-hidden>
-      <rect width="100" height="50" rx="4" className="sea" />
+    <svg className={'preset-glyph' + (surface ? ' ' + surface : '')} viewBox="0 0 100 50" aria-hidden>
+      <rect width="100" height="50" rx="4" className={surface ? 'ground' : 'sea'} />
       {blobs.map(([cx, cy, rx, ry, sea], i) => (
         <ellipse key={i} cx={cx} cy={cy} rx={rx} ry={ry} className={sea ? 'sea' : 'land'} />
       ))}
@@ -149,6 +171,8 @@ export function GenerateDialog() {
 
   const choosePreset = (p: Preset) => {
     setPresetId(p.id);
+    // every visit to a waterless planet is a new one
+    if (p.surface) setSeed(randomSeed());
     setLand(p.land ?? planet?.landFraction ?? 0.29);
     setVariants(null);
   };
@@ -168,6 +192,7 @@ export function GenerateDialog() {
     settlements,
     region: preset.view ? 'view' : 'world',
     climateLat: Number(climateLat),
+    surface: preset.surface,
   });
 
   // live preview of exactly this seed and these settings (shape and climate; rivers and erosion are added on generate)
@@ -175,7 +200,7 @@ export function GenerateDialog() {
     () =>
       preset.view
         ? null
-        : { type: preset.type, template: preset.template, realism: 'easy', seed: seedNumber(seed), landFraction: land, mountains, roughness: rough, warmth, wetness, biomes, rivers: 'none', settlements: false, region: 'world', climateLat: Number(climateLat) },
+        : { type: preset.type, template: preset.template, realism: 'easy', seed: seedNumber(seed), landFraction: land, mountains, roughness: rough, warmth, wetness, biomes, rivers: 'none', settlements: false, region: 'world', climateLat: Number(climateLat), surface: preset.surface },
     [preset, seed, land, mountains, rough, warmth, wetness, biomes, climateLat],
   );
   useEffect(() => {
@@ -223,7 +248,7 @@ export function GenerateDialog() {
   const inView = PRESETS.filter((p) => p.view);
   const card = (p: Preset) => (
     <button key={p.id} className={'preset-card' + (p.id === presetId ? ' on' : '')} onClick={() => choosePreset(p)} title={p.desc}>
-      <Glyph blobs={p.glyph} view={p.view} />
+      <Glyph blobs={p.glyph} view={p.view} surface={p.surface} />
       <span>{p.label}</span>
     </button>
   );

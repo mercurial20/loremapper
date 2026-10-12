@@ -9,7 +9,9 @@ import { Segmented, Select, Slider, Toggle } from '../controls/controls';
 import { ProjectionPreview } from './ProjectionPreview';
 import { Modal } from './Modal';
 import { shouldOfferShare } from '../share';
-import { track } from '../../analytics';
+import { assetLibrary } from '../../assets/library';
+import { setReference } from '../../editor/commands';
+import { track, type EventProps } from '../../analytics';
 
 const WIDTHS = [1024, 2048, 4096, 8192, 12288];
 /** Projected images are drawn on one canvas, so they stay within what browsers handle comfortably. */
@@ -27,6 +29,11 @@ export function ExportDialog() {
   const [bits, setBits] = useState<'16' | '8'>('16');
   const [hmWidth, setHmWidth] = useState(meta?.planet.gridWidth ?? 4096);
   const flat = meta?.planet.mapType === 'flat';
+  // the tracing picture: shown in images per its own setting; left out of one project file on request
+  const reference = useDoc((s) => s.doc.reference);
+  const [projectReference, setProjectReference] = useState(true);
+  const referenceBytes = reference ? (assetLibrary.referenceBlob(reference.assetId)?.size ?? 0) : 0;
+  const referenceMb = referenceBytes ? `${(referenceBytes / 1e6).toFixed(referenceBytes < 1e7 ? 1 : 0)} MB` : '';
   // start from what's on screen: the projection being viewed, centred as it is
   const viewing = useEditor((s) => s.viewProjection);
   const [projection, setProjection] = useState<ProjectionParams>(viewing ?? { id: 'equirectangular', lon0: 0, lat0: 90, extent: 180 });
@@ -41,14 +48,15 @@ export function ExportDialog() {
       lat0: id === 'azimuthal' ? 90 : id === 'orthographic' ? 25 : p.lat0,
     }));
   const mp = (size.width * size.height) / 1e6;
-  const run = async (fn: () => Promise<void>, offerShare = false) => {
+  const run = async (fn: () => Promise<void>, done: EventProps<'map_exported'>, offerShare = false) => {
     close();
     try {
       await fn();
-      track('map_exported');
+      track('map_exported', done);
       if (offerShare && shouldOfferShare()) set({ dialog: 'share' });
     } catch (e) {
       notify('Export failed: ' + (e instanceof Error ? e.message : String(e)), 'error');
+      track('operation_failed', { op: 'export' });
     }
   };
   return (
@@ -152,6 +160,14 @@ export function ExportDialog() {
             ]}
           />
           <Toggle label="Include peak markers" checked={peaks} onChange={setPeaks} />
+          {reference && (
+            <Toggle
+              label="Include reference image"
+              checked={reference.inExport}
+              onChange={(v) => setReference({ inExport: v }, 'Reference in exports')}
+              hint="The same setting as in Layers → Reference image"
+            />
+          )}
           <p className="hint">
             Output: {size.width.toLocaleString()} × {size.height.toLocaleString()} px ({mp.toFixed(1)} MP). Large images are rendered in tiles and may take a moment.
           </p>
@@ -160,7 +176,11 @@ export function ExportDialog() {
               className="btn primary"
               disabled={mp > (projected ? 70 : 160)}
               onClick={() =>
-                run(() => (projected ? exportProjectedImage({ projection, width: Math.min(width, 8192), fog, includePeaks: peaks }) : exportImage({ region, width, fog, includePeaks: peaks })), true)
+                run(
+                  () => (projected ? exportProjectedImage({ projection, width: Math.min(width, 8192), fog, includePeaks: peaks }) : exportImage({ region, width, fog, includePeaks: peaks })),
+                  { format: 'image', projection: flat ? 'flat' : projection.id },
+                  true,
+                )
               }
             >
               <Image size={14} /> Export PNG
@@ -190,7 +210,7 @@ export function ExportDialog() {
             {((meta?.planet.seaLevel ?? 0) + (meta?.planet.maxElevation ?? 10000)).toLocaleString()} m (range is in the file name and PNG metadata; heights are always stored in metres). 16-bit avoids terracing.
           </p>
           <div className="btn-row end">
-            <button className="btn primary" onClick={() => run(() => exportHeightmap(bits === '16' ? 16 : 8, hmWidth))}>
+            <button className="btn primary" onClick={() => run(() => exportHeightmap(bits === '16' ? 16 : 8, hmWidth), { format: 'heightmap' })}>
               <Mountain size={14} /> Export heightmap
             </button>
           </div>
@@ -203,8 +223,16 @@ export function ExportDialog() {
             territory, label and peak, plus the image files of custom assets it uses. Import it from <i>Maps → Import project file</i> on any browser.
           </p>
           <p className="hint">Your work is already saved automatically in this browser — use this for backups and moving between computers.</p>
+          {reference && (
+            <Toggle
+              label={`Include reference image${referenceMb ? ` (${referenceMb})` : ''}`}
+              checked={projectReference}
+              onChange={setProjectReference}
+              hint="Leave it out to make a smaller file; the map in this browser keeps its picture"
+            />
+          )}
           <div className="btn-row end">
-            <button className="btn primary" onClick={() => run(exportProject)}>
+            <button className="btn primary" onClick={() => run(() => exportProject({ includeReference: projectReference }), { format: 'project' })}>
               <FileArchive size={14} /> Export project
             </button>
           </div>

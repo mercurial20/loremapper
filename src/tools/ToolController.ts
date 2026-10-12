@@ -16,6 +16,7 @@ import {
   reorderObjects,
   updateFeature,
   updateObjects,
+  setReference,
 } from '../editor/commands';
 import { editor } from '../editor/Editor';
 import { rotateHandle } from '../model/geometry';
@@ -32,6 +33,7 @@ import { hitAny, hitPeak, hitVertex, insertionIndex, nearX, objectHandleHit, typ
 
 type Drag =
   // the Info tool pans too; a press that does not move is a click on `info`
+  | { kind: 'reference'; corner: number; start: Vec2; orig: { x: number; y: number; w: number; h: number }; key: string }
   | { kind: 'pan'; sx: number; sy: number; info?: { x: number; y: number; ox: number; oy: number; moved: boolean } }
   | { kind: 'stroke'; stroke: Stroke; last: Vec2; lastDab: number; erase?: EraseState }
   | { kind: 'move'; start: Vec2; base: MapDocument; refs: SelectionRef[]; moved: boolean; key: string }
@@ -203,7 +205,8 @@ export class ToolController {
     if (!this.canvas) return;
     const t = this.tool;
     let c = 'crosshair';
-    if (t === 'pan') c = this.drag?.kind === 'pan' ? 'grabbing' : 'grab';
+    if (useEditor.getState().referenceEdit) c = 'move';
+    else if (t === 'pan') c = this.drag?.kind === 'pan' ? 'grabbing' : 'grab';
     else if (t === 'select') c = 'default';
     else if (t === 'info') c = this.drag?.kind === 'pan' && this.drag.info?.moved ? 'grabbing' : 'help';
     else if (brushGroupOf(t)) c = 'none';
@@ -314,6 +317,7 @@ export class ToolController {
     const [x, y] = this.world(e);
     this.pointer = { ...this.pointer, x, y, inside: true };
     if (e.button === 1 || e.button === 2 || this.tool === 'pan' || this.tool === 'info') {
+      if (e.button === 0) track('tool_used', { tool: this.tool });
       const info = e.button === 0 && this.tool === 'info' ? { x, y, ox: e.clientX, oy: e.clientY, moved: false } : undefined;
       this.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, info };
       this.updateCursorStyle();
@@ -322,6 +326,11 @@ export class ToolController {
     if (e.button !== 0) return;
     const tool = this.tool;
     const st = useEditor.getState();
+    track('tool_used', { tool });
+    if (st.referenceEdit) {
+      this.referenceDown(x, y);
+      return;
+    }
     const group = brushGroupOf(tool);
     if (group) {
       if (this.layerLocked(tool)) return;
@@ -441,6 +450,9 @@ export class ToolController {
         }
         case 'stamp':
           this.stampAt(x, y, d.key);
+          break;
+        case 'reference':
+          this.referenceDrag(d, x, y);
           break;
       }
     } else {
@@ -807,6 +819,58 @@ export class ToolController {
     }
   }
 
+  // ------------------------------------------------------------ reference image
+
+  /** Placing the tracing picture: a corner handle resizes it, inside moves it, outside ends placing. */
+  private referenceDown(x: number, y: number) {
+    const ref = useDoc.getState().doc.reference;
+    const st = useEditor.getState();
+    if (!ref || ref.locked) {
+      st.set({ referenceEdit: false });
+      return;
+    }
+    // on a planet, work with the copy of the picture nearest the pointer
+    const px = nearX(editor.model!.geo, ref.x + ref.w / 2, x);
+    const tol = 10 / editor.zoom;
+    const corners: Vec2[] = [
+      [ref.x, ref.y],
+      [ref.x + ref.w, ref.y],
+      [ref.x + ref.w, ref.y + ref.h],
+      [ref.x, ref.y + ref.h],
+    ];
+    const corner = corners.findIndex(([cx, cy]) => Math.abs(px - cx) < tol && Math.abs(y - cy) < tol);
+    const inside = px >= ref.x && px <= ref.x + ref.w && y >= ref.y && y <= ref.y + ref.h;
+    if (corner < 0 && !inside) {
+      st.set({ referenceEdit: false });
+      return;
+    }
+    this.drag = { kind: 'reference', corner, start: [px, y], orig: { x: ref.x, y: ref.y, w: ref.w, h: ref.h }, key: uid('ref-place-') };
+  }
+
+  private referenceDrag(d: Extract<Drag, { kind: 'reference' }>, x: number, y: number) {
+    const o = d.orig;
+    const px = nearX(editor.model!.geo, d.start[0], x);
+    let next: { x: number; y: number; w: number; h: number };
+    if (d.corner < 0) next = { ...o, x: o.x + px - d.start[0], y: o.y + y - d.start[1] };
+    else {
+      // the opposite corner stays put; Shift lets the proportions change
+      const right = d.corner === 1 || d.corner === 2;
+      const below = d.corner === 2 || d.corner === 3;
+      const fx = right ? o.x : o.x + o.w;
+      const fy = below ? o.y : o.y + o.h;
+      const min = 4;
+      let w = Math.max(min, (px - fx) * (right ? 1 : -1));
+      let h = Math.max(min, (y - fy) * (below ? 1 : -1));
+      if (!this.shift) {
+        const aspect = o.h / o.w;
+        if (h / w > aspect) w = h / aspect;
+        else h = w * aspect;
+      }
+      next = { x: right ? fx : fx - w, y: below ? fy : fy - h, w, h };
+    }
+    setReference(next, 'Move reference image', d.key);
+  }
+
   /** Info tool: show the card of the landmass or water body clicked. */
   private infoClick(x: number, y: number) {
     const st = useEditor.getState();
@@ -1137,6 +1201,11 @@ export class ToolController {
     if (useEditor.getState().panelHidden) togglePanel(true);
   }
 
+  /** Update the pointer's look (e.g. when placing the tracing picture starts or ends). */
+  refreshCursor() {
+    this.updateCursorStyle();
+  }
+
   /** Re-label the measurement (e.g. after the display units changed). */
   refreshMeasure() {
     if (this.measure.length && editor.model) this.showMeasure(null);
@@ -1235,6 +1304,10 @@ export class ToolController {
         const ids = st.selection.filter((r) => r.kind === 'object').map((r) => r.id);
         if (ids.length) reorderObjects(ids, k === ']' ? (e.shiftKey ? 'front' : 'forward') : e.shiftKey ? 'back' : 'backward');
       }
+      return;
+    }
+    if (k === 'Escape' && st.referenceEdit) {
+      st.set({ referenceEdit: false });
       return;
     }
     if (k === 'Escape') {
@@ -1362,6 +1435,7 @@ Object.assign(window as object, { __tools: tools });
 // measurement labels follow the display units
 useEditor.subscribe((s, prev) => {
   if (s.units !== prev.units) tools.refreshMeasure();
+  if (s.referenceEdit !== prev.referenceEdit) tools.refreshCursor();
 });
 
 /** Keep a brush radius within what makes sense for the open map. */
