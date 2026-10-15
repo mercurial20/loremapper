@@ -337,10 +337,13 @@ void main() {
   float distPx = s / fw;
   float landA = uPixel > 0.0 ? step(0.0, s) : smoothstep(-0.5, 0.5, distPx);
 
-  // micro-relief bump: finite differences of a procedural height
+  // micro-relief bump: finite differences of a procedural height.
+  // TODO: off until real fine detail comes from the heights themselves (a detail pyramid): this
+  // texture draws bumps that are not in the terrain, strongest on high ground however flat it is.
   float elev0 = max(s, 0.0) / uMaxElev;
   float mtn = smoothstep(0.08, 0.45, elev0);
-  if (uZoom > 0.6) {
+  const bool RELIEF_DETAIL = false;
+  if (RELIEF_DETAIL && uZoom > 0.6) {
     // only where the terrain is actually uneven: flat plains stay flat
     float uneven = smoothstep(4.0, 60.0, gmag);
     float amp = (40.0 * uneven + 700.0 * mtn) * smoothstep(-20.0, 60.0, s);

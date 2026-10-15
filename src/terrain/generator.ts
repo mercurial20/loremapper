@@ -692,7 +692,10 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   const FT = sphereTables(full);
   // about one full-resolution cell per feature
   const fineF = (2 * Math.PI) / (7 * radPerCell(full));
-  const amp = 40 + 260 * rough;
+  // the bumps are about seven cells across, so their height scales with the cell: the same
+  // slopes on a planet's ~10 km cells and a regional map's 250 m ones, as in real terrain
+  // (300 m bumps every 1.7 km would make a regional map's every plain look like badlands)
+  const amp = (40 + 260 * rough) * Math.min(1, dyKm(full) / 9);
   for (let j = 0; j < full.h; j++)
     for (let i = 0; i < full.w; i++) {
       const k = j * full.w + i;

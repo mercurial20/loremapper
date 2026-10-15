@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.3-alpha.2] — 2026-10-15
+
+### Fixed
+
+- **No more noisy bumps when zoomed in.** The terrain's shading drew a fine relief texture of its own that was not in the heights: worm-like bumps that grew stronger on high ground, however flat, and looked like noise at close zoom. It is off; what you see when zoomed in is the land as it is. Real fine detail will come from the heights themselves in a later version.
+- Generated regional maps get gentler fine relief, scaled to the size of a cell, so their plains no longer look like badlands. This only affects newly generated worlds.
+
 ## [1.2.3-alpha.1] — 2026-10-15
 
 ### Added
