@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [1.2.3-alpha.1] — 2026-10-13
+## [1.2.3-alpha.1] — 2026-10-15
 
 ### Added
 
@@ -27,6 +27,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Smoother on modest laptops.** Profiling a generated planet (4096 × 2048) showed the main thread busy in small bursts that add up to stutters on slower machines; the app's own code now spends about four times less processor time while panning, zooming and painting (6.9 s → 1.75 s in the profiled session), and the page's main thread is busy less than half as long:
+  - the mini globe kept its turned picture and redraws only the outline of the view, turning at most about eight times a second while the view moves (it used to project its 118 000 pixels on every frame of a pan);
+  - the mini globe's picture of the planet is refreshed once editing pauses for 1.5 s instead of between brush strokes (reading the picture back from the graphics card stalls it);
+  - numbers are formatted with one cached formatter per language, instead of a new one for each peak height on each frame;
+  - the header measures its layout only when its texts or the window's width change, not on every re-render.
 - Smaller brushes: the smallest brush now reaches a single cell of the layer it paints (half a cell for terrain, an eighth of a terrain cell for rivers). On a 500 km map that is about 120 m for terrain and 30 m for rivers.
 - Generating a whole new world clears painted rivers, which would otherwise run across the new land.
 - The header fits its contents to the window width in any language, hiding link labels, then the wordmark, then the view chips (also in *View*), then button labels as space runs out.

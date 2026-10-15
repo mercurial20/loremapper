@@ -104,6 +104,17 @@ export function t(text: string, params?: Record<string, string | number>): strin
 export { N_ } from './mark';
 
 /** Numbers in the active language's format (1,234.5 or 1 234,5). */
+// toLocaleString builds a new formatter on every call, which is slow enough to show when the map
+// relabels its peaks on each frame of a pan; one formatter per language and precision is reused
+const formats = new Map<string, Intl.NumberFormat>();
+
 export function formatNumber(v: number, digits = 0): string {
-  return v.toLocaleString(getLocale() === 'ru' ? 'ru-RU' : 'en-US', { maximumFractionDigits: digits, minimumFractionDigits: digits });
+  const locale = getLocale() === 'ru' ? 'ru-RU' : 'en-US';
+  const key = locale + digits;
+  let f = formats.get(key);
+  if (!f) {
+    f = new Intl.NumberFormat(locale, { maximumFractionDigits: digits, minimumFractionDigits: digits });
+    formats.set(key, f);
+  }
+  return f.format(v);
 }

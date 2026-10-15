@@ -50,16 +50,19 @@ export function MiniGlobe() {
   const [mode, setMode] = useState<Mode>(() => stored<Mode>('loremapper.miniGlobe.mode', 'globe'));
   const [src, setSrc] = useState<{ px: Uint8ClampedArray; id: string } | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  // the globe turned to the last orientation, and when it was projected
+  const turned = useRef<{ key: string; px: Uint8ClampedArray; img: ImageData; at: number } | null>(null);
   const planet = !!meta && meta.planet.mapType !== 'flat';
   const shown = planet && open && !projected;
 
-  // the planet's picture: rendered again a moment after the terrain, borders, rivers or style change
+  // the planet's picture: rendered again once editing pauses after the terrain, borders, rivers or
+  // style change (reading the picture back from the GPU stalls it, so not between brush strokes)
   useEffect(() => {
     if (!shown || !meta) return;
     const t = setTimeout(() => {
       if (!editor.renderer || !editor.model || !editor.layers) return;
       void renderWorldPixels(SRC_W, SRC_W / 2, 'map').then((px) => setSrc({ px, id: meta.id }));
-    }, 450);
+    }, 1500);
     return () => clearTimeout(t);
   }, [shown, meta, landStats, doc.paths, doc.territories, doc.view.style, doc.systemLayers]);
 
@@ -83,31 +86,21 @@ export function MiniGlobe() {
     const p = paramsFor(mode, lon0, lat0);
     const proj = makeProjection(p);
     const ctx = c.getContext('2d')!;
-    const img = ctx.createImageData(N, N);
-    const out = img.data;
-    const sw = SRC_W;
-    const sh = SRC_W / 2;
-    const R = proj.x1;
-    const globe = p.id === 'orthographic';
-    for (let py = 0; py < N; py++) {
-      const Y = R - ((py + 0.5) / N) * 2 * R;
-      for (let px = 0; px < N; px++) {
-        const X = -R + ((px + 0.5) / N) * 2 * R;
-        const ll = proj.inverse(X, Y);
-        if (!ll) continue;
-        const u = Math.floor(((ll[0] / (2 * PI) + 0.5) * sw + sw) % sw);
-        const v = Math.min(sh - 1, Math.max(0, Math.floor((0.5 - ll[1] / PI) * sh)));
-        const i = (v * sw + u) * 4;
-        const shade = globe ? 0.78 + 0.22 * Math.sqrt(Math.max(0, 1 - (X * X + Y * Y) / (R * R))) : 1;
-        const o = (py * N + px) * 4;
-        out[o] = src.px[i] * shade;
-        out[o + 1] = src.px[i + 1] * shade;
-        out[o + 2] = src.px[i + 2] * shade;
-        out[o + 3] = 255;
-      }
-    }
-    ctx.putImageData(img, 0, 0);
-    drawFrame(ctx, proj, N, dpr, view, model.W, model.H, STYLE_PRESETS[doc.view.style]?.coastInk ?? '#333');
+    const key = `${src.id}|${mode}|${lon0}|${lat0}|${N}`;
+    const draw = () => {
+      // Projecting the globe takes asin/atan2 for every pixel, too slow to repeat on every frame of a
+      // pan on a modest laptop, so the turned globe is kept and only the outline of the view is redrawn.
+      if (turned.current?.key !== key || turned.current.px !== src.px)
+        turned.current = { key, px: src.px, img: projectGlobe(ctx, proj, N, src.px, p.id === 'orthographic'), at: performance.now() };
+      ctx.putImageData(turned.current.img, 0, 0);
+      drawFrame(ctx, proj, N, dpr, view, model.W, model.H, STYLE_PRESETS[doc.view.style]?.coastInk ?? '#333');
+    };
+    // while the view keeps moving, the globe turns at most about eight times a second (and once more
+    // when it stops); until then the previous picture stays
+    const wait = turned.current && turned.current.key !== key ? 120 - (performance.now() - turned.current.at) : 0;
+    if (wait <= 0) return draw();
+    const t = setTimeout(draw, wait);
+    return () => clearTimeout(t);
   }, [src, mode, lon0, lat0, view, meta, doc.view.style]);
 
   if (!planet || projected) return null;
@@ -173,6 +166,33 @@ export function MiniGlobe() {
       </div>
     </div>
   );
+}
+
+/** The planet's picture (an equirectangular SRC_W × SRC_W/2 image) seen through the projection. */
+function projectGlobe(ctx: CanvasRenderingContext2D, proj: Projection, N: number, px: Uint8ClampedArray, globe: boolean): ImageData {
+  const img = ctx.createImageData(N, N);
+  const out = img.data;
+  const sw = SRC_W;
+  const sh = SRC_W / 2;
+  const R = proj.x1;
+  for (let py = 0; py < N; py++) {
+    const Y = R - ((py + 0.5) / N) * 2 * R;
+    for (let x = 0; x < N; x++) {
+      const X = -R + ((x + 0.5) / N) * 2 * R;
+      const ll = proj.inverse(X, Y);
+      if (!ll) continue;
+      const u = Math.floor(((ll[0] / (2 * PI) + 0.5) * sw + sw) % sw);
+      const v = Math.min(sh - 1, Math.max(0, Math.floor((0.5 - ll[1] / PI) * sh)));
+      const i = (v * sw + u) * 4;
+      const shade = globe ? 0.78 + 0.22 * Math.sqrt(Math.max(0, 1 - (X * X + Y * Y) / (R * R))) : 1;
+      const o = (py * N + x) * 4;
+      out[o] = px[i] * shade;
+      out[o + 1] = px[i + 1] * shade;
+      out[o + 2] = px[i + 2] * shade;
+      out[o + 3] = 255;
+    }
+  }
+  return img;
 }
 
 const paramsFor = (mode: Mode, lon0: number, lat0: number) => ({ id: mode === 'globe' ? ('orthographic' as const) : ('azimuthal' as const), lon0, lat0, extent: 95 });

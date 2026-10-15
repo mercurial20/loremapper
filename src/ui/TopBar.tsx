@@ -242,10 +242,16 @@ const MAX_FIT = 5;
  */
 function useHeaderFit() {
   const ref = useRef<HTMLElement>(null);
+  const fitted = useRef('');
   const fit = () => {
     const el = ref.current;
     const spacer = el?.querySelector('.spacer');
     if (!el || !spacer) return;
+    // the header re-renders often while drawing; trying the layouts makes the browser lay the page
+    // out again each time, so they are only tried when its texts or the window's width change
+    const sig = `${window.innerWidth}|${el.textContent}`;
+    if (sig === fitted.current) return;
+    fitted.current = sig;
     for (let level = 0; level <= MAX_FIT; level++) {
       el.dataset.fit = String(level);
       if (el.scrollWidth <= el.clientWidth && spacer.getBoundingClientRect().width >= 24) return;
