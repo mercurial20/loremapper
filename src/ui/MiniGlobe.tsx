@@ -6,12 +6,14 @@ import { renderWorldPixels } from '../editor/exporter';
 import { STYLE_PRESETS } from '../render/styles';
 import { useDoc } from '../store/docStore';
 import { useEditor, useViewInfo } from '../store/editorStore';
+import { N_ } from '../i18n';
+import { useTranslation } from 'react-i18next';
 
 type Mode = 'globe' | 'north' | 'south';
 const MODES: { id: Mode; label: string; title: string }[] = [
-  { id: 'globe', label: 'Globe', title: 'A globe turned to where you are looking' },
-  { id: 'north', label: 'N', title: 'The northern hemisphere, seen from above the north pole' },
-  { id: 'south', label: 'S', title: 'The southern hemisphere, seen from below the south pole' },
+  { id: 'globe', label: N_('Globe'), title: N_('A globe turned to where you are looking') },
+  { id: 'north', label: N_('N'), title: N_('The northern hemisphere, seen from above the north pole') },
+  { id: 'south', label: N_('S'), title: N_('The southern hemisphere, seen from below the south pole') },
 ];
 const SIZE = 172;
 const SRC_W = 1024;
@@ -38,6 +40,7 @@ const store = (key: string, v: string) => {
  * refreshes shortly after edits, and a click on it moves the view there.
  */
 export function MiniGlobe() {
+  const { t } = useTranslation();
   const meta = useDoc((s) => s.meta);
   const doc = useDoc((s) => s.doc);
   const landStats = useEditor((s) => s.landStats);
@@ -112,8 +115,8 @@ export function MiniGlobe() {
     return (
       <button
         className="mini-globe-open"
-        title="Show the mini globe"
-        aria-label="Show the mini globe"
+        title={t('Show the mini globe')}
+        aria-label={t('Show the mini globe')}
         onClick={() => {
           setOpen(true);
           store('loremapper.miniGlobe', 'open');
@@ -140,26 +143,26 @@ export function MiniGlobe() {
   };
 
   return (
-    <div className="mini-globe" aria-label="Mini globe">
-      <canvas ref={canvas} style={{ width: SIZE, height: SIZE }} onPointerDown={goTo} title="Click to go there" />
+    <div className="mini-globe" aria-label={t('Mini globe')}>
+      <canvas ref={canvas} style={{ width: SIZE, height: SIZE }} onPointerDown={goTo} title={t('Click to go there')} />
       {!src && <span className="mini-globe-wait" />}
       <div className="mini-globe-bar">
         {MODES.map((x) => (
           <button
             key={x.id}
             className={mode === x.id ? 'on' : ''}
-            title={x.title}
+            title={t(x.title)}
             onClick={() => {
               setMode(x.id);
               store('loremapper.miniGlobe.mode', x.id);
             }}
           >
-            {x.label}
+            {t(x.label)}
           </button>
         ))}
         <button
-          title="Hide the mini globe"
-          aria-label="Hide the mini globe"
+          title={t('Hide the mini globe')}
+          aria-label={t('Hide the mini globe')}
           onClick={() => {
             setOpen(false);
             store('loremapper.miniGlobe', 'closed');

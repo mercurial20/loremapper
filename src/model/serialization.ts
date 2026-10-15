@@ -1,12 +1,13 @@
 import { defaultPlanet } from '../core/planet';
 import type { ProjectRecord } from '../persistence/db';
 import { defaultView, emptyDocument, type MapDocument, type ProjectMeta } from './types';
+import { t } from '../i18n';
 
 /**
  * Project serialisation version. Bump when the stored shape changes and add a
  * step to `MIGRATIONS` that upgrades records from the previous version.
  */
-export const FORMAT_VERSION = 2;
+export const FORMAT_VERSION = 3;
 
 type Migration = (rec: Record<string, unknown>) => Record<string, unknown>;
 
@@ -19,15 +20,20 @@ const MIGRATIONS: Record<number, Migration> = {
     const planet = (meta.planet ?? {}) as Record<string, unknown>;
     return { ...rec, formatVersion: 2, meta: { ...meta, planet: { radiusKm: 7410, ...planet, mapType: 'planet' } } };
   },
+  // 2 → 3 (v1.2.3): a raster layer of painted water. Older maps have none.
+  2: (rec) => {
+    const defaults = (rec.rasterDefaults ?? {}) as Record<string, unknown>;
+    return { ...rec, formatVersion: 3, rasterDefaults: { ...defaults, water: 0 } };
+  },
 };
 
 export function migrateProject(raw: Record<string, unknown>): ProjectRecord {
   let rec = raw;
   let v = typeof rec.formatVersion === 'number' ? rec.formatVersion : 1;
-  if (v > FORMAT_VERSION) throw new Error(`This project was saved by a newer version (format ${v}).`);
+  if (v > FORMAT_VERSION) throw new Error(t('This project was saved by a newer version of Loremapper (format {v}). Update the page and try again.', { v }));
   while (v < FORMAT_VERSION) {
     const step = MIGRATIONS[v];
-    if (!step) throw new Error(`No migration from format ${v}`);
+    if (!step) throw new Error(t('Unknown project format {v}', { v }));
     rec = step(rec);
     v++;
   }

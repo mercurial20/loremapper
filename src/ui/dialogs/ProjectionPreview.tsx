@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { makeProjection, type ProjectionParams } from '../../core/projections';
 import type { FogExport } from '../../editor/exporter';
 import { drawProjected, projectedSize, renderProjectionSource, type ProjectionSource } from '../../editor/projectedExport';
+import { useTranslation } from 'react-i18next';
 
 const PREVIEW_W = 480;
 
@@ -11,6 +12,7 @@ const PREVIEW_W = 480;
  * globe (or moves the centre of the map).
  */
 export function ProjectionPreview({ params, fog, peaks, onChange }: { params: ProjectionParams; fog: FogExport; peaks: boolean; onChange: (p: Partial<ProjectionParams>) => void }) {
+  const { t } = useTranslation();
   const ref = useRef<HTMLCanvasElement>(null);
   // the source belongs to one fog setting; a stale one is simply not shown
   const [loaded, setLoaded] = useState<{ fog: FogExport; src: ProjectionSource } | null>(null);
@@ -65,13 +67,13 @@ export function ProjectionPreview({ params, fog, peaks, onChange }: { params: Pr
 
   return (
     <div className={'projection-preview' + (movable ? ' movable' : '')}>
-      <canvas ref={ref} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} aria-label="Preview of the export" />
+      <canvas ref={ref} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} aria-label={t('Preview of the export')} />
       {!src && (
         <span className="projection-preview-wait">
-          <LoaderCircle size={16} className="spin" /> Preparing the preview…
+          <LoaderCircle size={16} className="spin" /> {t('Preparing the preview…')}
         </span>
       )}
-      {movable && src && <small>Drag to {params.id === 'orthographic' ? 'turn the globe' : 'move the centre'}.</small>}
+      {movable && src && <small>{params.id === 'orthographic' ? t('Drag to turn the globe.') : t('Drag to move the centre.')}</small>}
     </div>
   );
 }

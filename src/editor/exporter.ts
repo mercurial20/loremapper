@@ -12,6 +12,7 @@ import { APP_VERSION } from '../version';
 import { editor } from './Editor';
 import { downloadBlob, encodePng, safeFileName } from './png';
 import { track } from '../analytics';
+import { t } from '../i18n';
 
 export type FogExport = 'none' | 'revealed';
 
@@ -212,7 +213,7 @@ export async function exportImage(o: ImageExportOptions) {
     y1 = Math.min(m.H, v.y1);
   }
   const meta = useDoc.getState().meta!;
-  useEditor.getState().set({ busy: 'Rendering…' });
+  useEditor.getState().set({ busy: t('Rendering…') });
   try {
     const blob = await renderToPng(x0, y0, x1, y1, width, height, o, {
       Title: meta.name,
@@ -264,7 +265,7 @@ export async function exportHeightmap(bits: 8 | 16, width?: number) {
   const row = new Uint8Array(outW * bpp);
   const sx = m.W / outW;
   const sy = m.H / outH;
-  useEditor.getState().set({ busy: 'Encoding heightmap…' });
+  useEditor.getState().set({ busy: t('Encoding heightmap…') });
   try {
     const blob = await encodePng({
       width: outW,
@@ -352,7 +353,7 @@ export async function exportProject(o: { includeReference?: boolean } = {}) {
   if (!stored) return;
   // a file without the tracing picture (the map in this browser keeps it)
   const rec = o.includeReference === false && stored.doc.reference ? { ...stored, doc: { ...stored.doc, reference: null } } : stored;
-  useEditor.getState().set({ busy: 'Packing project…' });
+  useEditor.getState().set({ busy: t('Packing project…') });
   try {
     const files: Zippable = {};
     const tiles: Manifest['tiles'] = [];
@@ -401,19 +402,19 @@ export async function exportProject(o: { includeReference?: boolean } = {}) {
 
 /** Import a `.loremap` archive (or a pre-rename `.fantasymap`) as a new project and open it. */
 export async function importProject(file: File) {
-  useEditor.getState().set({ busy: 'Importing project…' });
+  useEditor.getState().set({ busy: t('Importing project…') });
   try {
     const buf = new Uint8Array(await file.arrayBuffer());
     let files: Record<string, Uint8Array>;
     try {
       files = unzipSync(buf);
     } catch {
-      throw new Error('This file is not a Loremapper project (.loremap).');
+      throw new Error(t('This file is not a Loremapper project (.loremap).'));
     }
     const mf = files['project.json'];
-    if (!mf) throw new Error('project.json missing from archive');
+    if (!mf) throw new Error(t('The file is damaged: project.json is missing from the archive.'));
     const manifest = JSON.parse(strFromU8(mf)) as Manifest;
-    if (manifest.format !== 'loremapper-project' && manifest.format !== 'fantasy-cartographer-project') throw new Error('Unknown project format');
+    if (manifest.format !== 'loremapper-project' && manifest.format !== 'fantasy-cartographer-project') throw new Error(t('Unknown project format'));
     const record = migrateProject({ ...manifest.record, formatVersion: manifest.formatVersion } as unknown as Record<string, unknown>);
     // always import as a new project so nothing is overwritten
     const id = crypto.randomUUID();

@@ -6,9 +6,11 @@ import { RedditMark } from '../icons';
 import { Modal } from './Modal';
 import { hideShareOffer } from '../share';
 import { track } from '../../analytics';
+import { Trans, useTranslation } from 'react-i18next';
 
 /** Shown after a map image is saved: an invitation to post it on r/LoreMapper. */
 export function ShareDialog() {
+  const { t } = useTranslation();
   const set = useEditor((s) => s.set);
   const [hide, setHide] = useState(false);
   const close = () => {
@@ -17,15 +19,15 @@ export function ShareDialog() {
   };
   return (
     <Modal
-      title="Your map is saved"
+      title={t('Your map is saved')}
       onClose={close}
       footer={
         <div className="btn-row end share-foot">
           <label className="share-hide">
-            <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} /> Don’t ask again
+            <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} /> {t('Don’t ask again')}
           </label>
           <button className="btn" onClick={close}>
-            Not now
+            {t('Not now')}
           </button>
           <a
             className="btn primary"
@@ -37,7 +39,7 @@ export function ShareDialog() {
               close();
             }}
           >
-            <RedditMark size={14} /> Share on r/LoreMapper <ExternalLink size={12} />
+            <RedditMark size={14} /> {t('Share on r/LoreMapper')} <ExternalLink size={12} />
           </a>
         </div>
       }
@@ -48,9 +50,9 @@ export function ShareDialog() {
         </span>
         <div>
           <p>
-            Proud of this world? Show it to other mapmakers on <b>r/LoreMapper</b>: post the image you just saved, give your world a name and say a few words about it.
+            <Trans i18nKey="Proud of this world? Show it to other mapmakers on <b>r/LoreMapper</b>: post the image you just saved, give your world a name and say a few words about it." components={{ b: <b /> }} />
           </p>
-          <p className="hint">Reddit opens in a new tab. Nothing is uploaded from Loremapper; you choose what to post.</p>
+          <p className="hint">{t('Reddit opens in a new tab. Nothing is uploaded from Loremapper; you choose what to post.')}</p>
         </div>
       </div>
     </Modal>

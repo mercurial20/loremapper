@@ -1,5 +1,6 @@
 import { Globe2, LoaderCircle, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { PROJECTIONS } from './core/projections';
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import { surfaceAreaKm2 } from './core/planet';
 import { formatArea } from './core/units';
@@ -42,6 +43,7 @@ function Toast() {
 
 /** Shown while a planet is viewed in another projection. */
 function ProjectionBanner() {
+  const { t } = useTranslation();
   const vp = useEditor((s) => s.viewProjection);
   const readOnly = useEditor((s) => s.readOnly);
   const set = useEditor((s) => s.set);
@@ -49,18 +51,19 @@ function ProjectionBanner() {
   const name = PROJECTIONS.find((p) => p.id === vp.id)?.name ?? vp.id;
   return (
     <div className="projection-banner" role="status">
-      <Globe2 size={14} /> <b>{name}</b> <span>{readOnly ? 'Drag to turn, pinch to zoom' : 'View only: drag to look around, Info shows what is there'}</span>
+      <Globe2 size={14} /> <b>{t(name)}</b> <span>{readOnly ? t('Drag to turn, pinch to zoom') : t('View only: drag to look around, Info shows what is there')}</span>
       <button className="btn small" onClick={() => set({ viewProjection: null })}>
-        {readOnly ? 'Flat map' : 'Edit map'}
+        {readOnly ? t('Flat map') : t('Edit map')}
       </button>
     </div>
   );
 }
 
 function PanelToggle() {
+  const { t } = useTranslation();
   const hidden = useEditor((s) => s.panelHidden);
   return (
-    <button className="panel-toggle" onClick={() => togglePanel()} title={hidden ? 'Show the panel (\\)' : 'Hide the panel for more map (\\)'} aria-label={hidden ? 'Show the panel' : 'Hide the panel'} aria-pressed={!hidden}>
+    <button className="panel-toggle" onClick={() => togglePanel()} title={hidden ? t('Show the panel ({key})', { key: '\\' }) : t('Hide the panel for more map ({key})', { key: '\\' })} aria-label={hidden ? t('Show the panel') : t('Hide the panel')} aria-pressed={!hidden}>
       {hidden ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}
     </button>
   );
@@ -68,6 +71,7 @@ function PanelToggle() {
 
 /** First-run guidance shown over an empty ocean planet. */
 function Welcome() {
+  const { t } = useTranslation();
   const stats = useEditor((s) => s.landStats);
   const busy = useEditor((s) => s.busy);
   const set = useEditor((s) => s.set);
@@ -80,10 +84,9 @@ function Welcome() {
   const flat = planet.mapType === 'flat';
   return (
     <div className="welcome">
-      <h3>{flat ? 'An empty map' : 'An empty ocean world'}</h3>
+      <h3>{flat ? t('An empty map') : t('An empty ocean world')}</h3>
       <p>
-        {flat ? 'A flat map' : 'A planet'} of {formatArea(surfaceAreaKm2(planet), units)}, all water. Sculpt land by hand or let the generator draft it for you — everything
-        stays editable.
+        {(flat ? t('A flat map of {area}, all water. Sculpt land by hand or let the generator draft it for you — everything stays editable.', { area: formatArea(surfaceAreaKm2(planet), units) }) : t('A planet of {area}, all water. Sculpt land by hand or let the generator draft it for you — everything stays editable.', { area: formatArea(surfaceAreaKm2(planet), units) }))}
       </p>
       <div className="btn-row">
         <button
@@ -93,13 +96,13 @@ function Welcome() {
             setDismissed(true);
           }}
         >
-          Raise land <kbd>R</kbd>
+          {t('Raise land')} <kbd>R</kbd>
         </button>
         <button className="btn" onClick={() => set({ dialog: 'generate' })}>
-          Generate a world…
+          {t('Generate a world…')}
         </button>
         <button className="btn ghost" onClick={() => setDismissed(true)}>
-          Dismiss
+          {t('Dismiss')}
         </button>
       </div>
     </div>
@@ -107,6 +110,7 @@ function Welcome() {
 }
 
 function Busy() {
+  const { t } = useTranslation();
   const busy = useEditor((s) => s.busy);
   const cancel = useEditor((s) => s.busyCancel);
   if (!busy) return null;
@@ -116,7 +120,7 @@ function Busy() {
       <span>{busy}</span>
       {cancel && (
         <button className="btn small" onClick={cancel}>
-          Cancel
+          {t('Cancel')}
         </button>
       )}
     </div>
@@ -125,12 +129,13 @@ function Busy() {
 
 /** The viewer's one-line note: editing is a desktop thing. */
 function ViewerNotice() {
+  const { t } = useTranslation();
   const [hidden, setHidden] = useState(false);
   if (hidden) return null;
   return (
     <div className="viewer-notice" role="note">
-      <span>For the full map editing experience, open LoreMapper in a desktop browser.</span>
-      <button className="icon-btn small" onClick={() => setHidden(true)} aria-label="Dismiss">
+      <span>{t('For the full map editing experience, open LoreMapper in a desktop browser.')}</span>
+      <button className="icon-btn small" onClick={() => setHidden(true)} aria-label={t('Dismiss')}>
         ×
       </button>
     </div>
@@ -138,10 +143,11 @@ function ViewerNotice() {
 }
 
 function NewMapDialog() {
+  const { t } = useTranslation();
   const set = useEditor((s) => s.set);
   const close = () => set({ dialog: null });
   return (
-    <Modal title="New map" wide onClose={close}>
+    <Modal title={t('New map')} wide onClose={close}>
       <NewMapFlow onCancel={close} onCreated={close} />
     </Modal>
   );
@@ -173,19 +179,21 @@ export default function App() {
   const assetPanelOpen = useEditor((s) => s.assetPanelOpen);
   const welcome = useEditor((s) => s.welcome);
   const readOnly = useEditor((s) => s.readOnly);
+  // the whole tree re-renders when the language changes, so texts formatted outside React (units, notices) follow too
+  const { t } = useTranslation();
   const panelHidden = useEditor((s) => s.panelHidden);
   const projected = useEditor((s) => s.viewProjection !== null);
   const style = useDoc((s) => s.doc.view.style);
   const preset = STYLE_PRESETS[style] ?? STYLE_PRESETS.parchment;
   return (
     <div className={'app' + (readOnly ? ' viewer' : '') + (panelHidden ? ' panel-hidden' : '') + (projected ? ' projected' : '')}>
-      <ErrorBoundary label="Top bar">
+      <ErrorBoundary label={t('Top bar')}>
         <TopBar />
       </ErrorBoundary>
       <div className="workspace">
         {!readOnly && <Toolbar />}
         {assetPanelOpen && !readOnly && (
-          <ErrorBoundary label="Asset library">
+          <ErrorBoundary label={t('Asset library')}>
             <AssetPanel />
           </ErrorBoundary>
         )}
@@ -206,19 +214,19 @@ export default function App() {
           <Busy />
         </main>
         {!panelHidden && (
-          <ErrorBoundary label="Inspector">
+          <ErrorBoundary label={t('Inspector')}>
             <RightPanel />
           </ErrorBoundary>
         )}
       </div>
-      <ErrorBoundary label="Status bar">
+      <ErrorBoundary label={t('Status bar')}>
         <StatusBar />
       </ErrorBoundary>
-      <ErrorBoundary label="Dialog">
+      <ErrorBoundary label={t('Dialog')}>
         <Dialogs />
       </ErrorBoundary>
       {welcome && (
-        <ErrorBoundary label="Welcome">
+        <ErrorBoundary label={t('Welcome')}>
           <WelcomeScreen viewer={readOnly} />
         </ErrorBoundary>
       )}

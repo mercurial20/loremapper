@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { uid } from '../core/math';
 import { db, dehydrateAsset, getSetting, hydrateAsset, setSetting, type AssetRecord } from '../persistence/db';
 import { STARTER_ASSETS, STARTER_CATEGORIES, type StarterAsset } from './starter';
+import { t } from '../i18n';
 
 export interface AssetInfo {
   id: string;
@@ -41,7 +42,7 @@ function loadImage(url: string): Promise<HTMLImageElement> {
     const img = new Image();
     img.decoding = 'async';
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Could not decode image'));
+    img.onerror = () => reject(new Error(t('Could not decode image')));
     img.src = url;
   });
 }
@@ -145,7 +146,7 @@ class AssetLibrary {
     const d = await db();
     for (const f of files) {
       const type = f.type || (f.name.toLowerCase().endsWith('.svg') ? 'image/svg+xml' : '');
-      if (!ACCEPTED_TYPES.includes(type)) throw new Error(`${f.name}: only PNG, WebP and SVG are supported`);
+      if (!ACCEPTED_TYPES.includes(type)) throw new Error(t('{file}: only PNG, WebP and SVG are supported', { file: f.name }));
       const blob = type === f.type ? f : new Blob([await f.arrayBuffer()], { type });
       const { width, height } = await measure(blob);
       const rec: AssetRecord = {
@@ -172,7 +173,7 @@ class AssetLibrary {
   /** Store a tracing picture (PNG, JPEG or WebP). It stays out of the asset library. */
   async importReference(file: File): Promise<{ id: string; width: number; height: number }> {
     const type = file.type;
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(type)) throw new Error(`${file.name}: only PNG, JPEG and WebP pictures can be traced`);
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(type)) throw new Error(t('{file}: only PNG, JPEG and WebP pictures can be traced', { file: file.name }));
     const { width, height } = await measure(file);
     const rec: AssetRecord = { id: uid('ref-'), kind: 'reference', name: 'Reference image', mime: type, blob: file, width, height, createdAt: Date.now() };
     await (await db()).put('assets', await dehydrateAsset(rec));
@@ -227,7 +228,7 @@ class AssetLibrary {
   /** Replace the artwork of any asset (built-in or user) with a new file. */
   async replaceImage(id: string, file: File) {
     const type = file.type || (file.name.toLowerCase().endsWith('.svg') ? 'image/svg+xml' : '');
-    if (!ACCEPTED_TYPES.includes(type)) throw new Error('Only PNG, WebP and SVG are supported');
+    if (!ACCEPTED_TYPES.includes(type)) throw new Error(t('Only PNG, WebP and SVG are supported'));
     const { width, height } = await measure(file);
     const old = this.objectUrls.get(id);
     if (old) URL.revokeObjectURL(old);

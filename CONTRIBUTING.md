@@ -36,6 +36,23 @@ npm run build
 
 Code layout and architecture notes are in the [README](README.md#architecture).
 
+### Texts and translations
+
+Every text the app shows goes through i18next and is written in English in
+the code: `t('Raise terrain')` in code outside React, `const { t } =
+useTranslation()` in components, and `N_('…')` for texts defined in data (tool
+names, presets) that are translated where they're shown. The English text is
+the key, so a missing translation shows English. Write `{name}` placeholders
+instead of joining strings, so translators can reorder the words.
+
+After adding or changing texts, run `npm run i18n`: it lists every text in
+`src/i18n/locales/en.json` and adds new ones to the other languages as empty
+strings (shown in English until translated). `npm test` fails while a language
+is missing a text or a translation drops a placeholder.
+
+To add a language, copy `en.json` to `<code>.json`, translate the values and
+add the language to `LOCALES` and `DICTIONARIES` in `src/i18n/index.ts`.
+
 ### Ground rules
 
 - **Saved data is precious.** Anything that changes what is stored in IndexedDB or

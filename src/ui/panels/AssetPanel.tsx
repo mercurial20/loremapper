@@ -3,10 +3,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ACCEPTED_TYPES, assetLibrary, useAssets, type AssetInfo } from '../../assets/library';
 import { STARTER_CATEGORIES } from '../../assets/starter';
 import { useEditor } from '../../store/editorStore';
+import { useTranslation } from 'react-i18next';
 
 export const ASSET_DRAG_TYPE = 'application/x-fantasy-asset';
 
 function AssetTile({ a, selected, categories }: { a: AssetInfo; selected: boolean; categories: string[] }) {
+  const { t } = useTranslation();
   // menu anchor in viewport coordinates; the menu is fixed-positioned so the
   // scrolling panel can't clip it
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
@@ -42,12 +44,12 @@ function AssetTile({ a, selected, categories }: { a: AssetInfo; selected: boolea
         e.dataTransfer.effectAllowed = 'copy';
       }}
       onClick={choose}
-      title={`${a.name} — click to place, or drag onto the map`}
+      title={t('{name} — click to place, or drag onto the map', { name: t(a.name) })}
     >
       <div className="thumb">
         <img src={a.url} alt="" loading="lazy" draggable={false} />
-        {a.source === 'user' && <span className="badge">mine</span>}
-        {a.replaced && <span className="badge">custom art</span>}
+        {a.source === 'user' && <span className="badge">{t('mine')}</span>}
+        {a.replaced && <span className="badge">{t('custom art')}</span>}
       </div>
       {renaming ? (
         <input
@@ -65,7 +67,7 @@ function AssetTile({ a, selected, categories }: { a: AssetInfo; selected: boolea
           }}
         />
       ) : (
-        <span className="tile-name">{a.name}</span>
+        <span className="tile-name">{t(a.name)}</span>
       )}
       <button
         className="tile-menu-btn"
@@ -76,7 +78,7 @@ function AssetTile({ a, selected, categories }: { a: AssetInfo; selected: boolea
           const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
           setMenuAt({ x: Math.max(8, Math.min(r.left - 4, window.innerWidth - 188)), y: r.bottom + 4 });
         }}
-        aria-label="Asset options"
+        aria-label={t('Asset options')}
       >
         <Ellipsis size={14} />
       </button>
@@ -88,10 +90,10 @@ function AssetTile({ a, selected, categories }: { a: AssetInfo; selected: boolea
               setMenu(false);
             }}
           >
-            <Pencil size={13} /> Rename
+            <Pencil size={13} /> {t('Rename')}
           </button>
           <label className="menu-select">
-            Category
+            {t('Category')}
             <select
               value={a.category}
               onChange={(e) => {
@@ -100,12 +102,14 @@ function AssetTile({ a, selected, categories }: { a: AssetInfo; selected: boolea
               }}
             >
               {categories.map((c) => (
-                <option key={c}>{c}</option>
+                <option key={c} value={c}>
+                  {t(c)}
+                </option>
               ))}
             </select>
           </label>
           <button onClick={() => fileRef.current?.click()}>
-            <ImagePlus size={13} /> Replace image…
+            <ImagePlus size={13} /> {t('Replace image…')}
           </button>
           {a.source === 'builtin' && (
             <button
@@ -114,7 +118,7 @@ function AssetTile({ a, selected, categories }: { a: AssetInfo; selected: boolea
                 setMenu(false);
               }}
             >
-              <RotateCcw size={13} /> Restore original
+              <RotateCcw size={13} /> {t('Restore original')}
             </button>
           )}
           {a.hidden ? (
@@ -124,7 +128,7 @@ function AssetTile({ a, selected, categories }: { a: AssetInfo; selected: boolea
                 setMenu(false);
               }}
             >
-              <Eye size={13} /> Show in library
+              <Eye size={13} /> {t('Show in library')}
             </button>
           ) : (
             <button
@@ -132,13 +136,13 @@ function AssetTile({ a, selected, categories }: { a: AssetInfo; selected: boolea
               onClick={() => {
                 const msg =
                   a.source === 'builtin'
-                    ? `Hide “${a.name}” from the library? Objects already on maps stay.`
-                    : `Delete “${a.name}” from your library? Objects already placed keep a placeholder until you swap their artwork.`;
+                    ? t('Hide “{name}” from the library? Objects already on maps stay.', { name: t(a.name) })
+                    : t('Delete “{name}” from your library? Objects already placed keep a placeholder until you swap their artwork.', { name: t(a.name) });
                 if (confirm(msg)) void assetLibrary.remove(a.id);
                 setMenu(false);
               }}
             >
-              <Trash2 size={13} /> {a.source === 'builtin' ? 'Hide' : 'Delete'}
+              <Trash2 size={13} /> {a.source === 'builtin' ? t('Hide') : t('Delete')}
             </button>
           )}
           <input
@@ -151,7 +155,7 @@ function AssetTile({ a, selected, categories }: { a: AssetInfo; selected: boolea
               if (f)
                 assetLibrary
                   .replaceImage(a.id, f)
-                  .then(() => notify(`Replaced artwork for “${a.name}”`))
+                  .then(() => notify(t('Replaced artwork for “{name}”', { name: t(a.name) })))
                   .catch((err) => notify(String(err.message ?? err), 'error'));
               setMenu(false);
             }}
@@ -163,6 +167,7 @@ function AssetTile({ a, selected, categories }: { a: AssetInfo; selected: boolea
 }
 
 export function AssetPanel() {
+  const { t } = useTranslation();
   const { assets, categories } = useAssets();
   const assetId = useEditor((s) => s.assetId);
   const set = useEditor((s) => s.set);
@@ -180,9 +185,9 @@ export function AssetPanel() {
       (a) =>
         (showHidden || !a.hidden) &&
         (cat === 'All' || a.category === cat) &&
-        (!s || a.name.toLowerCase().includes(s) || a.category.toLowerCase().includes(s) || a.tags.some((t) => t.includes(s))),
+        (!s || a.name.toLowerCase().includes(s) || t(a.name).toLowerCase().includes(s) || t(a.category).toLowerCase().includes(s) || a.tags.some((tag) => tag.includes(s))),
     );
-  }, [assets, q, cat, showHidden]);
+  }, [assets, q, cat, showHidden, t]);
 
   const grouped = useMemo(() => {
     const m = new Map<string, AssetInfo[]>();
@@ -225,14 +230,14 @@ export function AssetPanel() {
       }}
     >
       <header className="panel-head">
-        <h2>Asset library</h2>
-        <button className="icon-btn small" onClick={() => set({ assetPanelOpen: false })} aria-label="Close library">
+        <h2>{t('Asset library')}</h2>
+        <button className="icon-btn small" onClick={() => set({ assetPanelOpen: false })} aria-label={t('Close library')}>
           <X size={16} />
         </button>
       </header>
       <div className="asset-search">
         <Search size={14} />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search castles, dragons, gold…" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('Search castles, dragons, gold…')} />
         {q && (
           <button className="icon-btn small" onClick={() => setQ('')}>
             <X size={13} />
@@ -242,18 +247,18 @@ export function AssetPanel() {
       <div className="cat-chips">
         {['All', ...categories].map((c) => (
           <button key={c} className={'chip' + (cat === c ? ' on' : '')} onClick={() => setCat(c)}>
-            {c}
+            {c === 'All' ? t('All') : t(c)}
           </button>
         ))}
         {newCat === null ? (
-          <button className="chip ghost" onClick={() => setNewCat('')} title="New category">
+          <button className="chip ghost" onClick={() => setNewCat('')} title={t('New category')}>
             <FolderPlus size={13} />
           </button>
         ) : (
           <input
             className="chip-input"
             autoFocus
-            placeholder="Category name"
+            placeholder={t('Category name')}
             value={newCat}
             onChange={(e) => setNewCat(e.target.value)}
             onBlur={() => {
@@ -275,32 +280,32 @@ export function AssetPanel() {
           <button
             className="btn small"
             onClick={() => {
-              const n = prompt('Rename category', cat);
+              const n = prompt(t('Rename category'), cat);
               if (n && n.trim()) {
                 void assetLibrary.renameCategory(cat, n);
                 setCat(n.trim());
               }
             }}
           >
-            <Pencil size={12} /> Rename
+            <Pencil size={12} /> {t('Rename')}
           </button>
           <button
             className="btn small danger"
             onClick={() => {
-              if (confirm(`Delete category “${cat}”? Its assets move back to their default category.`)) {
+              if (confirm(t('Delete category “{name}”? Its assets move back to their default category.', { name: cat }))) {
                 void assetLibrary.deleteCategory(cat);
                 setCat('All');
               }
             }}
           >
-            <Trash2 size={12} /> Delete category
+            <Trash2 size={12} /> {t('Delete category')}
           </button>
         </div>
       )}
       <div className="asset-scroll">
         {grouped.map(([c, list]) => (
           <div key={c} className="asset-group">
-            {cat === 'All' && <h4>{c}</h4>}
+            {cat === 'All' && <h4>{t(c)}</h4>}
             <div className="asset-grid">
               {list.map((a) => (
                 <AssetTile key={a.id} a={a} selected={a.id === assetId} categories={categories} />
@@ -308,14 +313,14 @@ export function AssetPanel() {
             </div>
           </div>
         ))}
-        {!filtered.length && <p className="empty">No assets match.</p>}
+        {!filtered.length && <p className="empty">{t('No assets match.')}</p>}
       </div>
       <footer className="asset-foot">
         <button className="btn primary" onClick={() => fileRef.current?.click()}>
-          <Upload size={14} /> Import PNG / WebP / SVG
+          <Upload size={14} /> {t('Import PNG / WebP / SVG')}
         </button>
         <label className="mini-toggle">
-          <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Show hidden
+          <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> {t('Show hidden')}
         </label>
         <input
           ref={fileRef}
@@ -328,7 +333,7 @@ export function AssetPanel() {
             e.target.value = '';
           }}
         />
-        <small>Imports are stored permanently in this browser. Drop files here to import into “{cat === 'All' ? 'Custom' : cat}”.</small>
+        <small>{t('Imports are stored permanently in this browser. Drop files here to import into “{category}”.', { category: cat === 'All' ? t('Custom') : t(cat) })}</small>
       </footer>
     </aside>
   );

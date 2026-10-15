@@ -1,4 +1,5 @@
 import type { StylePresetId } from '../model/types';
+import { N_ } from '../i18n/mark';
 
 type Stop = [number, string];
 
@@ -48,8 +49,8 @@ export interface StylePreset {
 export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
   parchment: {
     id: 'parchment',
-    name: 'Parchment',
-    description: 'Aged vellum, sepia ink and muted washes',
+    name: N_('Parchment'),
+    description: N_('Aged vellum, sepia ink and muted washes'),
     background: '#191510',
     paper: '#eadcb8',
     paperAmount: 0.2,
@@ -93,8 +94,8 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
   },
   atlas: {
     id: 'atlas',
-    name: 'Fantasy atlas',
-    description: 'Saturated, colourful storybook atlas',
+    name: N_('Fantasy atlas'),
+    description: N_('Saturated, colourful storybook atlas'),
     background: '#0f1a24',
     paper: '#f4ecd6',
     paperAmount: 0.06,
@@ -138,8 +139,8 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
   },
   political: {
     id: 'political',
-    name: 'Clean political',
-    description: 'Flat, light land so borders and names stand out',
+    name: N_('Clean political'),
+    description: N_('Flat, light land so borders and names stand out'),
     background: '#141820',
     paper: '#f6f3ea',
     paperAmount: 0.0,
@@ -178,8 +179,8 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
   },
   relief: {
     id: 'relief',
-    name: 'Shaded relief',
-    description: 'Naturalistic hypsometric tints and strong relief',
+    name: N_('Shaded relief'),
+    description: N_('Naturalistic hypsometric tints and strong relief'),
     background: '#0b1117',
     paper: '#ffffff',
     paperAmount: 0.0,
@@ -223,8 +224,8 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
   },
   anime: {
     id: 'anime',
-    name: 'Anime',
-    description: 'Bright cel-shaded colours and bold ink outlines, like a painted animation background',
+    name: N_('Anime'),
+    description: N_('Bright cel-shaded colours and bold ink outlines, like a painted animation background'),
     background: '#0d1b2e',
     paper: '#ffffff',
     paperAmount: 0,
@@ -270,8 +271,8 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
   },
   strategy: {
     id: 'strategy',
-    name: 'Strategy game',
-    description: 'Crisp, readable campaign map with clear terrain, like a grand-strategy game',
+    name: N_('Strategy game'),
+    description: N_('Crisp, readable campaign map with clear terrain, like a grand-strategy game'),
     background: '#0a0f14',
     paper: '#ffffff',
     paperAmount: 0,
@@ -316,8 +317,8 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
   },
   pixel: {
     id: 'pixel',
-    name: 'Pixel art',
-    description: 'Chunky pixels and a small palette, like a retro game world map',
+    name: N_('Pixel art'),
+    description: N_('Chunky pixels and a small palette, like a retro game world map'),
     background: '#10121c',
     paper: '#ffffff',
     paperAmount: 0,
@@ -364,8 +365,8 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
   },
   antique: {
     id: 'antique',
-    name: 'Antique engraving',
-    description: 'Sepia ink on old paper, with shadows engraved in fine hatching',
+    name: N_('Antique engraving'),
+    description: N_('Sepia ink on old paper, with shadows engraved in fine hatching'),
     background: '#16110b',
     paper: '#e8d9b5',
     paperAmount: 0.35,

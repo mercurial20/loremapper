@@ -3,7 +3,7 @@ import { BIOME_CHANNELS } from '../core/planet';
 import type { RasterArray } from './TileGrid';
 import type { CellRect, RasterLayer, TerrainModel, TileChange } from './TerrainModel';
 
-export type TerrainOp = 'raise' | 'lower' | 'smooth' | 'flatten' | 'ridge' | 'paint' | 'erase' | 'fogHide' | 'fogReveal';
+export type TerrainOp = 'raise' | 'lower' | 'smooth' | 'flatten' | 'ridge' | 'paint' | 'erase' | 'fogHide' | 'fogReveal' | 'waterPaint' | 'waterErase';
 
 export interface BrushParams {
   /** Radius in km on the planet surface. */
@@ -40,6 +40,8 @@ const LAYER_OF: Record<TerrainOp, RasterLayer> = {
   erase: 'biome',
   fogHide: 'fog',
   fogReveal: 'fog',
+  waterPaint: 'water',
+  waterErase: 'water',
 };
 
 /** Max height a raise/lower stroke at 100 % opacity may add, metres. */
@@ -186,7 +188,7 @@ export class Stroke {
           tile = grid.ensureTile(tx, ty);
           before = this.before.get(key);
           cov = undefined;
-          if (op === 'flatten' || op === 'paint' || op === 'erase' || op === 'fogHide' || op === 'fogReveal') {
+          if (op === 'flatten' || op === 'paint' || op === 'erase' || op === 'fogHide' || op === 'fogReveal' || op === 'waterPaint' || op === 'waterErase') {
             cov = this.coverage.get(key);
             if (!cov) {
               cov = new Float32Array(TS * TS);
@@ -255,7 +257,9 @@ export class Stroke {
           }
           case 'paint':
           case 'erase': {
-            const c = 1 - (1 - cov![li]) * (1 - w * flow);
+            // within one stroke the edge never gets denser than the brush's own falloff,
+            // so soft brushes leave soft biome edges (a forest thins out instead of stopping)
+            const c = Math.max(cov![li], Math.min(w, 1 - (1 - cov![li]) * (1 - w * flow)));
             cov![li] = c;
             const a = c * opacity;
             const base = li * C;
@@ -268,13 +272,16 @@ export class Stroke {
             break;
           }
           case 'fogHide':
-          case 'fogReveal': {
+          case 'fogReveal':
+          case 'waterPaint':
+          case 'waterErase': {
             const c = 1 - (1 - cov![li]) * (1 - w * flow);
             cov![li] = c;
             const a = c * opacity;
             const bv = before ? before[li] : grid.defaultValue;
-            const nv = op === 'fogHide' ? bv + (255 - bv) * a : bv * (1 - a);
-            t[li] = op === 'fogHide' ? Math.max(t[li], nv + 0.5) : Math.min(t[li], nv + 0.5);
+            const add = op === 'fogHide' || op === 'waterPaint';
+            const nv = add ? bv + (255 - bv) * a : bv * (1 - a);
+            t[li] = add ? Math.max(t[li], nv + 0.5) : Math.min(t[li], nv + 0.5);
             break;
           }
         }

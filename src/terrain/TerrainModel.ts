@@ -2,8 +2,11 @@ import { Geo } from '../core/geo';
 import { BIOME_CHANNELS, type PlanetSettings } from '../core/planet';
 import { TileGrid, type RasterArray } from './TileGrid';
 
-export type RasterLayer = 'height' | 'biome' | 'fog';
-export const RASTER_LAYERS: RasterLayer[] = ['height', 'biome', 'fog'];
+export type RasterLayer = 'height' | 'biome' | 'fog' | 'water';
+export const RASTER_LAYERS: RasterLayer[] = ['height', 'biome', 'fog', 'water'];
+
+/** Water cells per terrain cell along each axis. */
+export const WATER_DETAIL = 4;
 
 /** Inclusive cell rectangle; x may lie outside [0, W) and is wrapped by consumers. */
 export interface CellRect {
@@ -35,11 +38,17 @@ export class TerrainModel {
   readonly height: TileGrid<Float32Array>;
   readonly biome: TileGrid<Uint8Array>;
   readonly fog: TileGrid<Uint8Array>;
+  /**
+   * Painted water (rivers, streams, lakes): 0 dry … 255 water, at WATER_DETAIL×
+   * the elevation's resolution so rivers can be much narrower than a terrain
+   * cell. Its tiles still line up 1:1 with height tiles.
+   */
+  readonly water: TileGrid<Uint8Array>;
   /** Per-layer tile keys changed since last persisted. */
-  readonly persistDirty: Record<RasterLayer, Set<number>> = { height: new Set(), biome: new Set(), fog: new Set() };
+  readonly persistDirty: Record<RasterLayer, Set<number>> = { height: new Set(), biome: new Set(), fog: new Set(), water: new Set() };
   /** Layers whose default value / whole content changed since last persist. */
   readonly persistReset = new Set<RasterLayer>();
-  readonly revision: Record<RasterLayer, number> = { height: 0, biome: 0, fog: 0 };
+  readonly revision: Record<RasterLayer, number> = { height: 0, biome: 0, fog: 0, water: 0 };
   private listeners = new Set<RasterListener>();
 
   constructor(planet: PlanetSettings) {
@@ -52,6 +61,7 @@ export class TerrainModel {
     // (a quarter of the memory); their tiles still line up 1:1 with height tiles
     this.biome = new TileGrid(W / 2, H / 2, TS / 2, BIOME_CHANNELS, (n) => new Uint8Array(n), 0, 2, wrap);
     this.fog = new TileGrid(W / 2, H / 2, TS / 2, 1, (n) => new Uint8Array(n), 0, 2, wrap);
+    this.water = new TileGrid(W * WATER_DETAIL, H * WATER_DETAIL, TS * WATER_DETAIL, 1, (n) => new Uint8Array(n), 0, 1 / WATER_DETAIL, wrap);
   }
 
   get W() {

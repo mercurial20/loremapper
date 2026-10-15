@@ -18,6 +18,8 @@ licenses permit redistribution; full license texts ship inside each package in
 | [idb](https://github.com/jakearchibald/idb) | ISC |
 | [fflate](https://github.com/101arrowz/fflate) | MIT |
 | [lucide-react](https://github.com/lucide-icons/lucide) | ISC |
+| [i18next](https://github.com/i18next/i18next), [react-i18next](https://github.com/i18next/react-i18next) | MIT |
+| react-i18next dependencies: `@babel/runtime`, `html-parse-stringify`, `use-sync-external-store` | MIT |
 
 Run `npm ls --omit=dev --all` for the exact dependency tree of a given build.
 

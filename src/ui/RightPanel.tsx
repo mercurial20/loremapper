@@ -10,8 +10,10 @@ import { SelectionInspector } from './panels/SelectionInspector';
 import { selectionTitle } from './panels/selectionTitle';
 import { ToolOptions } from './panels/ToolOptions';
 import { ALL_TOOLS } from './toolDefs';
+import { useTranslation } from 'react-i18next';
 
 export function RightPanel() {
+  const { t } = useTranslation();
   const tool = useEditor((s) => s.tool);
   const sel = useEditor((s) => s.selection);
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
@@ -23,7 +25,7 @@ export function RightPanel() {
   const objectCount = useDoc((s) => Object.keys(s.doc.objects).length);
   const def = ALL_TOOLS.find((t) => t.id === tool);
   const closeRegion = (
-    <button className="icon-btn small" onClick={clearInspect} title="Close (Esc)" aria-label="Close">
+    <button className="icon-btn small" onClick={clearInspect} title={t('Close (Esc)')} aria-label={t('Close')}>
       <X size={14} />
     </button>
   );
@@ -36,8 +38,8 @@ export function RightPanel() {
         clearInspect();
         togglePanel(false);
       }}
-      title="Close"
-      aria-label="Close"
+      title={t('Close')}
+      aria-label={t('Close')}
     >
       <X size={14} />
     </button>
@@ -56,10 +58,10 @@ export function RightPanel() {
               <RegionInspector r={region} />
             </Section>
           )}
-          <Section title="Lands & seas" open={geoListOpen} onToggle={(v) => set({ geoListOpen: v })}>
+          <Section title={t('Lands & seas')} open={geoListOpen} onToggle={(v) => set({ geoListOpen: v })}>
             <LandsList />
           </Section>
-          <Section title="Layers" open={layersOpen} onToggle={(v) => set({ layersOpen: v })}>
+          <Section title={t('Layers')} open={layersOpen} onToggle={(v) => set({ layersOpen: v })}>
             <ViewerLayers />
           </Section>
         </div>
@@ -78,13 +80,13 @@ export function RightPanel() {
             <RegionInspector r={region} />
           </Section>
         )}
-        <Section title={def ? def.name : 'Tool'} open={inspectorOpen} onToggle={(v) => set({ inspectorOpen: v })}>
+        <Section title={def ? t(def.name) : t('Tool')} open={inspectorOpen} onToggle={(v) => set({ inspectorOpen: v })}>
           <ToolOptions />
         </Section>
-        <Section title="Lands & seas" open={geoListOpen} onToggle={(v) => set({ geoListOpen: v })}>
+        <Section title={t('Lands & seas')} open={geoListOpen} onToggle={(v) => set({ geoListOpen: v })}>
           <LandsList />
         </Section>
-        <Section title={`Layers · ${objectCount} objects`} open={layersOpen} onToggle={(v) => set({ layersOpen: v })}>
+        <Section title={t('Layers · {n} objects', { n: objectCount })} open={layersOpen} onToggle={(v) => set({ layersOpen: v })}>
           <LayersPanel />
         </Section>
       </div>

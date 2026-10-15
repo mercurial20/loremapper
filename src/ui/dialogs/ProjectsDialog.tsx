@@ -6,6 +6,8 @@ import { deleteProject, duplicateProject, estimateStorage, listProjects, renameP
 import { useDoc } from '../../store/docStore';
 import { useEditor } from '../../store/editorStore';
 import { Modal } from './Modal';
+import { useTranslation } from 'react-i18next';
+import { formatNumber, getLocale } from '../../i18n';
 
 function Thumb({ blob }: { blob?: Blob }) {
   const url = useMemo(() => (blob ? URL.createObjectURL(blob) : null), [blob]);
@@ -19,6 +21,7 @@ function Thumb({ blob }: { blob?: Blob }) {
 }
 
 export function ProjectsDialog() {
+  const { t } = useTranslation();
   const set = useEditor((s) => s.set);
   const notify = useEditor((s) => s.notify);
   const current = useDoc((s) => s.meta?.id);
@@ -48,15 +51,15 @@ export function ProjectsDialog() {
     };
   }, []);
   return (
-    <Modal title="Your maps" onClose={close} wide>
+    <Modal title={t('Your maps')} onClose={close} wide>
       <div className="projects-head">
         {!readOnly && (
           <button className="btn primary" onClick={() => set({ dialog: 'newProject' })}>
-            <Plus size={14} /> New map
+            <Plus size={14} /> {t('New map')}
           </button>
         )}
         <button className="btn" onClick={() => fileRef.current?.click()}>
-          <Upload size={14} /> Import project file…
+          <Upload size={14} /> {t('Import project file…')}
         </button>
         <input
           ref={fileRef}
@@ -78,7 +81,7 @@ export function ProjectsDialog() {
         <span className="spacer" />
         {storage && (
           <small className="muted">
-            Browser storage: {(storage.usage / 1e6).toFixed(1)} MB used of {(storage.quota / 1e9).toFixed(1)} GB
+            {t('Browser storage: {used} MB used of {quota} GB', { used: formatNumber(storage.usage / 1e6, 1), quota: formatNumber(storage.quota / 1e9, 1) })}
           </small>
         )}
       </div>
@@ -91,20 +94,21 @@ export function ProjectsDialog() {
                 close();
                 if (p.id !== current) await editor.openProject(p.id);
               }}
-              title="Open"
+              title={t('Open')}
             >
               <Thumb blob={p.thumbnail} />
             </button>
             <div className="project-info">
               <b>{p.name}</b>
               <small>
-                {p.id === current ? 'Open now · ' : ''}edited {new Date(p.updatedAt).toLocaleString()}
+                {p.id === current ? t('Open now') + ' · ' : ''}
+                {t('edited {date}', { date: new Date(p.updatedAt).toLocaleString(getLocale()) })}
               </small>
             </div>
             <div className="project-actions">
               <button
                 className="icon-btn small"
-                title="Open"
+                title={t('Open')}
                 onClick={async () => {
                   close();
                   if (p.id !== current) await editor.openProject(p.id);
@@ -116,9 +120,9 @@ export function ProjectsDialog() {
                 <>
               <button
                 className="icon-btn small"
-                title="Rename"
+                title={t('Rename')}
                 onClick={async () => {
-                  const n = prompt('Rename map', p.name);
+                  const n = prompt(t('Rename map'), p.name);
                   if (!n?.trim()) return;
                   if (p.id === current) useDoc.getState().setMeta({ name: n.trim() });
                   else await renameProject(p.id, n.trim());
@@ -129,7 +133,7 @@ export function ProjectsDialog() {
               </button>
               <button
                 className="icon-btn small"
-                title="Duplicate"
+                title={t('Duplicate')}
                 onClick={async () => {
                   await duplicateProject(p.id, p.name + ' copy');
                   await refresh();
@@ -139,9 +143,9 @@ export function ProjectsDialog() {
               </button>
               <button
                 className="icon-btn small danger"
-                title="Delete"
+                title={t('Delete')}
                 onClick={async () => {
-                  if (!confirm(`Delete “${p.name}” permanently? Export it first if you want a backup.`)) return;
+                  if (!confirm(t('Delete “{name}” permanently? Export it first if you want a backup.', { name: p.name }))) return;
                   await deleteProject(p.id);
                   if (p.id === current) {
                     const rest = (await listProjects()).filter((x) => x.id !== p.id);

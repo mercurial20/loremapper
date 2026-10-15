@@ -15,13 +15,14 @@ import {
   Undo2,
   WandSparkles,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { history } from '../model/history';
 import type { StylePresetId } from '../model/types';
 import { STYLE_PRESETS } from '../render/styles';
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import { UnitsSwitch } from './UnitsSwitch';
+import { LanguageSwitch } from './LanguageSwitch';
 import { formatHeight } from '../core/units';
 import { COMMUNITY_LINKS } from '../community';
 import { editor } from '../editor/Editor';
@@ -30,6 +31,7 @@ import { Segmented, Select, Slider } from './controls/controls';
 import { APP_VERSION } from '../version';
 import { CompassRose, GitHubMark, RedditMark } from './icons';
 import { track } from '../analytics';
+import { useTranslation } from 'react-i18next';
 
 function Popover({ button, children, align = 'left' }: { button: (open: boolean, toggle: () => void) => ReactNode; children: ReactNode; align?: 'left' | 'right' }) {
   const [open, setOpen] = useState(false);
@@ -51,22 +53,23 @@ function Popover({ button, children, align = 'left' }: { button: (open: boolean,
 }
 
 function SaveIndicator() {
+  const { t } = useTranslation();
   const status = useEditor((s) => s.saveStatus);
   if (status === 'saving' || status === 'pending')
     return (
-      <span className="save-ind saving" title="Your work is saved automatically to this browser">
-        <LoaderCircle size={14} className="spin" /> Saving…
+      <span className="save-ind saving" title={t('Your work is saved automatically to this browser')}>
+        <LoaderCircle size={14} className="spin" /> <span>{t('Saving…')}</span>
       </span>
     );
   if (status === 'error')
     return (
-      <span className="save-ind error" title="Saving failed — export your project as a backup">
-        <CircleAlert size={14} /> Not saved
+      <span className="save-ind error" title={t('Saving failed — export your project as a backup')}>
+        <CircleAlert size={14} /> <span>{t('Not saved')}</span>
       </span>
     );
   return (
-    <span className="save-ind" title="Saved locally in this browser (IndexedDB)">
-      <Check size={14} /> Saved
+    <span className="save-ind" title={t('Saved locally in this browser (IndexedDB)')}>
+      <Check size={14} /> <span>{t('Saved')}</span>
     </span>
   );
 }
@@ -89,6 +92,7 @@ function StyleThumb({ s }: { s: (typeof STYLE_PRESETS)[StylePresetId] }) {
 
 /** Planets: look at the map in another projection (editing stays on the equirectangular map). */
 function ProjectionControls() {
+  const { t } = useTranslation();
   const vp = useEditor((s) => s.viewProjection);
   const set = useEditor((s) => s.set);
   const id: ProjectionId = vp?.id ?? 'equirectangular';
@@ -101,47 +105,50 @@ function ProjectionControls() {
   const centred = id === 'orthographic' || id === 'azimuthal';
   return (
     <>
-      <h4>Projection</h4>
+      <h4>{t('Projection')}</h4>
       <Select<ProjectionId>
         label=""
         value={id}
-        options={PROJECTIONS.map((p) => ({ value: p.id, label: p.id === 'equirectangular' ? 'Equirectangular (editable)' : p.name }))}
+        options={PROJECTIONS.map((p) => ({ value: p.id, label: p.id === 'equirectangular' ? t('Equirectangular (editable)') : t(p.name) }))}
         onChange={choose}
       />
       {vp && (
         <>
-          <p className="style-desc">{PROJECTIONS.find((p) => p.id === id)?.description} Drag the map to {centred ? 'turn it' : 'move around'}; Info works here, and any editing tool brings back the editable map.</p>
+          <p className="style-desc">
+            {t(PROJECTIONS.find((p) => p.id === id)?.description ?? '')}{' '}
+            {centred ? t('Drag the map to turn it; Info works here, and any editing tool brings back the editable map.') : t('Drag the map to move around; Info works here, and any editing tool brings back the editable map.')}
+          </p>
           <Slider
-            label={centred ? 'Centre longitude' : 'Central meridian'}
+            label={centred ? t('Centre longitude') : t('Central meridian')}
             value={vp.lon0}
             min={-180}
             max={180}
             step={1}
             onChange={(v) => upd({ lon0: v })}
-            format={(v) => `${Math.abs(Math.round(v))}° ${v < 0 ? 'W' : 'E'}`}
+            format={(v) => `${Math.abs(Math.round(v))}° ${v < 0 ? t('W') : t('E')}`}
           />
           {centred && (
             <Slider
-              label="Centre latitude"
+              label={t('Centre latitude')}
               value={vp.lat0}
               min={-90}
               max={90}
               step={1}
               onChange={(v) => upd({ lat0: v })}
-              format={(v) => (Math.round(v) === 90 ? 'North pole' : Math.round(v) === -90 ? 'South pole' : `${Math.abs(Math.round(v))}° ${v < 0 ? 'S' : 'N'}`)}
+              format={(v) => (Math.round(v) === 90 ? t('North pole') : Math.round(v) === -90 ? t('South pole') : `${Math.abs(Math.round(v))}° ${v < 0 ? t('S') : t('N')}`)}
             />
           )}
           {id === 'azimuthal' && (
             <>
               <div className="view-chips">
                 <button className={'view-chip' + (vp.lat0 === 90 ? ' on' : '')} onClick={() => upd({ lat0: 90 })}>
-                  North pole
+                  {t('North pole')}
                 </button>
                 <button className={'view-chip' + (vp.lat0 === -90 ? ' on' : '')} onClick={() => upd({ lat0: -90 })}>
-                  South pole
+                  {t('South pole')}
                 </button>
                 <button className={'view-chip' + (vp.extent === 90 ? ' on' : '')} onClick={() => upd({ extent: vp.extent === 90 ? 180 : 90 })}>
-                  One hemisphere
+                  {t('One hemisphere')}
                 </button>
               </div>
             </>
@@ -153,6 +160,7 @@ function ProjectionControls() {
 }
 
 function ViewMenu() {
+  const { t } = useTranslation();
   const view = useDoc((s) => s.doc.view);
   const setView = useDoc((s) => s.setView);
   const units = useEditor((s) => s.units);
@@ -166,7 +174,7 @@ function ViewMenu() {
   );
   return (
     <div className="view-menu">
-      <h4>Map style</h4>
+      <h4>{t('Map style')}</h4>
       <div className="style-tiles">
         {(Object.keys(STYLE_PRESETS) as StylePresetId[]).map((id) => {
           const s = STYLE_PRESETS[id];
@@ -175,31 +183,40 @@ function ViewMenu() {
                 setView({ style: id });
                 track('style_changed', { style: id });
               }}
-              title={s.description}
+              title={t(s.description)}
               aria-pressed={view.style === id}
             >
               <StyleThumb s={s} />
-              <span>{s.name}</span>
+              <span>{t(s.name)}</span>
             </button>
           );
         })}
       </div>
-      <p className="style-desc">{current.description}</p>
+      <p className="style-desc">{t(current.description)}</p>
       {!flat && <ProjectionControls />}
-      <h4>Relief</h4>
-      <Slider label="Hill shading" value={view.hillshade} min={0} max={2} step={0.05} onChange={(v) => setView({ hillshade: v })} format={(v) => `${Math.round(v * 100)}%`} />
-      <h4>Show on map</h4>
+      <h4>{t('Relief')}</h4>
+      <Slider label={t('Hill shading')} value={view.hillshade} min={0} max={2} step={0.05} onChange={(v) => setView({ hillshade: v })} format={(v) => `${Math.round(v * 100)}%`} />
+      <Slider
+        label={t('Biome edges')}
+        value={view.biomeSoftness ?? 0.7}
+        min={0}
+        max={1}
+        step={0.05}
+        onChange={(v) => setView({ biomeSoftness: v })}
+        format={(v) => (v < 0.2 ? t('Crisp') : v < 0.5 ? t('Natural') : v < 0.8 ? t('Soft') : t('Very soft'))}
+      />
+      <h4>{t('Show on map')}</h4>
       <div className="view-chips">
-        {chip('Contours', view.contours, () => setView({ contours: !view.contours }), 'Contour lines')}
-        {chip('Height colours', view.heightOverlay, () => setView({ heightOverlay: !view.heightOverlay }), 'Hypsometric tints by elevation')}
-        {chip('Peaks', view.showPeaks, () => setView({ showPeaks: !view.showPeaks }), 'Peak markers with their heights')}
-        {chip('Coastal ripples', view.coastRipples, () => setView({ coastRipples: !view.coastRipples }))}
-        {chip(flat ? 'Distance grid' : 'Lat / long grid', view.graticule, () => setView({ graticule: !view.graticule }))}
-        {!flat && chip('Repeat sideways', view.repeat !== false, () => setView({ repeat: view.repeat === false }), 'Only changes how the planet is shown: it stays round and continuous')}
+        {chip(t('Contours'), view.contours, () => setView({ contours: !view.contours }), t('Contour lines'))}
+        {chip(t('Height colours'), view.heightOverlay, () => setView({ heightOverlay: !view.heightOverlay }), t('Hypsometric tints by elevation'))}
+        {chip(t('Peaks'), view.showPeaks, () => setView({ showPeaks: !view.showPeaks }), t('Peak markers with their heights'))}
+        {chip(t('Coastal ripples'), view.coastRipples, () => setView({ coastRipples: !view.coastRipples }))}
+        {chip(flat ? t('Distance grid') : t('Lat / long grid'), view.graticule, () => setView({ graticule: !view.graticule }))}
+        {!flat && chip(t('Repeat sideways'), view.repeat !== false, () => setView({ repeat: view.repeat === false }), t('Only changes how the planet is shown: it stays round and continuous'))}
       </div>
       {view.contours && (
         <Segmented
-          label="Contour interval"
+          label={t('Contour interval')}
           value={String(view.contourInterval)}
           options={['100', '250', '500', '1000', '2000'].map((v) => ({
             value: v,
@@ -209,13 +226,43 @@ function ViewMenu() {
         />
       )}
       {view.showPeaks && (
-        <Slider label="Show peaks above" value={view.peakMinElevation} min={300} max={9000} step={100} onChange={(v) => setView({ peakMinElevation: v })} format={(v) => formatHeight(v, units)} />
+        <Slider label={t('Show peaks above')} value={view.peakMinElevation} min={300} max={9000} step={100} onChange={(v) => setView({ peakMinElevation: v })} format={(v) => formatHeight(v, units)} />
       )}
     </div>
   );
 }
 
+/** The most compact header step (see the `data-fit` rules in app.css). */
+const MAX_FIT = 5;
+
+/**
+ * Pick the roomiest header layout whose contents fit, leaving a little slack
+ * for texts that change (the save status). Measured rather than set by screen
+ * width, because the texts' lengths depend on the language.
+ */
+function useHeaderFit() {
+  const ref = useRef<HTMLElement>(null);
+  const fit = () => {
+    const el = ref.current;
+    const spacer = el?.querySelector('.spacer');
+    if (!el || !spacer) return;
+    for (let level = 0; level <= MAX_FIT; level++) {
+      el.dataset.fit = String(level);
+      if (el.scrollWidth <= el.clientWidth && spacer.getBoundingClientRect().width >= 24) return;
+    }
+  };
+  // after every render (texts, language, project name) and on resize
+  useLayoutEffect(fit);
+  useEffect(() => {
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  });
+  return ref;
+}
+
 export function TopBar() {
+  const { t } = useTranslation();
+  const header = useHeaderFit();
   const meta = useDoc((s) => s.meta);
   const setMeta = useDoc((s) => s.setMeta);
   const { canUndo, canRedo, undoLabel, redoLabel, fogPreview, set } = useEditor();
@@ -223,11 +270,11 @@ export function TopBar() {
   const setView = useDoc((s) => s.setView);
   const readOnly = useEditor((s) => s.readOnly);
   return (
-    <header className={'topbar' + (readOnly ? ' viewer' : '')}>
+    <header ref={header} className={'topbar' + (readOnly ? ' viewer' : '')}>
       <div className="brand">
         <CompassRose size={26} />
         <span>Loremapper</span>
-        <em className="beta" title={`Version ${APP_VERSION}`}>beta</em>
+        <em className="beta" title={t('Version {v}', { v: APP_VERSION })}>beta</em>
       </div>
       <div className="project-name">
         <input
@@ -239,73 +286,74 @@ export function TopBar() {
             else e.target.value = meta?.name ?? '';
           }}
           onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-          aria-label="Map name"
+          aria-label={t('Map name')}
           spellCheck={false}
           readOnly={readOnly}
         />
-        <button className="btn ghost" onClick={() => set({ dialog: 'projects' })} title="All maps">
-          Maps <ChevronDown size={14} />
+        <button className="btn ghost" onClick={() => set({ dialog: 'projects' })} title={t('All maps')}>
+          {t('Maps')} <ChevronDown size={14} />
         </button>
       </div>
       {!readOnly && (
         <div className="tb-group">
-          <button className="icon-btn" disabled={!canUndo} onClick={() => history.undo()} title={canUndo ? `Undo ${undoLabel} (Ctrl+Z)` : 'Nothing to undo'}>
+          <button className="icon-btn" disabled={!canUndo} onClick={() => history.undo()} title={canUndo ? t('Undo {action} (Ctrl+Z)', { action: t(undoLabel ?? '') }) : t('Nothing to undo')}>
             <Undo2 size={18} />
           </button>
-          <button className="icon-btn" disabled={!canRedo} onClick={() => history.redo()} title={canRedo ? `Redo ${redoLabel} (Ctrl+Shift+Z)` : 'Nothing to redo'}>
+          <button className="icon-btn" disabled={!canRedo} onClick={() => history.redo()} title={canRedo ? t('Redo {action} (Ctrl+Shift+Z)', { action: t(redoLabel ?? '') }) : t('Nothing to redo')}>
             <Redo2 size={18} />
           </button>
         </div>
       )}
       <div className="tb-group">
         {!readOnly && (
-          <button className="btn" onClick={() => set({ dialog: 'generate' })}>
-            <WandSparkles size={16} /> Generate
+          <button className="btn" onClick={() => set({ dialog: 'generate' })} title={t('Generate world')}>
+            <WandSparkles size={16} /> <span>{t('Generate')}</span>
           </button>
         )}
         <Popover
           button={(open, toggle) => (
-            <button className={'btn' + (open ? ' on' : '')} onClick={toggle}>
-              <SlidersHorizontal size={16} /> View <ChevronDown size={14} />
+            <button className={'btn' + (open ? ' on' : '')} onClick={toggle} title={t('View')}>
+              <SlidersHorizontal size={16} /> <span>{t('View')}</span> <ChevronDown size={14} />
             </button>
           )}
         >
           <ViewMenu />
         </Popover>
-        <button className={'chip' + (view.contours ? ' on' : '')} onClick={() => setView({ contours: !view.contours })} title="Contour lines">
-          Contours
+        <button className={'chip' + (view.contours ? ' on' : '')} onClick={() => setView({ contours: !view.contours })} title={t('Contour lines')}>
+          {t('Contours')}
         </button>
-        <button className={'chip' + (view.heightOverlay ? ' on' : '')} onClick={() => setView({ heightOverlay: !view.heightOverlay })} title="Height overlay">
-          Height
+        <button className={'chip' + (view.heightOverlay ? ' on' : '')} onClick={() => setView({ heightOverlay: !view.heightOverlay })} title={t('Height overlay')}>
+          {t('Height')}
         </button>
-        <button className={'chip' + (fogPreview ? ' on' : '')} onClick={() => set({ fogPreview: !fogPreview })} title="Show content hidden by fog (editor only)">
-          {fogPreview ? <Eye size={14} /> : <EyeOff size={14} />} <CloudFog size={14} /> {fogPreview ? 'See through fog' : 'Player view'}
+        <button className={'chip' + (fogPreview ? ' on' : '')} onClick={() => set({ fogPreview: !fogPreview })} title={t('Show content hidden by fog (editor only)')}>
+          {fogPreview ? <Eye size={14} /> : <EyeOff size={14} />} <CloudFog size={14} /> {fogPreview ? t('See through fog') : t('Player view')}
         </button>
       </div>
       <div className="spacer" />
       {!readOnly && <SaveIndicator />}
       <UnitsSwitch />
-      <nav className="community-links" aria-label="Community">
-        <a href={COMMUNITY_LINKS.github.href} target="_blank" rel="noopener noreferrer" title={COMMUNITY_LINKS.github.title}>
+      <LanguageSwitch />
+      <nav className="community-links" aria-label={t('Community')}>
+        <a href={COMMUNITY_LINKS.github.href} target="_blank" rel="noopener noreferrer" title={t(COMMUNITY_LINKS.github.title)}>
           <GitHubMark /> <span>{COMMUNITY_LINKS.github.label}</span>
         </a>
-        <a className="reddit" href={COMMUNITY_LINKS.reddit.href} target="_blank" rel="noopener noreferrer" title={COMMUNITY_LINKS.reddit.title}>
+        <a className="reddit" href={COMMUNITY_LINKS.reddit.href} target="_blank" rel="noopener noreferrer" title={t(COMMUNITY_LINKS.reddit.title)}>
           <RedditMark /> <span>{COMMUNITY_LINKS.reddit.label}</span>
         </a>
-        <a href={COMMUNITY_LINKS.feedback.href} target="_blank" rel="noopener noreferrer" title={COMMUNITY_LINKS.feedback.title} aria-label={COMMUNITY_LINKS.feedback.title}>
+        <a href={COMMUNITY_LINKS.feedback.href} target="_blank" rel="noopener noreferrer" title={t(COMMUNITY_LINKS.feedback.title)} aria-label={t(COMMUNITY_LINKS.feedback.title)}>
           <MessageSquarePlus size={16} />
         </a>
       </nav>
       {!readOnly && (
         <>
-          <button className="icon-btn" onClick={() => set({ dialog: 'planet' })} title="Map settings">
+          <button className="icon-btn" onClick={() => set({ dialog: 'planet' })} title={t('Map settings')}>
             <Globe size={18} />
           </button>
-          <button className="icon-btn" onClick={() => set({ dialog: 'shortcuts' })} title="Keyboard shortcuts (?)">
+          <button className="icon-btn" onClick={() => set({ dialog: 'shortcuts' })} title={t('Keyboard shortcuts (?)')}>
             <Keyboard size={18} />
           </button>
           <button className="btn primary" onClick={() => set({ dialog: 'export' })}>
-            <Download size={16} /> Export
+            <Download size={16} /> {t('Export')}
           </button>
         </>
       )}

@@ -24,6 +24,7 @@ import { ProjectedView } from './projectedView';
 import { ReferenceLayer } from '../render/ReferenceLayer';
 import { track } from '../analytics';
 import { TerrainModel } from '../terrain/TerrainModel';
+import { i18n, t } from '../i18n';
 
 export interface Layers {
   objects: ObjectLayer;
@@ -62,7 +63,7 @@ class Editor {
     this.host = host;
     if (this.initialized) return;
     this.initialized = true;
-    useEditor.getState().set({ busy: 'Loading your atlas…' });
+    useEditor.getState().set({ busy: t('Loading your atlas…') });
     await Promise.all([ensureFonts(), assetLibrary.init()]);
     requestPersistentStorage();
     history.subscribe(() =>
@@ -142,10 +143,10 @@ class Editor {
 
   async openProject(id: string) {
     await this.saveNow();
-    useEditor.getState().set({ busy: 'Opening map…' });
+    useEditor.getState().set({ busy: t('Opening map…') });
     try {
       const res = await loadProject(id);
-      if (!res) throw new Error('Project not found');
+      if (!res) throw new Error(t('Project not found'));
       await this.mount(res.model, res.record.meta, normalizeDoc(res.record.doc));
       await setSetting('lastProject', id);
     } finally {
@@ -248,6 +249,15 @@ class Editor {
           renderer.requestRender();
         }
       }),
+      // peak heights on the map are written in the interface language's number format
+      (() => {
+        const onLanguage = () => {
+          this.layers?.peaks.invalidate();
+          renderer.requestRender();
+        };
+        i18n.on('languageChanged', onLanguage);
+        return () => i18n.off('languageChanged', onLanguage);
+      })(),
       model.subscribe((layer) => {
         this.scheduleSave();
         if (layer === 'height') this.schedulePeaks();
@@ -420,7 +430,7 @@ class Editor {
       } catch (e) {
         console.error(e);
         useEditor.getState().set({ saveStatus: 'error' });
-        useEditor.getState().notify('Saving failed: ' + (e instanceof Error ? e.message : String(e)), 'error');
+        useEditor.getState().notify(t('Saving failed: {error}', { error: e instanceof Error ? e.message : String(e) }), 'error');
       } finally {
         this.saving = null;
       }
@@ -472,10 +482,12 @@ Object.assign(window as object, { __editor: editor, __doc: useDoc, __ui: useEdit
 function fitBrushesToMap(model: TerrainModel) {
   const st = useEditor.getState();
   const geo = model.geo;
-  const r = brushRange(geo);
   const typical = geo.flat ? (geo.W * geo.cellKm) / 14 : 260;
   for (const g of Object.keys(st.brushes) as (keyof typeof st.brushes)[]) {
     const b = st.brushes[g];
-    if (b.radiusKm < r.min || b.radiusKm > r.max || (geo.flat && b.radiusKm > typical * 3)) st.setBrush(g, { radiusKm: Math.min(r.max, Math.max(r.min, typical)) });
+    const r = brushRange(geo, g);
+    // a river brush is narrow: a couple of km on a planet, about a kilometre on a 500 km map
+    const want = g === 'water' ? (geo.flat ? (geo.W * geo.cellKm) / 900 : 4) : typical;
+    if (b.radiusKm < r.min || b.radiusKm > r.max || (geo.flat && b.radiusKm > want * 3)) st.setBrush(g, { radiusKm: Math.min(r.max, Math.max(r.min, want)) });
   }
 }

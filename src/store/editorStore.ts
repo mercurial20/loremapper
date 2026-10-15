@@ -6,6 +6,7 @@ import type { RegionInfo } from '../terrain/geography';
 import type { BrushParams } from '../terrain/brushes';
 import type { ResolvedPeak } from '../terrain/peaks';
 import type { BorderStyle, LabelFont, RoadStyle, SelectionRef, TerritoryType } from '../model/types';
+import { N_, t } from '../i18n';
 
 export type ToolId =
   | 'select'
@@ -27,12 +28,14 @@ export type ToolId =
   | 'measure'
   | 'peak';
 
-export type BrushGroup = 'terrain' | 'paint' | 'fog' | 'erase';
+export type BrushGroup = 'terrain' | 'paint' | 'fog' | 'erase' | 'water';
 
 export const TERRAIN_TOOLS: ToolId[] = ['raise', 'lower', 'smooth', 'flatten', 'ridge'];
 
 export function brushGroupOf(tool: ToolId): BrushGroup | null {
   if (TERRAIN_TOOLS.includes(tool)) return 'terrain';
+  // the river tool paints water with a brush unless it's drawing paths
+  if (tool === 'river' && useEditor.getState().riverMode === 'brush') return 'water';
   if (tool === 'paint') return 'paint';
   if (tool === 'fog') return 'fog';
   if (tool === 'erase') return 'erase';
@@ -122,6 +125,10 @@ interface EditorState {
   viewProjection: ProjectionParams | null;
   /** Placing the tracing picture: drag to move, corners to resize. */
   referenceEdit: boolean;
+  /** River tool: paint water with a brush, or draw a river as a path. */
+  riverMode: 'brush' | 'path';
+  /** Rivers cut a bed and a soft valley into the terrain as they are drawn. */
+  riverCarve: boolean;
 
   setTool(t: ToolId): void;
   setBrush(g: BrushGroup, p: Partial<BrushParams>): void;
@@ -138,10 +145,10 @@ export type TerrainPreset = 'plains' | 'hills' | 'plateau' | 'mountains' | 'cust
  * height, so a first map looks right without touching a slider.
  */
 export const TERRAIN_PRESETS: Record<Exclude<TerrainPreset, 'custom'>, { label: string; hint: (h: string) => string; params: Omit<BrushParams, 'radiusKm'> }> = {
-  plains: { label: 'Plains', hint: (h) => `Low, flat land that levels off around ${h}.`, params: { strength: 0.6, falloff: 0.8, opacity: 1, roughness: 0.15, ceiling: 180, ceilingVar: 0.25 } },
-  hills: { label: 'Hills', hint: (h) => `Rolling uplands that rise to about ${h}.`, params: { strength: 0.5, falloff: 0.75, opacity: 1, roughness: 0.3, ceiling: 900, ceilingVar: 0.6 } },
-  plateau: { label: 'Plateau', hint: (h) => `A high, level tableland around ${h}.`, params: { strength: 0.6, falloff: 0.5, opacity: 1, roughness: 0.15, ceiling: 1600, ceilingVar: 0.12 } },
-  mountains: { label: 'Mountains', hint: () => 'Keeps rising while you paint: build peaks (or use the Mountain range tool).', params: { strength: 0.75, falloff: 0.85, opacity: 1, roughness: 0.5 } },
+  plains: { label: N_('Plains'), hint: (h) => t('Low, flat land that levels off around {h}.', { h }), params: { strength: 0.6, falloff: 0.8, opacity: 1, roughness: 0.15, ceiling: 180, ceilingVar: 0.25 } },
+  hills: { label: N_('Hills'), hint: (h) => t('Rolling uplands that rise to about {h}.', { h }), params: { strength: 0.5, falloff: 0.75, opacity: 1, roughness: 0.3, ceiling: 900, ceilingVar: 0.6 } },
+  plateau: { label: N_('Plateau'), hint: (h) => t('A high, level tableland around {h}.', { h }), params: { strength: 0.6, falloff: 0.5, opacity: 1, roughness: 0.15, ceiling: 1600, ceilingVar: 0.12 } },
+  mountains: { label: N_('Mountains'), hint: () => t('Keeps rising while you paint: build peaks (or use the Mountain range tool).'), params: { strength: 0.75, falloff: 0.85, opacity: 1, roughness: 0.5 } },
 };
 
 export function setUnits(units: Units) {
@@ -189,9 +196,10 @@ export const useEditor = create<EditorState>((set, get) => ({
   prevTool: null,
   brushes: {
     terrain: { ...TERRAIN_PRESETS.plains.params, radiusKm: 260 },
-    paint: { radiusKm: 220, strength: 0.6, falloff: 0.6, opacity: 1 },
+    paint: { radiusKm: 220, strength: 0.6, falloff: 0.85, opacity: 1 },
     fog: { radiusKm: 400, strength: 0.7, falloff: 0.6, opacity: 1 },
     erase: { radiusKm: 200, strength: 0.8, falloff: 0.3, opacity: 1 },
+    water: { radiusKm: 4, strength: 0.9, falloff: 0.35, opacity: 1 },
   },
   flattenMode: 'sample',
   flattenHeight: 200,
@@ -237,18 +245,20 @@ export const useEditor = create<EditorState>((set, get) => ({
   panelHidden: storedPanelHidden(),
   viewProjection: null,
   referenceEdit: false,
+  riverMode: 'brush',
+  riverCarve: true,
 
-  setTool(t) {
+  setTool(tool) {
     const cur = get().tool;
-    if (t === cur) return;
+    if (tool === cur) return;
     // the viewer only looks: select (to inspect) and pan
-    if (get().readOnly && t !== 'select' && t !== 'pan') return;
+    if (get().readOnly && tool !== 'select' && tool !== 'pan') return;
     // other projections are for looking; editing goes back to the editable map
-    if (get().viewProjection && !get().readOnly && t !== 'info' && t !== 'pan') {
+    if (get().viewProjection && !get().readOnly && tool !== 'info' && tool !== 'pan') {
       set({ viewProjection: null });
-      get().notify('Back to the editable map: editing works in the equirectangular view');
+      get().notify(t('Back to the editable map: editing works in the equirectangular view'));
     }
-    set({ tool: t, prevTool: cur, assetPanelOpen: t === 'object' ? true : get().assetPanelOpen, referenceEdit: false });
+    set({ tool, prevTool: cur, assetPanelOpen: tool === 'object' ? true : get().assetPanelOpen, referenceEdit: false });
   },
   setBrush(g, p) {
     set({ brushes: { ...get().brushes, [g]: { ...get().brushes[g], ...p } } });

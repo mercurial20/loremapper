@@ -1,3 +1,5 @@
+import { N_ } from '../i18n/mark';
+
 /**
  * Planet description. Elevations are stored in metres relative to a fixed
  * datum (0 m); "above sea level" values subtract the configurable sea level.
@@ -31,8 +33,8 @@ export interface PlanetSettings {
 }
 
 export const GRID_PRESETS = {
-  standard: { gridWidth: 4096, gridHeight: 2048, label: 'Standard — 4096 × 2048 (≈11 km cells)' },
-  high: { gridWidth: 8192, gridHeight: 4096, label: 'High detail — 8192 × 4096 (≈5.7 km cells)' },
+  standard: { gridWidth: 4096, gridHeight: 2048, label: N_('Standard — 4096 × 2048 (≈11 km cells)') },
+  high: { gridWidth: 8192, gridHeight: 4096, label: N_('High detail — 8192 × 4096 (≈5.7 km cells)') },
 } as const;
 export type GridPreset = keyof typeof GRID_PRESETS;
 
@@ -54,8 +56,8 @@ export function defaultPlanet(preset: GridPreset = 'standard'): PlanetSettings {
 
 /** Flat map detail presets: cells along the longer side. */
 export const FLAT_PRESETS = {
-  standard: { cells: 2048, label: 'Standard — 2048 cells on the long side' },
-  high: { cells: 4096, label: 'High detail — 4096 cells on the long side' },
+  standard: { cells: 2048, label: N_('Standard — 2048 cells on the long side') },
+  high: { cells: 4096, label: N_('High detail — 4096 cells on the long side') },
 } as const;
 
 /**
@@ -81,14 +83,14 @@ export function surfaceAreaKm2(p: PlanetSettings): number {
 }
 
 export const BIOMES = [
-  { id: 'grass', name: 'Grassland', key: '1' },
-  { id: 'forest', name: 'Forest', key: '2' },
-  { id: 'farm', name: 'Farmland', key: '3' },
-  { id: 'desert', name: 'Desert', key: '4' },
-  { id: 'swamp', name: 'Swamp', key: '5' },
-  { id: 'snow', name: 'Snow & ice', key: '6' },
-  { id: 'rock', name: 'Rocky ground', key: '7' },
-  { id: 'steppe', name: 'Steppe', key: '8' },
+  { id: 'grass', name: N_('Grassland'), key: '1' },
+  { id: 'forest', name: N_('Forest'), key: '2' },
+  { id: 'farm', name: N_('Farmland'), key: '3' },
+  { id: 'desert', name: N_('Desert'), key: '4' },
+  { id: 'swamp', name: N_('Swamp'), key: '5' },
+  { id: 'snow', name: N_('Snow & ice'), key: '6' },
+  { id: 'rock', name: N_('Rocky ground'), key: '7' },
+  { id: 'steppe', name: N_('Steppe'), key: '8' },
 ] as const;
 export type BiomeId = (typeof BIOMES)[number]['id'];
 /** Number of biome weight channels stored per cell. */

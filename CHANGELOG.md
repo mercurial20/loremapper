@@ -6,6 +6,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.3-alpha.1] — 2026-10-13
+
+### Added
+
+- **Russian interface.** Every text in the app is now translatable, and Russian is the first language besides English:
+  - new visitors whose browser prefers Russian (or Belarusian or Kazakh) over English get it right away, and the welcome screen has a language menu next to the km/mi switch;
+  - while drawing, the same menu sits next to km/mi in the top bar; switching is instant and remembered in this browser;
+  - numbers follow the language (`1 234,5` in Russian), and so do peak heights and measurements on the map.
+
+  Translations use i18next with one JSON file per language in `src/i18n/locales/`, keyed by the English text. `npm run i18n` brings the files in line with the code; a test fails when a text has no translation or a translation drops a `{placeholder}`. Built-in worlds, map styles, projections, tools, biomes and the built-in icons are translated too; names you type are never changed.
+- **Paint rivers with a brush** (alpha). The River tool <kbd>W</kbd> now paints water like a brush, by default: any width, so the same brush makes streams, wide rivers and lakes, and Shift or Alt erases. Painted water is stored at four times the terrain's resolution, so a river can be much narrower than a terrain cell: down to about 60 m on a 500 km map. Water follows the map style and the *Rivers & roads* layer (visibility and opacity). The previous smooth tapering river stays available as *Path*. An *alpha* mark beside *Brush* says the tool is still being tested.
+- **Rivers shape the land like real rivers.** *Carve a valley* (on by default, in the River tool) follows river geomorphology:
+  - the river runs downhill all the way: from its outlet (the sea, the map's edge, or its lowest point) it settles on a graded, concave profile, steep near the sources and gentle near the mouth (Flint's and Hack's laws). A hill across its course is cut into a gorge, a deep basin on the way stays as a lake, and low sills between hollows are cut through;
+  - valley sides then settle to the steepness of the hillslopes around, so a deep cut opens a wide V-shaped valley and a shallow one a gentle dip;
+  - lowland rivers get a flat floodplain a little above their bed, wider for bigger rivers.
+
+  It only ever lowers the land, never into the sea, and running it again on the same river changes nothing. It works for painted rivers and for rivers drawn as a path, and one undo removes the river and its valley together.
+- **Softer forest edges.** Forests and other painted biomes now thin out gradually towards their edges instead of ending in a hard line, and the trees fade into the open land around them. *View → Biome edges* sets how soft the edges are, from *Crisp* to *Very soft* (saved with the map).
+
+### Changed
+
+- Smaller brushes: the smallest brush now reaches a single cell of the layer it paints (half a cell for terrain, an eighth of a terrain cell for rivers). On a 500 km map that is about 120 m for terrain and 30 m for rivers.
+- Generating a whole new world clears painted rivers, which would otherwise run across the new land.
+- The header fits its contents to the window width in any language, hiding link labels, then the wordmark, then the view chips (also in *View*), then button labels as space runs out.
+- Painting a biome with a soft brush no longer saturates to full strength at the brush edge over repeated dabs.
+- The project format is now version 3 (a layer of painted water). Maps and `.loremap` files from earlier versions open unchanged; maps saved by this version need 1.2.3 or later.
+
 ## [1.2.2-alpha.1] — 2026-10-12
 
 ### Added
@@ -176,7 +203,8 @@ First public beta.
 - Export to PNG (current view or whole planet, complete map or revealed areas only), 16/8-bit heightmap PNG, and `.loremap` project archives with re-import.
 - Docker image (nginx) and `compose.yaml` for one-command self-hosting.
 
-[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.2.2-alpha.1...HEAD
+[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.2.3-alpha.1...HEAD
+[1.2.3-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.2.2-alpha.1...v1.2.3-alpha.1
 [1.2.2-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.2.1-alpha.1...v1.2.2-alpha.1
 [1.2.1-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.2.0-alpha.1...v1.2.1-alpha.1
 [1.2.0-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.1.0...v1.2.0-alpha.1

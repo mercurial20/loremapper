@@ -11,6 +11,7 @@ import { useEditor } from '../store/editorStore';
 import { editor } from './Editor';
 import { renderWorldPixels, type FogExport } from './exporter';
 import { downloadBlob, safeFileName } from './png';
+import { t } from '../i18n';
 
 /**
  * Images of a planet in other map projections. The terrain is rendered on the
@@ -594,15 +595,15 @@ export async function drawProjected(canvas: HTMLCanvasElement, o: ProjectedExpor
     await new Promise((res) => setTimeout(res, 0));
   };
   ctx.clearRect(0, 0, W, H);
-  ctx.putImageData(await reproject(proj, src.terrain, src.w, src.h, W, H, globe, (f) => tick('Reprojecting the terrain…', f)), 0, 0);
+  ctx.putImageData(await reproject(proj, src.terrain, src.w, src.h, W, H, globe, (f) => tick(t('Reprojecting the terrain…'), f)), 0, 0);
   const painter = new Painter(ctx, proj, W, H);
-  await tick('Drawing borders, rivers and labels…', 0);
+  await tick(t('Drawing borders, rivers and labels…'), 0);
   // load every symbol's picture first, so drawing is one synchronous pass
   const ids = [...new Set(Object.values(doc.objects).map((x) => x.assetId))];
   const pics = new Map(await Promise.all(ids.map(async (id) => [id, await assetImage(id)] as const)));
   drawVectors(painter, style, { includePeaks: o.includePeaks, shapes: true, image: (id) => pics.get(id) ?? null });
   if (src.fog) {
-    const fog = await reproject(proj, src.fog, src.w, src.h, W, H, false, (f) => tick('Reprojecting the fog…', f));
+    const fog = await reproject(proj, src.fog, src.w, src.h, W, H, false, (f) => tick(t('Reprojecting the fog…'), f));
     const layer = document.createElement('canvas');
     layer.width = W;
     layer.height = H;
@@ -633,16 +634,16 @@ export async function exportProjectedImage(o: ProjectedExportOptions) {
   const meta = useDoc.getState().meta!;
   const { width, height } = projectedSize(o.projection, o.width);
   const st = useEditor.getState();
-  st.set({ busy: 'Rendering the planet…' });
+  st.set({ busy: t('Rendering the planet…') });
   try {
-    const src = await renderProjectionSource(sourceWidth(o.projection, width), o.fog, (f) => st.set({ busy: `Rendering the planet… ${Math.round(f * 100)}%` }));
+    const src = await renderProjectionSource(sourceWidth(o.projection, width), o.fog, (f) => st.set({ busy: `${t('Rendering the planet…')} ${Math.round(f * 100)}%` }));
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     await drawProjected(canvas, o, src, (stage, f) => st.set({ busy: `${stage} ${Math.round(f * 100)}%` }));
-    st.set({ busy: 'Saving the image…' });
+    st.set({ busy: t('Saving the image…') });
     const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
-    if (!blob) throw new Error('The browser could not encode an image this large. Try a smaller width.');
+    if (!blob) throw new Error(t('The browser could not encode an image this large. Try a smaller width.'));
     downloadBlob(blob, `${safeFileName(meta.name)}-${o.projection.id}${o.fog === 'revealed' ? '-player' : ''}-${width}x${height}.png`);
   } finally {
     st.set({ busy: null });

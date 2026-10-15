@@ -4,6 +4,8 @@ import { editor } from '../editor/Editor';
 import { defaultName, freshGeography, kindLabel, regionAt, regionName } from '../editor/geography';
 import { useDoc } from '../store/docStore';
 import { useEditor, useViewInfo } from '../store/editorStore';
+import { formatNumber } from '../i18n';
+import { useTranslation } from 'react-i18next';
 
 const NICE = [1, 2, 5];
 /** Largest 1 / 2 / 5 × 10ⁿ not above v. */
@@ -19,6 +21,7 @@ function nice(v: number): number {
  * the centre of the view (the equirectangular map stretches with latitude).
  */
 export function ScaleBar() {
+  const { t } = useTranslation();
   const { zoom, centerY } = useViewInfo();
   const meta = useDoc((s) => s.meta);
   const units = useEditor((s) => s.units);
@@ -42,7 +45,7 @@ export function ScaleBar() {
   const px = km / kmPerPx;
   const lat = geo.lat(y);
   return (
-    <div className="scalebar" aria-label="Scale">
+    <div className="scalebar" aria-label={t('Scale')}>
       <div className="scale-ticks" style={{ width: px }}>
         <i />
         <i />
@@ -55,7 +58,7 @@ export function ScaleBar() {
       </div>
       {!geo.flat && (
         <small>
-          at {Math.abs(lat).toFixed(0)}°{lat >= 0 ? 'N' : 'S'} · N–S: {formatLength((geo.kmPerCellY / zoom) * 100, units)} per 100 px
+          {t('at {lat} · N–S: {len} per 100 px', { lat: `${Math.abs(lat).toFixed(0)}°${lat >= 0 ? t('N') : t('S')}`, len: formatLength((geo.kmPerCellY / zoom) * 100, units) })}
         </small>
       )}
     </div>
@@ -64,6 +67,7 @@ export function ScaleBar() {
 
 /** Info tool: name, kind and size of the landmass or water body under the cursor. */
 function RegionUnderCursor({ x, y }: { x: number; y: number }) {
+  const { t } = useTranslation();
   const tool = useEditor((s) => s.tool);
   const geography = useEditor((s) => s.geography);
   const busy = useEditor((s) => s.geoBusy);
@@ -71,7 +75,7 @@ function RegionUnderCursor({ x, y }: { x: number; y: number }) {
   const names = useDoc((s) => s.doc.regionNames);
   if (tool !== 'info') return null;
   const g = freshGeography();
-  if (!g || !geography) return <span className="sb-item muted">{busy ? 'Measuring lands and seas…' : ''}</span>;
+  if (!g || !geography) return <span className="sb-item muted">{busy ? t('Measuring lands and seas…') : ''}</span>;
   const r = regionAt(g, x, y);
   if (!r) return null;
   const name = regionName(g, r, names)?.name || defaultName(geography, r);
@@ -84,6 +88,7 @@ function RegionUnderCursor({ x, y }: { x: number; y: number }) {
 }
 
 export function StatusBar() {
+  const { t } = useTranslation();
   const cursor = useEditor((s) => s.cursor);
   const stats = useEditor((s) => s.landStats);
   const zoom = useViewInfo((s) => s.zoom);
@@ -99,26 +104,26 @@ export function StatusBar() {
         <>
           <span className="sb-item mono">{geo?.flat ? formatPosition(...geo.posKm(cursor.x, cursor.y), units) : formatLatLon(cursor.lat, cursor.lon)}</span>
           <span className={'sb-item ' + (cursor.elevation >= 0 ? 'land' : 'sea')}>
-            {cursor.elevation >= 0 ? '▲ ' + formatHeight(cursor.elevation, units) + ' a.s.l.' : '▼ ' + formatHeight(-cursor.elevation, units) + ' deep'}
+            {cursor.elevation >= 0 ? '▲ ' + t('{h} a.s.l.', { h: formatHeight(cursor.elevation, units) }) : '▼ ' + t('{h} deep', { h: formatHeight(-cursor.elevation, units) })}
           </span>
-          <span className="sb-item">{cursor.elevation >= 0 ? (cursor.biome >= 0 ? BIOMES[cursor.biome].name : 'Unpainted land') : 'Water'}</span>
-          {cursor.fog > 0.02 && <span className="sb-item">Fog {Math.round(cursor.fog * 100)}%</span>}
+          <span className="sb-item">{cursor.elevation >= 0 ? (cursor.biome >= 0 ? t(BIOMES[cursor.biome].name) : t('Unpainted land')) : t('Water')}</span>
+          {cursor.fog > 0.02 && <span className="sb-item">{t('Fog {n}%', { n: Math.round(cursor.fog * 100) })}</span>}
           <RegionUnderCursor x={cursor.x} y={cursor.y} />
         </>
       ) : (
-        <span className="sb-item muted">{readOnly ? 'Tap the map to see what is there' : 'Move over the map to inspect elevation and coordinates'}</span>
+        <span className="sb-item muted">{readOnly ? t('Tap the map to see what is there') : t('Move over the map to inspect elevation and coordinates')}</span>
       )}
       <span className="spacer" />
       {stats && meta && (
-        <span className="sb-item" title={geo?.flat ? 'Land share of the whole map' : 'Measured on the sphere: each cell is weighted by its true surface area'}>
+        <span className="sb-item" title={geo?.flat ? t('Land share of the whole map') : t('Measured on the sphere: each cell is weighted by its true surface area')}>
           {stats.areaKm2 > 0
-            ? `Land ${(stats.fraction * 100).toFixed(1)}% · ${formatArea(stats.areaKm2, units)} · highest ${formatHeight(Math.max(0, stats.highest), units)}`
-            : 'All water — raise land or use Generate'}
+            ? t('Land {pct}% · {area} · highest {h}', { pct: formatNumber(stats.fraction * 100, 1), area: formatArea(stats.areaKm2, units), h: formatHeight(Math.max(0, stats.highest), units) })
+            : t('All water — raise land or use Generate')}
         </span>
       )}
-      <span className="sb-item mono sb-scale" title="Ground distance per screen pixel (north–south)">1 px ≈ {formatLength(kmPerPx, units)}</span>
+      <span className="sb-item mono sb-scale" title={t('Ground distance per screen pixel (north–south)')}>1 px ≈ {formatLength(kmPerPx, units)}</span>
       {meta && (
-        <span className="sb-item muted" title={geo?.flat ? 'Flat map' : 'Planet'}>
+        <span className="sb-item muted" title={geo?.flat ? t('Flat map') : t('Planet')}>
           {geo?.flat
             ? `${formatLength(geo.W * geo.cellKm, units)} × ${formatLength(geo.H * geo.cellKm, units)}`
             : `R ${formatLength(meta.planet.radiusKm, units)}`}{' '}

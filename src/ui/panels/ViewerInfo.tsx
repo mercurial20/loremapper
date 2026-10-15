@@ -6,9 +6,11 @@ import { sampleSpline } from '../../render/vectorGeometry';
 import { useDoc } from '../../store/docStore';
 import { useEditor } from '../../store/editorStore';
 import { formatPlace } from '../format';
+import { useTranslation } from 'react-i18next';
 
 /** What the viewer tapped: names, notes and measurements, without editing controls. */
 export function ViewerInfo() {
+  const { t } = useTranslation();
   const sel = useEditor((s) => s.selection);
   const units = useEditor((s) => s.units);
   const peaks = useEditor((s) => s.peaks);
@@ -27,9 +29,9 @@ export function ViewerInfo() {
     if (!o) return null;
     return (
       <>
-        <h4 className="viewer-title">{o.name || 'Unnamed place'}</h4>
+        <h4 className="viewer-title">{o.name || t('Unnamed place')}</h4>
         {o.description && <p className="hint">{o.description}</p>}
-        {row('Location', formatPlace(geo, o.x, o.y, units))}
+        {row(t('Location'), formatPlace(geo, o.x, o.y, units))}
       </>
     );
   }
@@ -45,21 +47,21 @@ export function ViewerInfo() {
     for (let i = 1; i < pts.length; i++) len += geo.distanceKm(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]);
     return (
       <>
-        <h4 className="viewer-title">{p.name || (p.kind === 'river' ? 'Unnamed river' : 'Unnamed road')}</h4>
-        {row('Length', formatLength(len, units))}
+        <h4 className="viewer-title">{p.name || (p.kind === 'river' ? t('Unnamed river') : t('Unnamed road'))}</h4>
+        {row(t('Length'), formatLength(len, units))}
       </>
     );
   }
   if (ref.kind === 'territory') {
-    const t = doc.territories[ref.id];
-    if (!t) return null;
-    const [cx, cy] = polygonCentroid(t.points);
+    const terr = doc.territories[ref.id];
+    if (!terr) return null;
+    const [cx, cy] = polygonCentroid(terr.points);
     return (
       <>
-        <h4 className="viewer-title">{t.name || 'Unnamed territory'}</h4>
-        {row('Type', TERRITORY_TYPE_LABELS[t.type])}
-        {row('Centre', formatPlace(geo, cx, cy, units))}
-        {t.description && <p className="hint">{t.description}</p>}
+        <h4 className="viewer-title">{terr.name || t('Unnamed territory')}</h4>
+        {row(t('Type'), t(TERRITORY_TYPE_LABELS[terr.type]))}
+        {row(t('Centre'), formatPlace(geo, cx, cy, units))}
+        {terr.description && <p className="hint">{terr.description}</p>}
       </>
     );
   }
@@ -67,9 +69,9 @@ export function ViewerInfo() {
   if (!pk) return null;
   return (
     <>
-      <h4 className="viewer-title">{pk.name || 'Unnamed peak'}</h4>
-      {row('Elevation', formatHeight(pk.elevation, units))}
-      {row('Location', formatPlace(geo, pk.x, pk.y, units))}
+      <h4 className="viewer-title">{pk.name || t('Unnamed peak')}</h4>
+      {row(t('Elevation'), formatHeight(pk.elevation, units))}
+      {row(t('Location'), formatPlace(geo, pk.x, pk.y, units))}
     </>
   );
 }

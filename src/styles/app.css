@@ -875,6 +875,41 @@ input[type='range']::-moz-range-thumb {
 .segmented button:hover {
   color: var(--text);
 }
+.alpha-badge {
+  position: relative;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid rgba(232, 168, 74, 0.5);
+  background: rgba(232, 168, 74, 0.12);
+  color: #e8a84a;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: help;
+}
+.alpha-badge:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 7px);
+  left: -60px;
+  z-index: 40;
+  width: 210px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: normal;
+  text-align: left;
+}
 .segmented button.on {
   background: var(--panel-3);
   color: var(--accent-2);
@@ -1078,7 +1113,8 @@ input[type='range']::-moz-range-thumb {
 }
 .layer-detail label {
   display: grid;
-  grid-template-columns: 52px 1fr 36px;
+  /* the label column fits the word in any language */
+  grid-template-columns: minmax(52px, auto) 1fr 36px;
   align-items: center;
   gap: 6px;
   color: var(--muted);
@@ -1624,19 +1660,18 @@ input[type='range']::-moz-range-thumb {
   background: transparent;
 }
 
-/* the header narrows in steps: link labels, then the wordmark, then the view chips (also in View) */
-@media (max-width: 1500px) {
-  .brand span {
-    display: none;
-  }
-  .project-name input {
-    width: 130px;
-  }
+/* the header narrows in steps when its contents don't fit (TopBar measures it, so this works
+   for texts of any length): link labels, then the wordmark, then the view chips (also in View),
+   then the save status text, then the Generate and View labels */
+.topbar:is([data-fit='1'], [data-fit='2'], [data-fit='3'], [data-fit='4'], [data-fit='5']) .community-links span,
+.topbar:is([data-fit='2'], [data-fit='3'], [data-fit='4'], [data-fit='5']) .brand span,
+.topbar:is([data-fit='3'], [data-fit='4'], [data-fit='5']) .chip,
+.topbar:is([data-fit='4'], [data-fit='5']) .save-ind span,
+.topbar[data-fit='5'] .tb-group .btn span {
+  display: none;
 }
-@media (max-width: 1400px) {
-  .topbar .chip {
-    display: none;
-  }
+.topbar:is([data-fit='2'], [data-fit='3'], [data-fit='4'], [data-fit='5']) .project-name input {
+  width: 130px;
 }
 
 .panel-error {
@@ -1979,6 +2014,62 @@ input[type='range']::-moz-range-thumb {
   background: var(--panel-3);
   color: var(--accent-2);
 }
+.lang-switch {
+  position: relative;
+}
+.lang-switch > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 6px 0 7px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--accent-2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lang-switch > button svg {
+  color: var(--muted);
+}
+.lang-switch > button:hover,
+.lang-switch > button.on {
+  border-color: var(--muted);
+}
+.lang-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  min-width: 140px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.lang-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.lang-menu button:hover {
+  background: var(--panel-2);
+}
+.lang-menu button.on {
+  color: var(--accent-2);
+}
 .community-links {
   display: inline-flex;
   align-items: center;
@@ -2003,11 +2094,6 @@ input[type='range']::-moz-range-thumb {
 }
 .community-links a.reddit:hover svg {
   color: #ff4500;
-}
-@media (max-width: 1660px) {
-  .community-links span {
-    display: none;
-  }
 }
 
 /* ------------------------------------------------------------ welcome & new map */
@@ -2267,6 +2353,8 @@ input[type='range']::-moz-range-thumb {
   position: absolute;
   top: 0;
   right: 0;
+  display: inline-flex;
+  gap: 6px;
 }
 
 /* ------------------------------------------------------------ share after export */

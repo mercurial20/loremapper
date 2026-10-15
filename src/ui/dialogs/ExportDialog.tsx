@@ -12,12 +12,15 @@ import { shouldOfferShare } from '../share';
 import { assetLibrary } from '../../assets/library';
 import { setReference } from '../../editor/commands';
 import { track, type EventProps } from '../../analytics';
+import { Trans, useTranslation } from 'react-i18next';
+import { formatNumber } from '../../i18n';
 
 const WIDTHS = [1024, 2048, 4096, 8192, 12288];
 /** Projected images are drawn on one canvas, so they stay within what browsers handle comfortably. */
 const PROJECTED_WIDTHS = [1024, 2048, 4096, 8192];
 
 export function ExportDialog() {
+  const { t } = useTranslation();
   const set = useEditor((s) => s.set);
   const notify = useEditor((s) => s.notify);
   const meta = useDoc((s) => s.meta);
@@ -55,35 +58,35 @@ export function ExportDialog() {
       track('map_exported', done);
       if (offerShare && shouldOfferShare()) set({ dialog: 'share' });
     } catch (e) {
-      notify('Export failed: ' + (e instanceof Error ? e.message : String(e)), 'error');
+      notify(t('Export failed: {error}', { error: e instanceof Error ? e.message : String(e) }), 'error');
       track('operation_failed', { op: 'export' });
     }
   };
   return (
-    <Modal title="Export" onClose={close} wide>
+    <Modal title={t('Export')} onClose={close} wide>
       <div className="export-tabs">
         <button className={tab === 'image' ? 'on' : ''} onClick={() => setTab('image')}>
           <Image size={18} />
-          <b>Map image</b>
-          <small>Flattened PNG for sharing or printing — cannot be edited again.</small>
+          <b>{t('Map image')}</b>
+          <small>{t('Flattened PNG for sharing or printing — cannot be edited again.')}</small>
         </button>
         <button className={tab === 'height' ? 'on' : ''} onClick={() => setTab('height')}>
           <Mountain size={18} />
-          <b>Heightmap</b>
-          <small>Greyscale elevation for game engines and 3D tools.</small>
+          <b>{t('Heightmap')}</b>
+          <small>{t('Greyscale elevation for game engines and 3D tools.')}</small>
         </button>
         <button className={tab === 'project' ? 'on' : ''} onClick={() => setTab('project')}>
           <FileArchive size={18} />
-          <b>Editable project</b>
-          <small>Everything — terrain, objects, fog, your custom assets. Re-import to keep editing.</small>
+          <b>{t('Editable project')}</b>
+          <small>{t('Everything — terrain, objects, fog, your custom assets. Re-import to keep editing.')}</small>
         </button>
       </div>
       {tab === 'image' && (
         <div className="export-body">
           {!flat && (
             <>
-              <Select<ProjectionId> label="Projection" value={projection.id} options={PROJECTIONS.map((p) => ({ value: p.id, label: p.name }))} onChange={pickProjection} />
-              <p className="hint">{PROJECTIONS.find((p) => p.id === projection.id)?.description}</p>
+              <Select<ProjectionId> label={t('Projection')} value={projection.id} options={PROJECTIONS.map((p) => ({ value: p.id, label: t(p.name) }))} onChange={pickProjection} />
+              <p className="hint">{t(PROJECTIONS.find((p) => p.id === projection.id)?.description ?? '')}</p>
             </>
           )}
           {projected ? (
@@ -91,7 +94,7 @@ export function ExportDialog() {
               <ProjectionPreview params={projection} fog={fog} peaks={peaks} onChange={(p) => setProjection((q) => ({ ...q, ...p }))} />
               <div className="projection-controls">
                 <Slider
-                  label={projection.id === 'orthographic' || projection.id === 'azimuthal' ? 'Centre longitude' : 'Central meridian'}
+                  label={projection.id === 'orthographic' || projection.id === 'azimuthal' ? t('Centre longitude') : t('Central meridian')}
                   value={projection.lon0}
                   min={-180}
                   max={180}
@@ -101,32 +104,32 @@ export function ExportDialog() {
                 />
                 {(projection.id === 'orthographic' || projection.id === 'azimuthal') && (
                   <Slider
-                    label="Centre latitude"
+                    label={t('Centre latitude')}
                     value={projection.lat0}
                     min={-90}
                     max={90}
                     step={1}
                     onChange={(v) => setProjection((p) => ({ ...p, lat0: v }))}
-                    format={(v) => (Math.round(v) === 90 ? 'North pole' : Math.round(v) === -90 ? 'South pole' : `${Math.abs(Math.round(v))}° ${v < 0 ? 'S' : 'N'}`)}
+                    format={(v) => (Math.round(v) === 90 ? t('North pole') : Math.round(v) === -90 ? t('South pole') : `${Math.abs(Math.round(v))}° ${v < 0 ? 'S' : 'N'}`)}
                   />
                 )}
                 {projection.id === 'azimuthal' && (
                   <>
                     <div className="btn-row">
                       <button className="btn small" onClick={() => setProjection((p) => ({ ...p, lat0: 90 }))}>
-                        North pole
+                        {t('North pole')}
                       </button>
                       <button className="btn small" onClick={() => setProjection((p) => ({ ...p, lat0: -90 }))}>
-                        South pole
+                        {t('South pole')}
                       </button>
                     </div>
                     <Segmented
-                      label="Shows"
+                      label={t('Shows')}
                       value={String(projection.extent)}
                       onChange={(v) => setProjection((p) => ({ ...p, extent: Number(v) }))}
                       options={[
-                        { value: '90', label: 'One hemisphere' },
-                        { value: '180', label: 'The whole planet' },
+                        { value: '90', label: t('One hemisphere') },
+                        { value: '180', label: t('The whole planet') },
                       ]}
                     />
                   </>
@@ -135,41 +138,41 @@ export function ExportDialog() {
             </div>
           ) : (
             <Segmented
-              label="Area"
+              label={t('Area')}
               value={region}
               onChange={setRegion}
               options={[
-                { value: 'view', label: 'Current view' },
-                { value: 'world', label: flat ? 'Whole map' : 'Whole planet' },
+                { value: 'view', label: t('Current view') },
+                { value: 'world', label: flat ? t('Whole map') : t('Whole planet') },
               ]}
             />
           )}
           <Segmented
-            label="Width"
+            label={t('Width')}
             value={String(projected ? Math.min(width, 8192) : width)}
             onChange={(v) => setWidth(Number(v))}
             options={(projected ? PROJECTED_WIDTHS : WIDTHS).map((w) => ({ value: String(w), label: `${w}px` }))}
           />
           <Segmented
-            label="Fog of war"
+            label={t('Fog of war')}
             value={fog}
             onChange={setFog}
             options={[
-              { value: 'none', label: 'Complete map (no fog)' },
-              { value: 'revealed', label: 'Revealed areas only (player map)' },
+              { value: 'none', label: t('Complete map (no fog)') },
+              { value: 'revealed', label: t('Revealed areas only (player map)') },
             ]}
           />
-          <Toggle label="Include peak markers" checked={peaks} onChange={setPeaks} />
+          <Toggle label={t('Include peak markers')} checked={peaks} onChange={setPeaks} />
           {reference && (
             <Toggle
-              label="Include reference image"
+              label={t('Include reference image')}
               checked={reference.inExport}
-              onChange={(v) => setReference({ inExport: v }, 'Reference in exports')}
-              hint="The same setting as in Layers → Reference image"
+              onChange={(v) => setReference({ inExport: v }, t('Reference in exports'))}
+              hint={t('The same setting as in Layers → Reference image')}
             />
           )}
           <p className="hint">
-            Output: {size.width.toLocaleString()} × {size.height.toLocaleString()} px ({mp.toFixed(1)} MP). Large images are rendered in tiles and may take a moment.
+            {t('Output: {w} × {h} px ({mp} MP). Large images are rendered in tiles and may take a moment.', { w: formatNumber(size.width), h: formatNumber(size.height), mp: formatNumber(mp, 1) })}
           </p>
           <div className="btn-row end">
             <button
@@ -183,7 +186,7 @@ export function ExportDialog() {
                 )
               }
             >
-              <Image size={14} /> Export PNG
+              <Image size={14} /> {t('Export PNG')}
             </button>
           </div>
         </div>
@@ -191,27 +194,30 @@ export function ExportDialog() {
       {tab === 'height' && (
         <div className="export-body">
           <Segmented
-            label="Bit depth"
+            label={t('Bit depth')}
             value={bits}
             onChange={setBits}
             options={[
-              { value: '16', label: '16-bit (recommended)' },
-              { value: '8', label: '8-bit' },
+              { value: '16', label: t('16-bit (recommended)') },
+              { value: '8', label: t('8-bit') },
             ]}
           />
           <Segmented
-            label="Width"
+            label={t('Width')}
             value={String(hmWidth)}
             onChange={(v) => setHmWidth(Number(v))}
             options={[1024, 2048, meta?.planet.gridWidth ?? 4096].filter((v, i, a) => a.indexOf(v) === i).map((w) => ({ value: String(w), label: `${w}px` }))}
           />
           <p className="hint">
-            {flat ? 'Whole map, top-down at a uniform scale.' : 'Whole planet, equirectangular.'} Black = {meta?.planet.minElevation.toLocaleString()} m, white ={' '}
-            {((meta?.planet.seaLevel ?? 0) + (meta?.planet.maxElevation ?? 10000)).toLocaleString()} m (range is in the file name and PNG metadata; heights are always stored in metres). 16-bit avoids terracing.
+            {flat ? t('Whole map, top-down at a uniform scale.') : t('Whole planet, equirectangular.')}{' '}
+            {t('Black = {lo} m, white = {hi} m (range is in the file name and PNG metadata; heights are always stored in metres). 16-bit avoids terracing.', {
+              lo: formatNumber(meta?.planet.minElevation ?? 0),
+              hi: formatNumber((meta?.planet.seaLevel ?? 0) + (meta?.planet.maxElevation ?? 10000)),
+            })}
           </p>
           <div className="btn-row end">
             <button className="btn primary" onClick={() => run(() => exportHeightmap(bits === '16' ? 16 : 8, hmWidth), { format: 'heightmap' })}>
-              <Mountain size={14} /> Export heightmap
+              <Mountain size={14} /> {t('Export heightmap')}
             </button>
           </div>
         </div>
@@ -219,21 +225,24 @@ export function ExportDialog() {
       {tab === 'project' && (
         <div className="export-body">
           <p>
-            Saves <b>{meta?.name}</b> as a single <code>.loremap</code> file (a zip archive) containing the elevation, biome and fog tiles, every object, path,
-            territory, label and peak, plus the image files of custom assets it uses. Import it from <i>Maps → Import project file</i> on any browser.
+            <Trans
+              i18nKey="Saves <b>{name}</b> as a single <code>.loremap</code> file (a zip archive) containing the elevation, biome and fog tiles, every object, path, territory, label and peak, plus the image files of custom assets it uses. Import it from <i>Maps → Import project file</i> on any browser."
+              values={{ name: meta?.name ?? '' }}
+              components={{ b: <b />, code: <code />, i: <i /> }}
+            />
           </p>
-          <p className="hint">Your work is already saved automatically in this browser — use this for backups and moving between computers.</p>
+          <p className="hint">{t('Your work is already saved automatically in this browser — use this for backups and moving between computers.')}</p>
           {reference && (
             <Toggle
-              label={`Include reference image${referenceMb ? ` (${referenceMb})` : ''}`}
+              label={t('Include reference image') + (referenceMb ? ` (${referenceMb})` : '')}
               checked={projectReference}
               onChange={setProjectReference}
-              hint="Leave it out to make a smaller file; the map in this browser keeps its picture"
+              hint={t('Leave it out to make a smaller file; the map in this browser keeps its picture')}
             />
           )}
           <div className="btn-row end">
             <button className="btn primary" onClick={() => run(() => exportProject({ includeReference: projectReference }), { format: 'project' })}>
-              <FileArchive size={14} /> Export project
+              <FileArchive size={14} /> {t('Export project')}
             </button>
           </div>
         </div>

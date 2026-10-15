@@ -1,6 +1,7 @@
 import { asset, box, C, cone, crenels, dome, flag, gable, house, INK, ink, onion, arch, rock, shadow, tower, tree, waves, type StarterAsset } from './kit';
+import { N_ } from '../../i18n/mark';
 
-const CAT = 'Settlements';
+const CAT = N_('Settlements');
 
 const portcullis = (x: number, y: number, w: number, h: number) => {
   let s = arch(x, y, w, h, '#2a2119');
@@ -20,7 +21,7 @@ const masonry = (x: number, y: number, w: number, h: number) => {
 
 const capital = asset(
   'city-capital',
-  'Medieval capital',
+  N_('Medieval capital'),
   CAT,
   ['city', 'capital', 'kingdom', 'walls', 'cathedral'],
   128,
@@ -61,7 +62,7 @@ const roundTower = (cx: number, base: number, w: number, h: number, fill: string
 
 const fortified = asset(
   'city-fortified',
-  'Fortified city',
+  N_('Fortified city'),
   CAT,
   ['city', 'walls', 'bastion', 'stronghold'],
   128,
@@ -96,7 +97,7 @@ const fortified = asset(
 
 const steppe = asset(
   'city-steppe',
-  'Eastern steppe city',
+  N_('Eastern steppe city'),
   CAT,
   ['city', 'eastern', 'steppe', 'dome', 'minaret', 'khaganate'],
   128,
@@ -133,7 +134,7 @@ const steppe = asset(
 
 const merchant = asset(
   'city-merchant',
-  'Merchant republic',
+  N_('Merchant republic'),
   CAT,
   ['city', 'republic', 'canal', 'trade', 'campanile'],
   128,
@@ -167,7 +168,7 @@ const merchant = asset(
 
 const village = asset(
   'village',
-  'Village',
+  N_('Village'),
   CAT,
   ['village', 'hamlet', 'town', 'farm'],
   128,
@@ -193,7 +194,7 @@ const village = asset(
 
 const castle = asset(
   'castle',
-  'Castle',
+  N_('Castle'),
   CAT,
   ['castle', 'keep', 'lord', 'stronghold'],
   128,
@@ -213,7 +214,7 @@ const castle = asset(
 
 const fortress = asset(
   'fortress',
-  'Fortress',
+  N_('Fortress'),
   CAT,
   ['fortress', 'citadel', 'stronghold', 'military'],
   128,
@@ -241,7 +242,7 @@ const fortress = asset(
 
 const watchtower = asset(
   'watchtower',
-  'Watchtower',
+  N_('Watchtower'),
   CAT,
   ['tower', 'watch', 'lookout', 'outpost'],
   96,
@@ -261,7 +262,7 @@ const watchtower = asset(
 
 const port = asset(
   'port',
-  'Port town',
+  N_('Port town'),
   CAT,
   ['port', 'harbour', 'harbor', 'coast', 'town'],
   128,
@@ -291,7 +292,7 @@ const port = asset(
 
 const ruins = asset(
   'ruins',
-  'Ruins',
+  N_('Ruins'),
   CAT,
   ['ruins', 'ancient', 'abandoned', 'lost'],
   128,

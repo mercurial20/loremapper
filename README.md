@@ -253,8 +253,8 @@ The generator builds a planet the way geology and weather would.
 |---|---|
 | **Brushes** | Raise <kbd>R</kbd>, Lower <kbd>L</kbd>, Mountain range <kbd>M</kbd>, Smooth <kbd>S</kbd> and Flatten <kbd>F</kbd>. Brush size is in kilometres. Strength, softness, a per-stroke height cap and ragged natural edges are all adjustable. Hold the mouse still to keep building. |
 | **Elevation** | Heights are real metres (up to 10,000 m by default) with an adjustable sea level. Peaks are detected automatically; you can name them, mark them as significant or remove them. |
-| **Biomes** | Grassland, forest, farmland, desert, swamp, snow, rock and steppe, with soft edges. Forests grow painted tree crowns and farmland becomes a patchwork of fields. |
-| **Rivers & roads** | Draw them freehand or point by point, then drag the points to reshape them. Rivers taper towards the source; roads can be dashed, paved, dotted or double. |
+| **Biomes** | Grassland, forest, farmland, desert, swamp, snow, rock and steppe. Edges fade gradually, from crisp to very soft (*View → Biome edges*). Forests grow painted tree crowns that thin out towards their edges, and farmland becomes a patchwork of fields. |
+| **Rivers & roads** | Paint rivers, streams and lakes with a brush, at any width (alpha). They shape the land like real rivers: each runs downhill to its mouth on a graded profile, cutting gorges through hills and keeping deep basins as lakes, with valley sides as steep as the hills around and floodplains in the lowlands (one undo removes the river and its valley). Or draw a river as a smooth path that tapers towards the source. Roads are drawn freehand or point by point and can be dashed, paved, dotted or double; drag the points of any path to reshape it. |
 
 <img src="docs/images/elevation.jpg" alt="Left: contour lines; right: colour-coded height overlay" />
 
@@ -334,6 +334,7 @@ You can name it there and write the name on the map as a normal label. **Lands &
 
 ### Also included
 
+- **English and Russian**: the app starts in your browser's language, and a menu next to the km/mi switch changes it at any time.
 - **Trace another map**: *Layers → Add reference image…* lays a picture (for example a map from another tool) over yours, faded, so you can redraw its coasts. It is saved with the map and can be kept out of exports.
 - **Layers**: show, hide, lock and fade terrain, biomes, borders, rivers, objects, labels, peaks and fog. You can create your own object layers.
 - **Undo / redo** for everything, plus copy, multi-select, z-order, lock and hide.
@@ -456,7 +457,7 @@ So far testing has been on macOS. Windows and Linux reports are very welcome.
 ## 🚧 Current limitations
 
 - A map's resolution is chosen when it's created and can't be changed later. You can't sculpt details smaller than one terrain cell (~11 km on Standard); biome paint and fog use cells twice that size.
-- Generated rivers sit in their own valleys, but rivers and roads you draw by hand sit on top of the terrain. Lakes aren't drawn as water yet: closed basins fill up into flat plains instead.
+- Rivers you paint or draw carve their valleys, but roads sit on top of the terrain. The generator doesn't make lakes yet: closed basins fill up into flat plains instead (you can paint lakes into them).
 - Neighbouring borders don't snap together.
 - Undo history is cleared when you reload the page or switch maps.
 - Curved labels are selected using their straight outline.
@@ -469,12 +470,14 @@ So far testing has been on macOS. Windows and Linux reports are very welcome.
 
 ## ✅ Testing done for this release
 
-- Lint, type-check, 68 unit tests and the production build all pass. The tests cover:
+- Lint, type-check, 87 unit tests and the production build all pass. The tests cover:
   - deterministic worlds: one seed and one set of settings give the same world;
   - world types that hold, rivers that always run downhill, and the uplift-and-erosion relief;
   - built-in world sketches: land where they draw it, ranges where they put them;
   - true areas on the sphere and on flat maps, units and project migration;
-  - every map projection, forward and back, for several centres, and equal areas where a projection promises them.
+  - every map projection, forward and back, for several centres, and equal areas where a projection promises them;
+  - every interface text has a translation in every language, with the same placeholders;
+  - rivers run downhill, keep deep basins as lakes, only lower the land and are stable when shaped again.
 - The generator was measured against Earth's real relief (NOAA ETOPO1) at the same resolution: land elevations, slopes and river-basin shape come out close to Earth's (see the [changelog](CHANGELOG.md)).
 - Automated desktop runs in Chrome 154, Firefox 157 and WebKit 27.2 (macOS), starting from the welcome screen, covered:
   - painting terrain and biomes, placing and editing objects, importing PNG and SVG assets and replacing artwork;
@@ -485,7 +488,9 @@ So far testing has been on macOS. Windows and Linux reports are very welcome.
 - In Chrome, the runs also covered the new parts: flat maps, every built-in world (flat and planet), every realism level, the eight styles and the View menu, the Info tool, hiding the panel, metric and imperial units, and painting with each kind of land.
 - Map projections: the live view (turning the globe, zoom, Info, back to editing) and image exports in all six projections, in Chrome, Firefox and WebKit; exports up to 8192 px, the mini globe and touch on a phone in Chrome.
 - Phones and tablets (iPhone 13 and iPad Pro 11 emulation): the viewer pans, pinch-zooms and answers taps; the panel starts hidden and opens on tap; lists and cards scroll by touch.
-- Projects and browser-saved maps from v1.0.0-beta.2 open unchanged; this release doesn't change the project format.
+- The whole interface in Russian, in Chrome: every dialog, tool, panel and selection was opened with a scan for leftover English, and switching the language while drawing keeps the map and the open panels.
+- Painted rivers in Chrome: a river painted across a mountain massif falls steadily from source to mouth through a V-shaped gorge, and one undo restores the ground.
+- Projects and browser-saved maps from v1.0.0-beta.2 open unchanged. This release moves the project format to version 3 (painted water), so maps saved by it need 1.2.3 or later.
 
 ## 🐞 Reporting bugs and contributing
 
@@ -500,13 +505,15 @@ So far testing has been on macOS. Windows and Linux reports are very welcome.
 
 The app is TypeScript with **React 19** for the interface, **PixiJS 8 (WebGL 2)**
 for the map, **Zustand** for state and **IndexedDB** for storage. **Vite**
-builds it, and the Docker image serves it with **nginx**.
+builds it, and the Docker image serves it with **nginx**. Texts are
+translated with **i18next**.
 
 ```
 src/
   core/         planet constants, projection & distances, noise and geometry helpers
   terrain/      sparse tiled rasters (elevation, biomes, fog), brushes, peaks, world generator
   model/        document types, undo/redo, versioned project format
+  i18n/         interface languages: i18next setup and one JSON file per language
   store/        application state
   persistence/  IndexedDB storage for maps, tiles, assets and settings
   assets/       asset library and the built-in SVG asset pack

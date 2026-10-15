@@ -1,4 +1,5 @@
 import type { PlanetSettings } from '../core/planet';
+import { N_ } from '../i18n/mark';
 
 export type Vec2 = [number, number];
 
@@ -46,13 +47,13 @@ export interface PathFeature {
 export const TERRITORY_TYPES = ['kingdom', 'khaganate', 'republic', 'empire', 'tribe', 'city', 'other'] as const;
 export type TerritoryType = (typeof TERRITORY_TYPES)[number];
 export const TERRITORY_TYPE_LABELS: Record<TerritoryType, string> = {
-  kingdom: 'Kingdom',
-  khaganate: 'Khaganate',
-  republic: 'Republic',
-  empire: 'Empire',
-  tribe: 'Tribal lands',
-  city: 'Independent city',
-  other: 'Other',
+  kingdom: N_('Kingdom'),
+  khaganate: N_('Khaganate'),
+  republic: N_('Republic'),
+  empire: N_('Empire'),
+  tribe: N_('Tribal lands'),
+  city: N_('Independent city'),
+  other: N_('Other'),
 };
 
 export type BorderStyle = 'solid' | 'dashed' | 'dotted' | 'double';
@@ -129,6 +130,8 @@ export type StylePresetId = 'parchment' | 'atlas' | 'political' | 'relief' | 'an
 export interface ViewSettings {
   style: StylePresetId;
   hillshade: number;
+  /** Biome edges: 0 crisp … 1 soft, with wide fringes (forests thin out gradually). */
+  biomeSoftness?: number;
   contours: boolean;
   contourInterval: number;
   heightOverlay: boolean;
@@ -224,9 +227,9 @@ export function emptyDocument(): MapDocument {
     regionNames: {},
     reference: null,
     objectLayers: [
-      { id: 'layer-settlements', name: 'Settlements', visible: true, locked: false, opacity: 1 },
-      { id: 'layer-features', name: 'Features', visible: true, locked: false, opacity: 1 },
-      { id: 'layer-creatures', name: 'Creatures', visible: true, locked: false, opacity: 1 },
+      { id: 'layer-settlements', name: N_('Settlements'), visible: true, locked: false, opacity: 1 },
+      { id: 'layer-features', name: N_('Features'), visible: true, locked: false, opacity: 1 },
+      { id: 'layer-creatures', name: N_('Creatures'), visible: true, locked: false, opacity: 1 },
     ],
     systemLayers: {
       terrain: { visible: true, opacity: 1, locked: false },

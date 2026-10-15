@@ -8,20 +8,23 @@ import { addObjectLayer, deleteObjectLayer, moveObjectLayer, setReference, updat
 import type { SystemLayerId } from '../../model/types';
 import { useDoc } from '../../store/docStore';
 import { useEditor } from '../../store/editorStore';
+import { useTranslation } from 'react-i18next';
+import { N_ } from '../../i18n';
 
 const SYSTEM: { id: SystemLayerId; name: string; lockable: boolean; note: string }[] = [
-  { id: 'fog', name: 'Fog of war', lockable: true, note: 'Paintable mask; never deletes what is beneath' },
-  { id: 'peaks', name: 'Peak markers', lockable: false, note: 'Detected summits with elevations' },
-  { id: 'labels', name: 'Labels', lockable: false, note: 'Map text' },
-  { id: 'objects', name: 'Objects', lockable: false, note: 'All placed assets' },
-  { id: 'paths', name: 'Rivers & roads', lockable: false, note: 'Editable splines' },
-  { id: 'territories', name: 'Territories', lockable: false, note: 'Political borders' },
-  { id: 'biomes', name: 'Biomes', lockable: true, note: 'Painted forests, deserts…' },
-  { id: 'terrain', name: 'Elevation', lockable: true, note: 'Heightmap in metres' },
+  { id: 'fog', name: N_('Fog of war'), lockable: true, note: N_('Paintable mask; never deletes what is beneath') },
+  { id: 'peaks', name: N_('Peak markers'), lockable: false, note: N_('Detected summits with elevations') },
+  { id: 'labels', name: N_('Labels'), lockable: false, note: N_('Map text') },
+  { id: 'objects', name: N_('Objects'), lockable: false, note: N_('All placed assets') },
+  { id: 'paths', name: N_('Rivers & roads'), lockable: false, note: N_('Editable splines') },
+  { id: 'territories', name: N_('Territories'), lockable: false, note: N_('Political borders') },
+  { id: 'biomes', name: N_('Biomes'), lockable: true, note: N_('Painted forests, deserts…') },
+  { id: 'terrain', name: N_('Elevation'), lockable: true, note: N_('Heightmap in metres') },
 ];
 
 /** The viewer can show and hide the map's layers, nothing more. */
 export function ViewerLayers() {
+  const { t } = useTranslation();
   const doc = useDoc((s) => s.doc);
   const setSystemLayer = useDoc((s) => s.setSystemLayer);
   return (
@@ -31,10 +34,10 @@ export function ViewerLayers() {
         return (
           <li key={l.id} className={'layer-item' + (st.visible ? '' : ' off')}>
             <div className="layer-row">
-              <button className="icon-btn small" onClick={() => setSystemLayer(l.id, { visible: !st.visible })} aria-label={(st.visible ? 'Hide ' : 'Show ') + l.name}>
+              <button className="icon-btn small" onClick={() => setSystemLayer(l.id, { visible: !st.visible })} aria-label={st.visible ? t('Hide {name}', { name: t(l.name) }) : t('Show {name}', { name: t(l.name) })}>
                 {st.visible ? <Eye size={14} /> : <EyeOff size={14} />}
               </button>
-              <span className="layer-name">{l.name}</span>
+              <span className="layer-name">{t(l.name)}</span>
             </div>
           </li>
         );
@@ -44,6 +47,7 @@ export function ViewerLayers() {
 }
 
 export function LayersPanel() {
+  const { t } = useTranslation();
   const doc = useDoc((s) => s.doc);
   const setSystemLayer = useDoc((s) => s.setSystemLayer);
   const active = useEditor((s) => s.activeObjectLayer);
@@ -64,15 +68,15 @@ export function LayersPanel() {
             {l.id === 'biomes' && <ReferenceItem />}
             <li className={'layer-item' + (st.visible ? '' : ' off')}>
               <div className="layer-row">
-                <button className="icon-btn small" onClick={() => setSystemLayer(l.id, { visible: !st.visible })} title={st.visible ? 'Hide layer' : 'Show layer'}>
+                <button className="icon-btn small" onClick={() => setSystemLayer(l.id, { visible: !st.visible })} title={st.visible ? t('Hide layer') : t('Show layer')}>
                   {st.visible ? <Eye size={14} /> : <EyeOff size={14} />}
                 </button>
-                <button className="layer-name" onClick={() => setExpanded(expanded === l.id ? null : l.id)} title={l.note}>
-                  {l.name}
+                <button className="layer-name" onClick={() => setExpanded(expanded === l.id ? null : l.id)} title={t(l.note)}>
+                  {t(l.name)}
                   {l.id === 'objects' && <em>{Object.keys(doc.objects).length}</em>}
                 </button>
                 {l.lockable && (
-                  <button className={'icon-btn small' + (st.locked ? ' on' : '')} onClick={() => setSystemLayer(l.id, { locked: !st.locked })} title={st.locked ? 'Unlock editing' : 'Lock against edits'}>
+                  <button className={'icon-btn small' + (st.locked ? ' on' : '')} onClick={() => setSystemLayer(l.id, { locked: !st.locked })} title={st.locked ? t('Unlock editing') : t('Lock against edits')}>
                     {st.locked ? <Lock size={13} /> : <LockOpen size={13} />}
                   </button>
                 )}
@@ -80,11 +84,11 @@ export function LayersPanel() {
               {expanded === l.id && (
                 <div className="layer-detail">
                   <label>
-                    Opacity
+                    {t('Opacity')}
                     <input type="range" min={0} max={1} step={0.01} value={st.opacity} onChange={(e) => setSystemLayer(l.id, { opacity: parseFloat(e.target.value) })} />
                     <output>{Math.round(st.opacity * 100)}%</output>
                   </label>
-                  <small>{l.note}</small>
+                  <small>{t(l.note)}</small>
                 </div>
               )}
               {l.id === 'objects' && (
@@ -95,7 +99,7 @@ export function LayersPanel() {
                     .map(({ ol, i }) => (
                       <li key={ol.id} className={'layer-item sub' + (ol.visible ? '' : ' off') + (active === ol.id ? ' active' : '')}>
                         <div className="layer-row">
-                          <button className="icon-btn small" onClick={() => updateObjectLayer(ol.id, { visible: !ol.visible })} title={ol.visible ? 'Hide' : 'Show'}>
+                          <button className="icon-btn small" onClick={() => updateObjectLayer(ol.id, { visible: !ol.visible })} title={ol.visible ? t('Hide') : t('Show')}>
                             {ol.visible ? <Eye size={13} /> : <EyeOff size={13} />}
                           </button>
                           {renaming === ol.id ? (
@@ -117,28 +121,28 @@ export function LayersPanel() {
                               className="layer-name"
                               onClick={() => set({ activeObjectLayer: ol.id })}
                               onDoubleClick={() => setRenaming(ol.id)}
-                              title="Click: place new objects here · Double-click: rename"
+                              title={t('Click: place new objects here · Double-click: rename')}
                             >
-                              {ol.name}
+                              {t(ol.name)}
                               <em>{counts[ol.id] ?? 0}</em>
                             </button>
                           )}
-                          <button className="icon-btn small" disabled={i === doc.objectLayers.length - 1} onClick={() => moveObjectLayer(ol.id, 1)} title="Move up">
+                          <button className="icon-btn small" disabled={i === doc.objectLayers.length - 1} onClick={() => moveObjectLayer(ol.id, 1)} title={t('Move up')}>
                             <ChevronUp size={13} />
                           </button>
-                          <button className="icon-btn small" disabled={i === 0} onClick={() => moveObjectLayer(ol.id, -1)} title="Move down">
+                          <button className="icon-btn small" disabled={i === 0} onClick={() => moveObjectLayer(ol.id, -1)} title={t('Move down')}>
                             <ChevronDown size={13} />
                           </button>
-                          <button className={'icon-btn small' + (ol.locked ? ' on' : '')} onClick={() => updateObjectLayer(ol.id, { locked: !ol.locked })} title={ol.locked ? 'Unlock' : 'Lock'}>
+                          <button className={'icon-btn small' + (ol.locked ? ' on' : '')} onClick={() => updateObjectLayer(ol.id, { locked: !ol.locked })} title={ol.locked ? t('Unlock') : t('Lock')}>
                             {ol.locked ? <Lock size={13} /> : <LockOpen size={13} />}
                           </button>
                           <button
                             className="icon-btn small danger"
                             disabled={doc.objectLayers.length <= 1}
                             onClick={() => {
-                              if (confirm(`Delete layer “${ol.name}”? Its ${counts[ol.id] ?? 0} objects move to another layer.`)) deleteObjectLayer(ol.id);
+                              if (confirm(t('Delete layer “{name}”? Its {n} objects move to another layer.', { name: t(ol.name), n: counts[ol.id] ?? 0 }))) deleteObjectLayer(ol.id);
                             }}
-                            title="Delete layer"
+                            title={t('Delete layer')}
                           >
                             <Trash2 size={13} />
                           </button>
@@ -146,7 +150,7 @@ export function LayersPanel() {
                         {active === ol.id && (
                           <div className="layer-detail">
                             <label>
-                              Opacity
+                              {t('Opacity')}
                               <input type="range" min={0} max={1} step={0.01} value={ol.opacity} onChange={(e) => updateObjectLayer(ol.id, { opacity: parseFloat(e.target.value) }, 'layer-op-' + ol.id)} />
                               <output>{Math.round(ol.opacity * 100)}%</output>
                             </label>
@@ -156,7 +160,7 @@ export function LayersPanel() {
                     ))}
                   <li>
                     <button className="btn small add-layer" onClick={() => addObjectLayer(`Layer ${doc.objectLayers.length + 1}`)}>
-                      <Plus size={13} /> New object layer
+                      <Plus size={13} /> {t('New object layer')}
                     </button>
                   </li>
                 </ul>
@@ -182,6 +186,7 @@ function fitToMap(width: number, height: number, stretch: boolean) {
 
 /** The tracing picture: add one, fade it, place it, lock it, keep it out of exports, remove it. */
 function ReferenceItem() {
+  const { t } = useTranslation();
   const ref = useDoc((s) => s.doc.reference);
   const editing = useEditor((s) => s.referenceEdit);
   const set = useEditor((s) => s.set);
@@ -192,10 +197,10 @@ function ReferenceItem() {
     try {
       const { id, width, height } = await assetLibrary.importReference(f);
       const rect = fitToMap(width, height, false);
-      setReference({ assetId: id, ...rect, opacity: 0.5, visible: true, locked: false, inExport: true }, ref ? 'Replace reference image' : 'Add reference image');
+      setReference({ assetId: id, ...rect, opacity: 0.5, visible: true, locked: false, inExport: true }, ref ? t('Replace reference image') : t('Add reference image'));
       set({ referenceEdit: true });
       track('reference_image_added');
-      notify('Drag the picture to place it, drag a corner to resize (Shift: free proportions). Esc when done.');
+      notify(t('Drag the picture to place it, drag a corner to resize (Shift: free proportions). Esc when done.'));
     } catch (e) {
       notify(e instanceof Error ? e.message : String(e), 'error');
     }
@@ -216,8 +221,8 @@ function ReferenceItem() {
   if (!ref)
     return (
       <li className="layer-item reference-empty">
-        <button className="btn small add-layer" onClick={() => fileRef.current?.click()} title="A picture to trace from, for example a map made in another tool">
-          <ImagePlus size={13} /> Add reference image…
+        <button className="btn small add-layer" onClick={() => fileRef.current?.click()} title={t('A picture to trace from, for example a map made in another tool')}>
+          <ImagePlus size={13} /> {t('Add reference image…')}
         </button>
         {input}
       </li>
@@ -225,19 +230,19 @@ function ReferenceItem() {
   return (
     <li className={'layer-item' + (ref.visible ? '' : ' off')}>
       <div className="layer-row">
-        <button className="icon-btn small" onClick={() => setReference({ visible: !ref.visible }, ref.visible ? 'Hide reference image' : 'Show reference image')} title={ref.visible ? 'Hide' : 'Show'}>
+        <button className="icon-btn small" onClick={() => setReference({ visible: !ref.visible }, ref.visible ? t('Hide reference image') : t('Show reference image'))} title={ref.visible ? t('Hide') : t('Show')}>
           {ref.visible ? <Eye size={14} /> : <EyeOff size={14} />}
         </button>
-        <button className="layer-name" onClick={() => setOpen(!open)} title="A picture to trace from; it never changes your terrain">
-          Reference image
+        <button className="layer-name" onClick={() => setOpen(!open)} title={t('A picture to trace from; it never changes your terrain')}>
+          {t('Reference image')}
         </button>
         <button
           className={'icon-btn small' + (ref.locked ? ' on' : '')}
           onClick={() => {
-            setReference({ locked: !ref.locked }, ref.locked ? 'Unlock reference image' : 'Lock reference image');
+            setReference({ locked: !ref.locked }, ref.locked ? t('Unlock reference image') : t('Lock reference image'));
             if (!ref.locked) set({ referenceEdit: false });
           }}
-          title={ref.locked ? 'Unlock to move or resize' : 'Lock in place'}
+          title={ref.locked ? t('Unlock to move or resize') : t('Lock in place')}
         >
           {ref.locked ? <Lock size={13} /> : <LockOpen size={13} />}
         </button>
@@ -245,34 +250,34 @@ function ReferenceItem() {
       {open && (
         <div className="layer-detail reference-detail">
           <label>
-            Opacity
-            <input type="range" min={0.05} max={1} step={0.01} value={ref.opacity} onChange={(e) => setReference({ opacity: parseFloat(e.target.value) }, 'Reference opacity', 'ref-opacity')} />
+            {t('Opacity')}
+            <input type="range" min={0.05} max={1} step={0.01} value={ref.opacity} onChange={(e) => setReference({ opacity: parseFloat(e.target.value) }, t('Reference opacity'), 'ref-opacity')} />
             <output>{Math.round(ref.opacity * 100)}%</output>
           </label>
           <div className="btn-row">
-            <button className={'btn small' + (editing ? ' on' : '')} disabled={ref.locked} onClick={() => set({ referenceEdit: !editing })} title={ref.locked ? 'Unlock it first' : 'Drag to move, drag a corner to resize'}>
-              <Move size={13} /> {editing ? 'Done' : 'Move & resize'}
+            <button className={'btn small' + (editing ? ' on' : '')} disabled={ref.locked} onClick={() => set({ referenceEdit: !editing })} title={ref.locked ? t('Unlock it first') : t('Drag to move, drag a corner to resize')}>
+              <Move size={13} /> {editing ? t('Done') : t('Move & resize')}
             </button>
-            <button className="btn small" disabled={ref.locked} onClick={() => setReference(fitToMapOf(ref.assetId, false), 'Fit reference image')} title="Fit inside the map, keeping its proportions">
-              Fit
+            <button className="btn small" disabled={ref.locked} onClick={() => setReference(fitToMapOf(ref.assetId, false), t('Fit reference image'))} title={t('Fit inside the map, keeping its proportions')}>
+              {t('Fit')}
             </button>
-            <button className="btn small" disabled={ref.locked} onClick={() => setReference(fitToMap(1, 1, true), 'Stretch reference image')} title="Cover the whole map exactly (for a world map with the same proportions)">
-              Stretch to map
+            <button className="btn small" disabled={ref.locked} onClick={() => setReference(fitToMap(1, 1, true), t('Stretch reference image'))} title={t('Cover the whole map exactly (for a world map with the same proportions)')}>
+              {t('Stretch to map')}
             </button>
           </div>
-          <Toggle label="Include in image exports" checked={ref.inExport} onChange={(v) => setReference({ inExport: v }, 'Reference in exports')} />
+          <Toggle label={t('Include in image exports')} checked={ref.inExport} onChange={(v) => setReference({ inExport: v }, t('Reference in exports'))} />
           <div className="btn-row">
             <button className="btn small" onClick={() => fileRef.current?.click()}>
-              <ImagePlus size={13} /> Replace…
+              <ImagePlus size={13} /> {t('Replace…')}
             </button>
             <button
               className="btn small danger"
               onClick={() => {
                 set({ referenceEdit: false });
-                setReference(null, 'Remove reference image');
+                setReference(null, t('Remove reference image'));
               }}
             >
-              <Trash2 size={13} /> Remove
+              <Trash2 size={13} /> {t('Remove')}
             </button>
           </div>
           {input}

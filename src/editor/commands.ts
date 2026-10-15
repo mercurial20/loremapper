@@ -12,6 +12,7 @@ import type {
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import type { ResolvedPeak } from '../terrain/peaks';
+import { t } from '../i18n';
 
 const commit = (...a: Parameters<ReturnType<typeof useDoc.getState>['commit']>) => useDoc.getState().commit(...a);
 const doc = () => useDoc.getState().doc;
@@ -39,7 +40,7 @@ export function newObject(p: Partial<MapObject> & Pick<MapObject, 'assetId' | 'x
   };
 }
 
-export function addObjects(objs: MapObject[], label = 'Place object') {
+export function addObjects(objs: MapObject[], label = t('Place object')) {
   if (!objs.length) return;
   commit(label, (d) => {
     const objects = { ...d.objects };
@@ -48,7 +49,7 @@ export function addObjects(objs: MapObject[], label = 'Place object') {
   });
 }
 
-export function updateObjects(ids: string[], patch: Partial<MapObject> | ((o: MapObject) => Partial<MapObject>), label = 'Edit object', mergeKey?: string) {
+export function updateObjects(ids: string[], patch: Partial<MapObject> | ((o: MapObject) => Partial<MapObject>), label = t('Edit object'), mergeKey?: string) {
   commit(
     label,
     (d) => {
@@ -92,7 +93,7 @@ export function updateFeature<K extends keyof KindMap>(kind: K, id: string, patc
 
 export function deleteRefs(refs: SelectionRef[]) {
   if (!refs.length) return;
-  commit(refs.length > 1 ? `Delete ${refs.length} items` : 'Delete', (d) => {
+  commit(refs.length > 1 ? t('Delete {n} items', { n: refs.length }) : t('Delete'), (d) => {
     const objects = { ...d.objects };
     const paths = { ...d.paths };
     const territories = { ...d.territories };
@@ -149,14 +150,14 @@ export function duplicateRefs(refs: SelectionRef[], offset: number) {
     }
   }
   if (!out.length) return;
-  commit('Duplicate', () => ({ objects, paths, territories, labels }));
+  commit(t('Duplicate'), () => ({ objects, paths, territories, labels }));
   useEditor.getState().select(out);
 }
 
 /** Move selected items by a world offset (from their state in `base`). */
 export function moveRefs(refs: SelectionRef[], dx: number, dy: number, base = doc(), mergeKey?: string) {
   commit(
-    'Move',
+    t('Move'),
     (d) => {
       const objects = { ...d.objects };
       const paths = { ...d.paths };
@@ -198,7 +199,7 @@ export function reorderObjects(ids: string[], mode: 'front' | 'back' | 'forward'
   } else {
     for (let i = 1; i < order.length; i++) if (sel.has(order[i]) && !sel.has(order[i - 1])) [order[i], order[i - 1]] = [order[i - 1], order[i]];
   }
-  commit('Reorder', (dd) => {
+  commit(t('Reorder'), (dd) => {
     const objects = { ...dd.objects };
     order.forEach((id, i) => (objects[id] = { ...objects[id], z: i + 1 }));
     return { objects };
@@ -209,17 +210,17 @@ export function reorderObjects(ids: string[], mode: 'front' | 'back' | 'forward'
 
 export function addObjectLayer(name: string) {
   const layer: ObjectLayer = { id: uid('layer-'), name, visible: true, locked: false, opacity: 1 };
-  commit('Add layer', (d) => ({ objectLayers: [...d.objectLayers, layer] }));
+  commit(t('Add layer'), (d) => ({ objectLayers: [...d.objectLayers, layer] }));
   useEditor.getState().set({ activeObjectLayer: layer.id });
   return layer.id;
 }
 
 export function updateObjectLayer(id: string, patch: Partial<ObjectLayer>, mergeKey?: string) {
-  commit('Edit layer', (d) => ({ objectLayers: d.objectLayers.map((l) => (l.id === id ? { ...l, ...patch } : l)) }), mergeKey);
+  commit(t('Edit layer'), (d) => ({ objectLayers: d.objectLayers.map((l) => (l.id === id ? { ...l, ...patch } : l)) }), mergeKey);
 }
 
 export function moveObjectLayer(id: string, dir: -1 | 1) {
-  commit('Reorder layers', (d) => {
+  commit(t('Reorder layers'), (d) => {
     const arr = d.objectLayers.slice();
     const i = arr.findIndex((l) => l.id === id);
     const j = i + dir;
@@ -235,7 +236,7 @@ export function deleteObjectLayer(id: string) {
   if (d.objectLayers.length <= 1) return;
   const rest = d.objectLayers.filter((l) => l.id !== id);
   const target = rest[0].id;
-  commit('Delete layer', (dd) => {
+  commit(t('Delete layer'), (dd) => {
     const objects = { ...dd.objects };
     for (const o of Object.values(objects)) if (o.layerId === id) objects[o.id] = { ...o, layerId: target };
     return { objectLayers: rest, objects };
@@ -247,17 +248,17 @@ export function deleteObjectLayer(id: string) {
 
 export function annotatePeak(peak: ResolvedPeak, patch: Partial<PeakAnnotation>) {
   if (peak.annotationId) {
-    commit('Edit peak', (d) => ({ peaks: { ...d.peaks, [peak.annotationId!]: { ...d.peaks[peak.annotationId!], ...patch } } }), 'peak:' + peak.annotationId);
+    commit(t('Edit peak'), (d) => ({ peaks: { ...d.peaks, [peak.annotationId!]: { ...d.peaks[peak.annotationId!], ...patch } } }), 'peak:' + peak.annotationId);
     return peak.annotationId;
   }
   const ann: PeakAnnotation = { id: uid('peak-'), x: peak.x, y: peak.y, name: '', mode: 'designated', ...patch };
-  commit('Name peak', (d) => ({ peaks: { ...d.peaks, [ann.id]: ann } }));
+  commit(t('Name peak'), (d) => ({ peaks: { ...d.peaks, [ann.id]: ann } }));
   return ann.id;
 }
 
 export function designatePeak(x: number, y: number) {
   const ann: PeakAnnotation = { id: uid('peak-'), x, y, name: '', mode: 'designated' };
-  commit('Designate peak', (d) => ({ peaks: { ...d.peaks, [ann.id]: ann } }));
+  commit(t('Designate peak'), (d) => ({ peaks: { ...d.peaks, [ann.id]: ann } }));
   return ann.id;
 }
 
@@ -265,7 +266,7 @@ export function designatePeak(x: number, y: number) {
 export function removePeak(id: string) {
   const peak = useEditor.getState().peaks.find((p) => p.id === id);
   if (!peak) return;
-  commit('Remove peak', (d) => {
+  commit(t('Remove peak'), (d) => {
     const peaks = { ...d.peaks };
     if (peak.annotationId) delete peaks[peak.annotationId];
     const sup: PeakAnnotation = { id: uid('peak-'), x: peak.x, y: peak.y, name: '', mode: 'suppressed' };
@@ -275,13 +276,13 @@ export function removePeak(id: string) {
 }
 
 export function restoreSuppressedPeaks() {
-  commit('Restore peaks', (d) => ({ peaks: Object.fromEntries(Object.entries(d.peaks).filter(([, p]) => p.mode !== 'suppressed')) }));
+  commit(t('Restore peaks'), (d) => ({ peaks: Object.fromEntries(Object.entries(d.peaks).filter(([, p]) => p.mode !== 'suppressed')) }));
 }
 
 // ---------------------------------------------------------------- reference image
 
 /** Change (or with null, remove) the tracing picture; undoable. */
-export function setReference(patch: Partial<ReferenceImage> | null, label = 'Edit reference image', mergeKey?: string) {
+export function setReference(patch: Partial<ReferenceImage> | null, label = t('Edit reference image'), mergeKey?: string) {
   commit(
     label,
     (d) => {

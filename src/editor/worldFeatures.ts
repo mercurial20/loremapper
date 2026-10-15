@@ -7,6 +7,7 @@ import { STYLE_PRESETS } from '../render/styles';
 import { useDoc } from '../store/docStore';
 import { editor } from './Editor';
 import { newObject } from './commands';
+import { t } from '../i18n';
 
 const PLACE_ASSET: Record<NonNullable<WorldFeatures['places']>[number]['kind'], [asset: string, scale: number]> = {
   capital: ['builtin:city-capital', 1.45],
@@ -214,7 +215,7 @@ export function addWorldFeatures(f: WorldFeatures) {
   const after: MapDocument = { ...useDoc.getState().doc, territories, objects, labels };
   const set = (d: MapDocument) => useDoc.setState((s) => ({ doc: { ...s.doc, territories: d.territories, objects: d.objects, labels: d.labels }, revision: s.revision + 1 }));
   set(after);
-  history.push({ label: 'Add realms and places', cost: 0, undo: () => set(before), redo: () => set(after) });
+  history.push({ label: t('Add realms and places'), cost: 0, undo: () => set(before), redo: () => set(after) });
 }
 
 function label(text: string, x: number, y: number, size: number, font: MapLabel['font'], color: string, o: Partial<MapLabel> = {}): MapLabel {

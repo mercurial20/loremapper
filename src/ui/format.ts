@@ -6,8 +6,13 @@ export function formatPlace(geo: Geo, x: number, y: number, units: Units): strin
   return geo.flat ? formatPosition(...geo.posKm(x, y), units) : formatLatLon(geo.lat(y), geo.lon(x));
 }
 
-/** Sensible brush radius limits for a map, km. */
-export function brushRange(geo: Geo): { min: number; max: number } {
+/**
+ * Sensible brush radius limits for a map, km. The smallest brush reaches one
+ * cell of the layer it paints: elevation cells, the half-resolution biome and
+ * fog cells, or the water layer's cells, four times finer than the terrain.
+ */
+export function brushRange(geo: Geo, group?: string): { min: number; max: number } {
   const cell = geo.kmPerCellY;
-  return { min: Math.max(0.05, cell * 0.75), max: geo.flat ? Math.max(cell * 4, (geo.W * cell) / 2) : 6000 };
+  const min = group === 'water' ? cell / 8 : group === 'terrain' ? cell * 0.5 : cell * 0.75;
+  return { min: Math.max(0.005, min), max: geo.flat ? Math.max(cell * 4, (geo.W * cell) / 2) : 6000 };
 }

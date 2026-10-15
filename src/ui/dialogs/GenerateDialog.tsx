@@ -9,6 +9,8 @@ import { useDoc } from '../../store/docStore';
 import { useEditor } from '../../store/editorStore';
 import { Segmented, Slider, TextField, Toggle } from '../controls/controls';
 import { Modal } from './Modal';
+import { useTranslation } from 'react-i18next';
+import { N_ } from '../../i18n';
 
 type Blob = [cx: number, cy: number, rx: number, ry: number, sea?: boolean];
 
@@ -32,17 +34,17 @@ interface Preset {
 const dots = (pts: [number, number, number][]): Blob[] => pts.map(([x, y, r]) => [x, y, r, r * 0.75]);
 
 const PRESETS: Preset[] = [
-  { id: 'continents', label: 'Continents', desc: 'Three to six landmasses separated by oceans.', type: 'continents', template: 'none', glyph: [[20, 17, 13, 8], [52, 31, 11, 9], [82, 16, 11, 7], [80, 39, 6, 4]] },
-  { id: 'pangaea', label: 'Supercontinent', desc: 'Almost all land joined in one huge continent.', type: 'pangaea', template: 'none', glyph: [[46, 25, 31, 15], [88, 40, 3, 2]] },
-  { id: 'twoWorlds', label: 'Old & New World', desc: 'Two great landmasses on opposite sides of the planet.', type: 'continents', template: 'twoWorlds', planetOnly: true, glyph: [[24, 24, 13, 17], [76, 26, 13, 16]] },
-  { id: 'innerSea', label: 'Inner sea', desc: 'Lands ringing a large sea in the middle, like the Mediterranean.', type: 'continents', template: 'innerSea', glyph: [[50, 25, 34, 18], [50, 26, 17, 9, true], [92, 12, 4, 3]] },
-  { id: 'polar', label: 'Polar continent', desc: 'A frozen continent over one pole and smaller lands elsewhere.', type: 'continents', template: 'polar', planetOnly: true, glyph: [[50, 3, 50, 8], [28, 33, 10, 7], [70, 36, 9, 6]] },
-  { id: 'shattered', label: 'Shattered continent', desc: 'A supercontinent breaking apart along rifts and narrow seas.', type: 'continents', template: 'shattered', glyph: [[38, 19, 11, 8], [55, 27, 9, 8], [42, 35, 8, 6], [62, 13, 7, 5], [24, 30, 6, 5]] },
-  { id: 'mainland', label: 'Mainland & isles', desc: 'One large continent with island chains around it.', type: 'continents', template: 'mainland', glyph: [[38, 25, 24, 14], ...dots([[72, 12, 2.5], [78, 18, 2], [82, 26, 3], [79, 35, 2], [86, 40, 2.5], [14, 42, 2]])] },
+  { id: 'continents', label: N_('Continents'), desc: N_('Three to six landmasses separated by oceans.'), type: 'continents', template: 'none', glyph: [[20, 17, 13, 8], [52, 31, 11, 9], [82, 16, 11, 7], [80, 39, 6, 4]] },
+  { id: 'pangaea', label: N_('Supercontinent'), desc: N_('Almost all land joined in one huge continent.'), type: 'pangaea', template: 'none', glyph: [[46, 25, 31, 15], [88, 40, 3, 2]] },
+  { id: 'twoWorlds', label: N_('Old & New World'), desc: N_('Two great landmasses on opposite sides of the planet.'), type: 'continents', template: 'twoWorlds', planetOnly: true, glyph: [[24, 24, 13, 17], [76, 26, 13, 16]] },
+  { id: 'innerSea', label: N_('Inner sea'), desc: N_('Lands ringing a large sea in the middle, like the Mediterranean.'), type: 'continents', template: 'innerSea', glyph: [[50, 25, 34, 18], [50, 26, 17, 9, true], [92, 12, 4, 3]] },
+  { id: 'polar', label: N_('Polar continent'), desc: N_('A frozen continent over one pole and smaller lands elsewhere.'), type: 'continents', template: 'polar', planetOnly: true, glyph: [[50, 3, 50, 8], [28, 33, 10, 7], [70, 36, 9, 6]] },
+  { id: 'shattered', label: N_('Shattered continent'), desc: N_('A supercontinent breaking apart along rifts and narrow seas.'), type: 'continents', template: 'shattered', glyph: [[38, 19, 11, 8], [55, 27, 9, 8], [42, 35, 8, 6], [62, 13, 7, 5], [24, 30, 6, 5]] },
+  { id: 'mainland', label: N_('Mainland & isles'), desc: N_('One large continent with island chains around it.'), type: 'continents', template: 'mainland', glyph: [[38, 25, 24, 14], ...dots([[72, 12, 2.5], [78, 18, 2], [82, 26, 3], [79, 35, 2], [86, 40, 2.5], [14, 42, 2]])] },
   {
     id: 'archWorld',
-    label: 'Ocean world',
-    desc: 'Groups of islands scattered over a planet-wide ocean.',
+    label: N_('Ocean world'),
+    desc: N_('Groups of islands scattered over a planet-wide ocean.'),
     type: 'archipelago',
     template: 'none',
     land: 0.08,
@@ -50,8 +52,8 @@ const PRESETS: Preset[] = [
   },
   {
     id: 'sand',
-    label: 'Sand planet',
-    desc: 'No water at all: endless dunes over old ocean basins, rocky plateaus and mountain walls. New every time.',
+    label: N_('Sand planet'),
+    desc: N_('No water at all: endless dunes over old ocean basins, rocky plateaus and mountain walls. New every time.'),
     type: 'continents',
     template: 'none',
     land: 0.45,
@@ -60,19 +62,19 @@ const PRESETS: Preset[] = [
   },
   {
     id: 'snow',
-    label: 'Snow planet',
-    desc: 'No open water: snowfields and frozen basins, with bare ground on windswept ridges and slopes. New every time.',
+    label: N_('Snow planet'),
+    desc: N_('No open water: snowfields and frozen basins, with bare ground on windswept ridges and slopes. New every time.'),
     type: 'continents',
     template: 'none',
     land: 0.45,
     surface: 'snow',
     glyph: [[30, 20, 18, 10], [72, 32, 16, 9], [84, 10, 6, 4]],
   },
-  { id: 'island', label: 'Island', desc: 'Adds one island in the current view, keeping the rest of the map.', type: 'island', template: 'none', view: true, land: 0.35, glyph: [[50, 25, 17, 11]] },
+  { id: 'island', label: N_('Island'), desc: N_('Adds one island in the current view, keeping the rest of the map.'), type: 'island', template: 'none', view: true, land: 0.35, glyph: [[50, 25, 17, 11]] },
   {
     id: 'archipelago',
-    label: 'Archipelago',
-    desc: 'Adds a chain of islands in the current view, keeping the rest of the map.',
+    label: N_('Archipelago'),
+    desc: N_('Adds a chain of islands in the current view, keeping the rest of the map.'),
     type: 'archipelago',
     template: 'none',
     view: true,
@@ -82,19 +84,19 @@ const PRESETS: Preset[] = [
 ];
 
 const REALISM: { value: Realism; label: string; seconds: number; desc: string }[] = [
-  { value: 'easy', label: 'Easy', seconds: 3, desc: 'Tectonic plates raise the land and rivers wear it into valleys and ridges; winds, rain shadows, rivers and biomes.' },
-  { value: 'medium', label: 'Medium', seconds: 3.5, desc: 'Lets the river network settle further, for longer rivers and cleaner valleys.' },
-  { value: 'high', label: 'High', seconds: 4.5, desc: 'Settles the river network fully and rounds ridges by soil creep.' },
-  { value: 'ultra', label: 'Ultra', seconds: 9, desc: 'Also carves fine valleys at full resolution. The slowest option.' },
+  { value: 'easy', label: N_('Easy'), seconds: 3, desc: N_('Tectonic plates raise the land and rivers wear it into valleys and ridges; winds, rain shadows, rivers and biomes.') },
+  { value: 'medium', label: N_('Medium'), seconds: 3.5, desc: N_('Lets the river network settle further, for longer rivers and cleaner valleys.') },
+  { value: 'high', label: N_('High'), seconds: 4.5, desc: N_('Settles the river network fully and rounds ridges by soil creep.') },
+  { value: 'ultra', label: N_('Ultra'), seconds: 9, desc: N_('Also carves fine valleys at full resolution. The slowest option.') },
 ];
 
 /** Flat maps: the climate at the map's centre, as a latitude on an Earth-like world. */
 const CLIMATE_ZONES = [
-  { value: '10', label: 'Tropical' },
-  { value: '27', label: 'Dry belt' },
-  { value: '45', label: 'Temperate' },
-  { value: '60', label: 'Cold' },
-  { value: '72', label: 'Polar' },
+  { value: '10', label: N_('Tropical') },
+  { value: '27', label: N_('Dry belt') },
+  { value: '45', label: N_('Temperate') },
+  { value: '60', label: N_('Cold') },
+  { value: '72', label: N_('Polar') },
 ];
 
 const describe = (v: number, labels: string[]) => labels[Math.min(labels.length - 1, Math.floor(((v + 1) / 2) * labels.length))];
@@ -140,6 +142,7 @@ function PreviewCanvas({ image, busy, className, aspect }: { image: ImageData | 
 }
 
 export function GenerateDialog() {
+  const { t } = useTranslation();
   const set = useEditor((s) => s.set);
   const units = useEditor((s) => s.units);
   const planet = useDoc((s) => s.meta?.planet);
@@ -240,34 +243,34 @@ export function GenerateDialog() {
   const sizeFactor = planet ? (planet.gridWidth * planet.gridHeight) / (4096 * 2048) : 1;
   const secs = (x: number) => {
     const s = x * sizeFactor;
-    return s < 60 ? `≈ ${Math.max(1, Math.round(s))} s` : `≈ ${Math.round(s / 60)} min`;
+    return s < 60 ? t('≈ {n} s', { n: Math.max(1, Math.round(s)) }) : t('≈ {n} min', { n: Math.round(s / 60) });
   };
   const mapKm2 = planet ? surfaceAreaKm2(planet) : 510e6;
   const world = PRESETS.filter((p) => !p.view && !(flat && p.planetOnly));
   const aspect = flat && planet ? `${planet.gridWidth} / ${planet.gridHeight}` : '2 / 1';
   const inView = PRESETS.filter((p) => p.view);
   const card = (p: Preset) => (
-    <button key={p.id} className={'preset-card' + (p.id === presetId ? ' on' : '')} onClick={() => choosePreset(p)} title={p.desc}>
+    <button key={p.id} className={'preset-card' + (p.id === presetId ? ' on' : '')} onClick={() => choosePreset(p)} title={t(p.desc)}>
       <Glyph blobs={p.glyph} view={p.view} surface={p.surface} />
-      <span>{p.label}</span>
+      <span>{t(p.label)}</span>
     </button>
   );
 
   return (
     <Modal
-      title="Generate world"
+      title={t('Generate world')}
       wide
       onClose={close}
       footer={
         <div className="btn-row end">
           <span className="gen-foot-hint">
-            <Clock size={13} /> {r.label}: {secs(r.seconds)} · you can undo it
+            <Clock size={13} /> {t('{level}: {time} · you can undo it', { level: t(r.label), time: secs(r.seconds) })}
           </span>
           <button className="btn" onClick={close}>
-            Cancel
+            {t('Cancel')}
           </button>
           <button className="btn primary" onClick={go}>
-            <WandSparkles size={14} /> Generate
+            <WandSparkles size={14} /> {t('Generate')}
           </button>
         </div>
       }
@@ -275,23 +278,25 @@ export function GenerateDialog() {
       <div className="gen-layout">
         <div className="gen-left">
           <h3 className="gen-h">
-            {flat ? 'Whole map' : 'Whole planet'} <small>replaces the map</small>
+            {flat ? t('Whole map') : t('Whole planet')} <small>{t('replaces the map')}</small>
           </h3>
           <div className="preset-grid">{world.map(card)}</div>
-          <h3 className="gen-h">In the current view <small>adds to the map</small></h3>
+          <h3 className="gen-h">
+            {t('In the current view')} <small>{t('adds to the map')}</small>
+          </h3>
           <div className="preset-grid two">{inView.map(card)}</div>
-          <p className="hint">{preset.desc}</p>
+          <p className="hint">{t(preset.desc)}</p>
 
           {flat && (
             <>
-              <h3 className="gen-h">Climate</h3>
-              <Segmented value={climateLat} onChange={setClimateLat} options={CLIMATE_ZONES} />
+              <h3 className="gen-h">{t('Climate')}</h3>
+              <Segmented value={climateLat} onChange={setClimateLat} options={CLIMATE_ZONES.map((z) => ({ ...z, label: t(z.label) }))} />
             </>
           )}
-          <h3 className="gen-h">Realism</h3>
-          <Segmented value={realism} onChange={setRealism} options={REALISM.map((x) => ({ value: x.value, label: x.label, title: `${x.desc} (${secs(x.seconds)})` }))} />
+          <h3 className="gen-h">{t('Realism')}</h3>
+          <Segmented value={realism} onChange={setRealism} options={REALISM.map((x) => ({ value: x.value, label: t(x.label), title: `${t(x.desc)} (${secs(x.seconds)})` }))} />
           <p className="hint">
-            {r.desc} <b>{secs(r.seconds)}</b>
+            {t(r.desc)} <b>{secs(r.seconds)}</b>
             {(realism === 'high' || realism === 'ultra') && ' — this can take a while; you can cancel it.'}
           </p>
         </div>
@@ -300,19 +305,19 @@ export function GenerateDialog() {
           {preset.view ? (
             <div className="gen-preview placeholder">
               <Glyph blobs={preset.glyph} view />
-              <p className="hint">Land is generated inside what you see on the map now. Zoom or pan first to choose where it goes.</p>
+              <p className="hint">{t('Land is generated inside what you see on the map now. Zoom or pan first to choose where it goes.')}</p>
             </div>
           ) : (
             <PreviewCanvas image={preview} busy={previewBusy} aspect={aspect} />
           )}
           <div className="seed-row">
-            <TextField label="Seed" value={seed} onChange={setSeed} />
-            <button className="icon-btn" title="Random seed" onClick={() => setSeed(randomSeed())}>
+            <TextField label={t('Seed')} value={seed} onChange={setSeed} />
+            <button className="icon-btn" title={t('Random seed')} onClick={() => setSeed(randomSeed())}>
               <Dices size={18} />
             </button>
             {!preset.view && (
-              <button className="btn small" title="Show six other seeds with these settings" onClick={showVariants}>
-                <LayoutGrid size={13} /> Variants
+              <button className="btn small" title={t('Show six other seeds with these settings')} onClick={showVariants}>
+                <LayoutGrid size={13} /> {t('Variants')}
               </button>
             )}
           </div>
@@ -325,37 +330,37 @@ export function GenerateDialog() {
               ))}
             </div>
           )}
-          <p className="hint">Same seed and settings always give the same world in this version of Loremapper.</p>
+          <p className="hint">{t('Same seed and settings always give the same world in this version of Loremapper.')}</p>
         </div>
       </div>
 
       <button className={'gen-advanced-toggle' + (advanced ? ' open' : '')} onClick={() => setAdvanced(!advanced)}>
-        <ChevronDown size={14} /> Advanced settings
+        <ChevronDown size={14} /> {t('Advanced settings')}
       </button>
       {advanced && (
         <div className="gen-advanced">
           {preset.view ? (
-            <Slider label="Land in view" value={land} min={0.05} max={0.7} onChange={setLand} format={(v) => `${Math.round(v * 100)}%`} />
+            <Slider label={t('Land in view')} value={land} min={0.05} max={0.7} onChange={setLand} format={(v) => `${Math.round(v * 100)}%`} />
           ) : (
-            <Slider label={flat ? 'Land' : 'Land (true surface area)'} value={land} min={0.03} max={0.7} onChange={setLand} format={(v) => `${Math.round(v * 100)}% · ${formatArea(v * mapKm2, units)}`} />
+            <Slider label={flat ? t('Land') : t('Land (true surface area)')} value={land} min={0.03} max={0.7} onChange={setLand} format={(v) => `${Math.round(v * 100)}% · ${formatArea(v * mapKm2, units)}`} />
           )}
-          <Slider label="Mountain height" value={mountains} min={0} max={1} onChange={setMountains} format={(v) => `up to ${formatHeight(v * (planet?.maxElevation ?? 10000) * 0.95, units)}`} />
-          <Slider label="Hills" value={rough} min={0} max={1} onChange={setRough} format={(v) => describe(v * 2 - 1, ['Flat plains', 'Gentle', 'Hilly', 'Rugged'])} />
-          <Slider label="Temperature" value={warmth} min={-1} max={1} onChange={setWarmth} format={(v) => describe(v, ['Ice age', 'Cool', 'Earth-like', 'Earth-like', 'Warm', 'Hothouse'])} />
-          <Slider label="Rainfall" value={wetness} min={-1} max={1} onChange={setWetness} format={(v) => describe(v, ['Arid', 'Dry', 'Earth-like', 'Earth-like', 'Wet', 'Lush'])} />
+          <Slider label={t('Mountain height')} value={mountains} min={0} max={1} onChange={setMountains} format={(v) => t('up to {h}', { h: formatHeight(v * (planet?.maxElevation ?? 10000) * 0.95, units) })} />
+          <Slider label={t('Hills')} value={rough} min={0} max={1} onChange={setRough} format={(v) => describe(v * 2 - 1, [t('Flat plains'), t('Gentle'), t('Hilly'), t('Rugged')])} />
+          <Slider label={t('Temperature')} value={warmth} min={-1} max={1} onChange={setWarmth} format={(v) => describe(v, [t('Ice age'), t('Cool'), t('Earth-like'), t('Earth-like'), t('Warm'), t('Hothouse')])} />
+          <Slider label={t('Rainfall')} value={wetness} min={-1} max={1} onChange={setWetness} format={(v) => describe(v, [t('Arid'), t('Dry'), t('Earth-like'), t('Earth-like'), t('Wet'), t('Lush')])} />
           <Segmented
-            label="Rivers"
+            label={t('Rivers')}
             value={rivers}
             onChange={setRivers}
             options={[
-              { value: 'none', label: 'None' },
-              { value: 'few', label: 'Few' },
-              { value: 'normal', label: 'Normal' },
-              { value: 'many', label: 'Many' },
+              { value: 'none', label: t('None') },
+              { value: 'few', label: t('Few') },
+              { value: 'normal', label: t('Normal') },
+              { value: 'many', label: t('Many') },
             ]}
           />
-          <Toggle label="Paint biomes by climate" checked={biomes} onChange={setBiomes} />
-          <Toggle label="Scatter named settlements" checked={settlements} onChange={setSettlements} />
+          <Toggle label={t('Paint biomes by climate')} checked={biomes} onChange={setBiomes} />
+          <Toggle label={t('Scatter named settlements')} checked={settlements} onChange={setSettlements} />
         </div>
       )}
     </Modal>

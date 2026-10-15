@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { displayToKm, displayToM, heightUnit, kmToDisplay, lengthUnit, mToDisplay } from '../../core/units';
 import { useEditor } from '../../store/editorStore';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export function Slider(props: {
   label: string;
@@ -182,6 +183,7 @@ export function Select<T extends string>(props: { label: string; value: T; optio
 }
 
 export function ColorField(props: { label: string; value: string; onChange: (v: string) => void; swatches?: string[] }) {
+  const { t } = useTranslation();
   return (
     <div className="ctl color">
       <span>{props.label}</span>
@@ -189,11 +191,24 @@ export function ColorField(props: { label: string; value: string; onChange: (v: 
         {props.swatches?.map((c) => (
           <button key={c} className={'swatch' + (c.toLowerCase() === props.value.toLowerCase() ? ' on' : '')} style={{ background: c }} onClick={() => props.onChange(c)} title={c} />
         ))}
-        <label className="swatch custom" style={{ background: props.value }} title="Custom colour">
+        <label className="swatch custom" style={{ background: props.value }} title={t('Custom colour')}>
           <input type="color" value={props.value} onChange={(e) => props.onChange(e.target.value)} />
         </label>
       </div>
     </div>
+  );
+}
+
+/**
+ * A small "alpha" mark beside a feature that is still being tested; hovering it
+ * explains. Its empty title keeps the surrounding control's tooltip away.
+ */
+export function AlphaBadge({ tip }: { tip: string }) {
+  const { t } = useTranslation();
+  return (
+    <span className="alpha-badge" title="" data-tip={tip} aria-label={`${t('alpha')}: ${tip}`}>
+      {t('alpha')}
+    </span>
   );
 }
 

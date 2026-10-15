@@ -1,3 +1,5 @@
+import { N_ } from '../i18n/mark';
+
 /**
  * World map projections for exporting a planet. Each one maps longitude and
  * latitude (radians; longitude 0 at the map's centre) to plane coordinates
@@ -50,13 +52,13 @@ const RAD = PI / 180;
 const wrapLon = (l: number) => l - 2 * PI * Math.floor((l + PI) / (2 * PI));
 
 export const PROJECTIONS: { id: ProjectionId; name: string; description: string }[] = [
-  { id: 'equirectangular', name: 'Equirectangular', description: 'The editor’s own grid: latitude and longitude as straight lines. Stretches the far north and south.' },
-  { id: 'equalEarth', name: 'Equal Earth', description: 'A modern atlas map like the Robinson projection, but with every area in true proportion.' },
-  { id: 'mollweide', name: 'Mollweide', description: 'An oval world map with true areas: the classic for whole-planet comparisons.' },
-  { id: 'mercator', name: 'Mercator', description: 'The navigator’s map: true shapes and angles, but the poles swell without limit (cut at 85°).' },
-  { id: 'orthographic', name: 'Globe', description: 'The planet as seen from space, centred wherever you like.' },
-  { id: 'azimuthal', name: 'Azimuthal (polar)', description: 'Distances and directions true from the centre: a pole-centred disk, or centred anywhere.' },
-  { id: 'gott', name: 'Gott double-sided', description: 'Gott, Goldberg & Vanderbei (2021): the northern and southern hemispheres as two disks joined along the equator, the least distorted flat map known.' },
+  { id: 'equirectangular', name: N_('Equirectangular'), description: N_('The editor’s own grid: latitude and longitude as straight lines. Stretches the far north and south.') },
+  { id: 'equalEarth', name: N_('Equal Earth'), description: N_('A modern atlas map like the Robinson projection, but with every area in true proportion.') },
+  { id: 'mollweide', name: N_('Mollweide'), description: N_('An oval world map with true areas: the classic for whole-planet comparisons.') },
+  { id: 'mercator', name: N_('Mercator'), description: N_('The navigator’s map: true shapes and angles, but the poles swell without limit (cut at 85°).') },
+  { id: 'orthographic', name: N_('Globe'), description: N_('The planet as seen from space, centred wherever you like.') },
+  { id: 'azimuthal', name: N_('Azimuthal (polar)'), description: N_('Distances and directions true from the centre: a pole-centred disk, or centred anywhere.') },
+  { id: 'gott', name: N_('Gott double-sided'), description: N_('Gott, Goldberg & Vanderbei (2021): the northern and southern hemispheres as two disks joined along the equator, the least distorted flat map known.') },
 ];
 
 // --------------------------------------------------------------- pseudo-cylindrical helpers

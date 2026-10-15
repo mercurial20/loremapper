@@ -1,7 +1,7 @@
 {
   "name": "loremapper",
   "private": true,
-  "version": "1.2.2-alpha.1",
+  "version": "1.2.3-alpha.1",
   "description": "Local-first fantasy world map editor: sculpt terrain, paint biomes, place illustrated assets, draw borders and fog of war.",
   "license": "MIT",
   "type": "module",
@@ -21,7 +21,8 @@
     "preview": "vite preview",
     "lint": "oxlint",
     "test": "vitest run",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "i18n": "node scripts/i18n-sync.mjs"
   },
   "dependencies": {
     "@fontsource-variable/cinzel": "^5.3.0",
@@ -29,12 +30,14 @@
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource/im-fell-english": "^5.3.0",
     "fflate": "^0.8.3",
+    "i18next": "^26.4.4",
     "idb": "^8.0.4",
     "lucide-react": "^1.53.0",
     "pixi.js": "^8.22.0",
     "posthog-js": "^1.438.7",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-i18next": "^17.0.16",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

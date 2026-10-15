@@ -1,10 +1,11 @@
 import { arch, asset, box, C, glowDef, INK, ink, pine, rock, shadow, sparkle, tree, waves, type StarterAsset } from './kit';
+import { N_ } from '../../i18n/mark';
 
-const CAT = 'World features';
+const CAT = N_('World features');
 
 const bridge = asset(
   'bridge',
-  'Stone bridge',
+  N_('Stone bridge'),
   CAT,
   ['bridge', 'river', 'crossing', 'road'],
   128,
@@ -20,7 +21,7 @@ const bridge = asset(
 
 const signpost = asset(
   'signpost',
-  'Road signpost',
+  N_('Road signpost'),
   CAT,
   ['road', 'sign', 'signpost', 'crossroads', 'milestone'],
   96,
@@ -37,7 +38,7 @@ const signpost = asset(
 
 const forest = asset(
   'forest',
-  'Forest',
+  N_('Forest'),
   CAT,
   ['forest', 'woods', 'trees', 'woodland'],
   128,
@@ -54,7 +55,7 @@ const forest = asset(
 
 const pineForest = asset(
   'forest-pine',
-  'Pine forest',
+  N_('Pine forest'),
   CAT,
   ['forest', 'pine', 'conifer', 'taiga', 'trees'],
   128,
@@ -77,7 +78,7 @@ const pineForest = asset(
 
 const lake = asset(
   'lake',
-  'Lake',
+  N_('Lake'),
   CAT,
   ['lake', 'water', 'pond', 'loch'],
   128,
@@ -100,7 +101,7 @@ const pagodaRoof = (cx: number, y: number, w: number, h: number) =>
 
 const temple = asset(
   'temple',
-  'Temple',
+  N_('Temple'),
   CAT,
   ['temple', 'shrine', 'pagoda', 'monastery', 'holy'],
   112,
@@ -125,7 +126,7 @@ const stone = (x: number, base: number, w: number, h: number, lean = 0) =>
 
 const standingStones = asset(
   'monument-stones',
-  'Standing stones',
+  N_('Standing stones'),
   CAT,
   ['monument', 'ancient', 'stones', 'henge', 'druid', 'ritual'],
   128,
@@ -146,7 +147,7 @@ const standingStones = asset(
 
 const obelisk = asset(
   'monument-obelisk',
-  'Ancient obelisk',
+  N_('Ancient obelisk'),
   CAT,
   ['monument', 'obelisk', 'ancient', 'pillar', 'wonder'],
   96,
@@ -164,7 +165,7 @@ const obelisk = asset(
 
 const cave = asset(
   'cave',
-  'Cave',
+  N_('Cave'),
   CAT,
   ['cave', 'cavern', 'lair', 'grotto', 'underground'],
   128,
@@ -183,7 +184,7 @@ const cave = asset(
 
 const harbor = asset(
   'harbor',
-  'Harbor',
+  N_('Harbor'),
   CAT,
   ['harbor', 'harbour', 'docks', 'pier', 'port', 'coast'],
   128,
@@ -206,7 +207,7 @@ const harbor = asset(
 
 const ship = asset(
   'ship',
-  'Sailing ship',
+  N_('Sailing ship'),
   CAT,
   ['ship', 'galleon', 'sail', 'navy', 'sea', 'boat'],
   128,
@@ -236,7 +237,7 @@ const ship = asset(
 
 const magicTower = asset(
   'magic-tower',
-  'Wizard tower',
+  N_('Wizard tower'),
   CAT,
   ['magic', 'wizard', 'tower', 'arcane', 'mage', 'sorcery'],
   96,
@@ -264,7 +265,7 @@ const magicTower = asset(
 
 const danger = asset(
   'danger',
-  'Dangerous region',
+  N_('Dangerous region'),
   CAT,
   ['danger', 'skull', 'warning', 'death', 'cursed', 'hazard'],
   112,
@@ -294,7 +295,7 @@ const danger = asset(
 
 const whirlpool = asset(
   'whirlpool',
-  'Whirlpool',
+  N_('Whirlpool'),
   CAT,
   ['whirlpool', 'maelstrom', 'sea', 'danger', 'vortex'],
   112,
@@ -307,7 +308,7 @@ const whirlpool = asset(
 
 const battle = asset(
   'battle-site',
-  'Battle site',
+  N_('Battle site'),
   CAT,
   ['battle', 'war', 'swords', 'conflict', 'history'],
   112,

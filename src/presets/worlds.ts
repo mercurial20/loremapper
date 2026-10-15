@@ -1,5 +1,6 @@
 import type { GenerateOptions } from '../editor/generate';
 import type { MapPoint, Sketch } from '../terrain/gen/sketch';
+import { N_ } from '../i18n/mark';
 
 /**
  * What a built-in world brings besides terrain: realms (their borders follow
@@ -33,10 +34,10 @@ export interface WorldPreset {
 
 const INNER_SEA: WorldPreset = {
   id: 'inner-sea',
-  name: 'The Inner Sea',
-  tagline: 'A continent wrapped around a warm, sheltered sea',
+  name: N_('The Inner Sea'),
+  tagline: N_('A continent wrapped around a warm, sheltered sea'),
   description:
-    'A ring of lands around an inland sea, joined to the ocean by one narrow strait. Young mountains wall the north, worn old hills run down the east, and the southern shore dries into steppe and desert.',
+    N_('A ring of lands around an inland sea, joined to the ocean by one narrow strait. Young mountains wall the north, worn old hills run down the east, and the southern shore dries into steppe and desert.'),
   map: { kind: 'flat', widthKm: 5000, heightKm: 3600, maxElevation: 7000 },
   options: { seed: 2024, climateLat: 34, mountains: 0.7, roughness: 0.45, warmth: 0.15, wetness: 0 },
   sketch: {
@@ -65,10 +66,10 @@ const INNER_SEA: WorldPreset = {
 
 const WALLED_ISLE: WorldPreset = {
   id: 'walled-isle',
-  name: 'The Walled Isle',
-  tagline: 'An island fortress ringed by mountains',
+  name: N_('The Walled Isle'),
+  tagline: N_('An island fortress ringed by mountains'),
   description:
-    'A large island whose heart is a fertile basin around a lake, closed in by a ring of high peaks. One river breaks through the wall to the sea, and that gorge is the only easy way in.',
+    N_('A large island whose heart is a fertile basin around a lake, closed in by a ring of high peaks. One river breaks through the wall to the sea, and that gorge is the only easy way in.'),
   map: { kind: 'flat', widthKm: 1400, heightKm: 1200, maxElevation: 5500 },
   options: { seed: 77, climateLat: 48, mountains: 0.8, roughness: 0.35, warmth: 0, wetness: 0.2 },
   sketch: {
@@ -89,10 +90,10 @@ const WALLED_ISLE: WorldPreset = {
 
 const THOUSAND_ISLES: WorldPreset = {
   id: 'thousand-isles',
-  name: 'The Thousand Isles',
-  tagline: 'A volcanic archipelago with hidden coves',
+  name: N_('The Thousand Isles'),
+  tagline: N_('A volcanic archipelago with hidden coves'),
   description:
-    'A sprawling archipelago in a warm sea: one larger island with a smoking volcano, chains of smaller isles along an old arc, and countless islets and coves to hide a village in.',
+    N_('A sprawling archipelago in a warm sea: one larger island with a smoking volcano, chains of smaller isles along an old arc, and countless islets and coves to hide a village in.'),
   map: { kind: 'flat', widthKm: 2200, heightKm: 1600, maxElevation: 4500 },
   options: { seed: 1001, climateLat: 14, mountains: 0.6, roughness: 0.5, warmth: 0.3, wetness: 0.3 },
   sketch: {
@@ -129,10 +130,10 @@ const THOUSAND_ISLES: WorldPreset = {
 
 const THE_SPINE: WorldPreset = {
   id: 'the-spine',
-  name: 'The Spine of the World',
-  tagline: 'One great range splits a continent in two',
+  name: N_('The Spine of the World'),
+  tagline: N_('One great range splits a continent in two'),
   description:
-    'A long continent cut lengthwise by a single towering range. The western coast catches every storm and is green and wet; beyond the peaks lies a vast rain shadow of steppe and desert, with a few great rivers crossing it to the eastern sea.',
+    N_('A long continent cut lengthwise by a single towering range. The western coast catches every storm and is green and wet; beyond the peaks lies a vast rain shadow of steppe and desert, with a few great rivers crossing it to the eastern sea.'),
   map: { kind: 'flat', widthKm: 4200, heightKm: 4200, maxElevation: 8500 },
   options: { seed: 9, climateLat: 42, mountains: 0.9, roughness: 0.4, warmth: 0, wetness: 0 },
   sketch: {
@@ -199,10 +200,10 @@ function arc(lon: number, lat: number, r: number, b0: number, b1: number, n = 16
 
 const PANGAEA: WorldPreset = {
   id: 'pangaea',
-  name: 'Pangaea',
-  tagline: 'Earth 250 million years ago: one supercontinent',
+  name: N_('Pangaea'),
+  tagline: N_('Earth 250 million years ago: one supercontinent'),
   description:
-    'All of Earth’s land in one C-shaped supercontinent around the Tethys Sea, as palaeogeographers reconstruct it for the end of the Permian. The Central Pangean Mountains rise where the continents collided, the vast interior is hot desert, and the world ocean Panthalassa covers the rest of the globe.',
+    N_('All of Earth’s land in one C-shaped supercontinent around the Tethys Sea, as palaeogeographers reconstruct it for the end of the Permian. The Central Pangean Mountains rise where the continents collided, the vast interior is hot desert, and the world ocean Panthalassa covers the rest of the globe.'),
   map: { kind: 'planet', radiusKm: 6371, maxElevation: 8000 },
   options: { seed: 250, mountains: 0.75, roughness: 0.4, warmth: 0.45, wetness: -0.1 },
   sketch: {
@@ -255,10 +256,10 @@ const PROXIMA_RING = (() => {
 
 const PANGAEA_PROXIMA: WorldPreset = {
   id: 'pangaea-proxima',
-  name: 'Pangaea Proxima',
-  tagline: 'Earth 250 million years from now: a ring of land',
+  name: N_('Pangaea Proxima'),
+  tagline: N_('Earth 250 million years from now: a ring of land'),
   description:
-    'A forecast of the next supercontinent by the geologist Christopher Scotese: the Atlantic has closed, the Americas, Eurasia, Africa, Australia and Antarctica have merged into one great ring, and inside it lies the enclosed Medi-Pangaean Sea. Young mountains mark every collision; one vast ocean covers the rest of the planet.',
+    N_('A forecast of the next supercontinent by the geologist Christopher Scotese: the Atlantic has closed, the Americas, Eurasia, Africa, Australia and Antarctica have merged into one great ring, and inside it lies the enclosed Medi-Pangaean Sea. Young mountains mark every collision; one vast ocean covers the rest of the planet.'),
   map: { kind: 'planet', radiusKm: 6371, maxElevation: 9000 },
   options: { seed: 2502, mountains: 0.85, roughness: 0.4, warmth: 0.3, wetness: -0.05 },
   sketch: {
@@ -279,10 +280,10 @@ const PANGAEA_PROXIMA: WorldPreset = {
 // the Eyeball World: one face always toward its star (the substellar point is the map's centre)
 const EYEBALL: WorldPreset = {
   id: 'eyeball-world',
-  name: 'The Eyeball World',
-  tagline: 'A tidally locked planet: an ocean eye under an unmoving sun',
+  name: N_('The Eyeball World'),
+  tagline: N_('A tidally locked planet: an ocean eye under an unmoving sun'),
   description:
-    'Like many planets found around red dwarf stars, this world always turns the same face to its sun. Beneath the star lies a warm, stormy ocean, the eye; around it a ring of green and mountainous lands, and beyond the twilight zone a frozen night side under ice sheets that never see the day.',
+    N_('Like many planets found around red dwarf stars, this world always turns the same face to its sun. Beneath the star lies a warm, stormy ocean, the eye; around it a ring of green and mountainous lands, and beyond the twilight zone a frozen night side under ice sheets that never see the day.'),
   map: { kind: 'planet', radiusKm: 5800, maxElevation: 7500 },
   options: { seed: 1013, mountains: 0.7, roughness: 0.45, warmth: 0, wetness: 0.1 },
   sketch: {

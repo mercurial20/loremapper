@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { t } from '../i18n';
 import { assetLibrary } from '../assets/library';
 import { addObjects, newObject } from '../editor/commands';
 import { editor } from '../editor/Editor';
@@ -19,7 +20,7 @@ export function MapView() {
     void editor.init(el).catch((e) => {
       console.error(e);
       useEditor.getState().set({ busy: null });
-      useEditor.getState().notify('Could not start the editor: ' + (e instanceof Error ? e.message : String(e)), 'error');
+      useEditor.getState().notify(t('Could not start the editor: {error}', { error: e instanceof Error ? e.message : String(e) }), 'error');
     });
     const ro = new ResizeObserver(() => editor.renderer?.resize(el.clientWidth, el.clientHeight));
     ro.observe(el);
@@ -46,7 +47,7 @@ export function MapView() {
         const st = useEditor.getState();
         const layer = useDoc.getState().doc.objectLayers.find((l) => l.id === st.activeObjectLayer);
         if (layer?.locked) {
-          st.notify(`Layer “${layer.name}” is locked`);
+          st.notify(t('Layer “{name}” is locked', { name: t(layer.name) }));
           return;
         }
         if (!assetLibrary.has(id)) return;

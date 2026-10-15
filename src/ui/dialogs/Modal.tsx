@@ -1,7 +1,9 @@
 import { X } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export function Modal({ title, onClose, children, wide, footer }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean; footer?: ReactNode }) {
+  const { t } = useTranslation();
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -14,7 +16,7 @@ export function Modal({ title, onClose, children, wide, footer }: { title: strin
       <div className={'modal' + (wide ? ' wide' : '')} role="dialog" aria-label={title}>
         <header>
           <h2>{title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
+          <button className="icon-btn" onClick={onClose} aria-label={t('Close')}>
             <X size={18} />
           </button>
         </header>

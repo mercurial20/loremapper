@@ -7,6 +7,7 @@ import type { Geography, RegionInfo, RegionKind } from '../terrain/geography';
 import type { GeographyRequest } from '../terrain/geography.worker';
 import { addFeature } from './commands';
 import { editor } from './Editor';
+import { N_, t } from '../i18n';
 
 /**
  * Landmasses and water bodies of the current map, measured in a worker and
@@ -162,8 +163,8 @@ useEditor.subscribe((s, prev) => {
 
 // ---------------------------------------------------------------- names
 
-const KIND_LABEL: Record<RegionKind, string> = { continent: 'Continent', island: 'Island', islet: 'Islet', ocean: 'Ocean', sea: 'Inland sea', lake: 'Lake' };
-export const kindLabel = (k: RegionKind) => KIND_LABEL[k];
+const KIND_LABEL: Record<RegionKind, string> = { continent: N_('Continent'), island: N_('Island'), islet: N_('Islet'), ocean: N_('Ocean'), sea: N_('Inland sea'), lake: N_('Lake') };
+export const kindLabel = (k: RegionKind) => t(KIND_LABEL[k]);
 
 /** A name pinned inside this region, if any. */
 export function regionName(g: Geography, r: RegionInfo, names: Record<string, RegionName>): RegionName | null {
@@ -177,13 +178,13 @@ export function regionName(g: Geography, r: RegionInfo, names: Record<string, Re
 /** Placeholder name: kind and rank by size, e.g. "Continent 2". */
 export function defaultName(g: { land: RegionInfo[]; water: RegionInfo[] }, r: RegionInfo): string {
   const list = r.land ? g.land : g.water;
-  if (r.kind === 'ocean') return 'World ocean';
+  if (r.kind === 'ocean') return t('World ocean');
   let rank = 0;
   for (const x of list) {
     if (x.kind === r.kind) rank++;
     if (x === r || x.id === r.id) break;
   }
-  return `${KIND_LABEL[r.kind]} ${rank}`;
+  return `${kindLabel(r.kind)} ${rank}`;
 }
 
 export function setRegionName(r: RegionInfo, name: string) {
@@ -192,7 +193,7 @@ export function setRegionName(r: RegionInfo, name: string) {
   const existing = regionName(g, r, useDoc.getState().doc.regionNames);
   const entry: RegionName = existing ? { ...existing, name } : { id: uid('region-'), x: r.anchorX, y: r.anchorY, name };
   useDoc.getState().commit(
-    'Rename region',
+    t('Rename region'),
     (d) => {
       const regionNames = { ...d.regionNames };
       if (name.trim()) regionNames[entry.id] = entry;
@@ -226,7 +227,7 @@ export function labelRegion(r: RegionInfo, text: string) {
     hidden: false,
     locked: false,
   };
-  addFeature('label', l, 'Label region');
+  addFeature('label', l, t('Label region'));
   useEditor.getState().select([{ kind: 'label', id: l.id }]);
 }
 
@@ -268,10 +269,10 @@ export function landInside(g: Geography, poly: Vec2[], cellArea: (y: number) => 
 /** Territories whose centre lies on this landmass. */
 export function realmsOn(g: Geography, r: RegionInfo): string[] {
   const out: string[] = [];
-  for (const t of Object.values(useDoc.getState().doc.territories)) {
-    const [x, y] = polygonCentroid(t.points);
+  for (const terr of Object.values(useDoc.getState().doc.territories)) {
+    const [x, y] = polygonCentroid(terr.points);
     const at = regionAt(g, x, y);
-    if (at && at.land === r.land && at.id === r.id) out.push(t.name || 'Unnamed territory');
+    if (at && at.land === r.land && at.id === r.id) out.push(terr.name || t('Unnamed territory'));
   }
   return out;
 }

@@ -1,6 +1,6 @@
 import { FORMAT_VERSION, migrateProject } from '../model/serialization';
 import type { MapDocument, ProjectMeta } from '../model/types';
-import { RASTER_LAYERS, TerrainModel, type RasterLayer } from '../terrain/TerrainModel';
+import { RASTER_LAYERS, TerrainModel, WATER_DETAIL, type RasterLayer } from '../terrain/TerrainModel';
 import type { RasterArray } from '../terrain/TileGrid';
 import { db, dehydrateProject, hydrateProject, type ProjectRecord, type TileRecord } from './db';
 
@@ -32,6 +32,14 @@ export async function getProjectRecord(id: string): Promise<ProjectRecord | unde
   return raw ? hydrateProject(migrateProject(raw as unknown as Record<string, unknown>)) : undefined;
 }
 
+/** Repeat each cell of a square tile as a k × k block. */
+function upsample(src: Uint8Array, n: number, k: number): Uint8Array {
+  const m = n * k;
+  const out = new Uint8Array(m * m);
+  for (let y = 0; y < m; y++) for (let x = 0; x < m; x++) out[y * m + x] = src[((y / k) | 0) * n + ((x / k) | 0)];
+  return out;
+}
+
 function tileArray(layer: RasterLayer, buf: ArrayBuffer): RasterArray {
   return layer === 'height' ? new Float32Array(buf) : new Uint8Array(buf);
 }
@@ -48,6 +56,8 @@ export async function loadProject(id: string): Promise<{ record: ProjectRecord; 
     const g = model.grid(t.layer);
     const arr = tileArray(t.layer, t.data);
     if (arr.length === g.TS * g.TS * g.channels) g.tiles.set(t.index, arr);
+    // water painted with a 1.2.3 preview build, at the terrain's resolution
+    else if (t.layer === 'water' && arr.length === model.TS * model.TS) g.tiles.set(t.index, upsample(arr as Uint8Array, model.TS, WATER_DETAIL));
   }
   return { record, model };
 }
@@ -61,7 +71,7 @@ export async function putProjectRecord(meta: ProjectMeta, doc: MapDocument, mode
     formatVersion: FORMAT_VERSION,
     meta,
     doc,
-    rasterDefaults: { height: model.height.defaultValue, biome: model.biome.defaultValue, fog: model.fog.defaultValue },
+    rasterDefaults: { height: model.height.defaultValue, biome: model.biome.defaultValue, fog: model.fog.defaultValue, water: model.water.defaultValue },
     thumbnail: thumbnail ?? prev?.thumbnail,
     updatedAt: Date.now(),
   };
@@ -79,7 +89,7 @@ export async function saveDirtyTiles(projectId: string, model: TerrainModel): Pr
   let n = 0;
   const reset = new Set(model.persistReset);
   model.persistReset.clear();
-  const dirty: Record<RasterLayer, Set<number>> = { height: new Set(), biome: new Set(), fog: new Set() };
+  const dirty: Record<RasterLayer, Set<number>> = { height: new Set(), biome: new Set(), fog: new Set(), water: new Set() };
   for (const l of RASTER_LAYERS) {
     for (const k of model.persistDirty[l]) dirty[l].add(k);
     model.persistDirty[l].clear();

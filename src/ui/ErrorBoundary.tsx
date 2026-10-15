@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { t } from '../i18n';
 
 /** Keeps a failing panel from taking down the whole editor (and the map with it). */
 export class ErrorBoundary extends Component<{ children: ReactNode; label: string }, { error: Error | null }> {
@@ -16,10 +17,10 @@ export class ErrorBoundary extends Component<{ children: ReactNode; label: strin
     if (!this.state.error) return this.props.children;
     return (
       <div className="panel-error" role="alert">
-        <b>{this.props.label} hit a problem.</b>
+        <b>{t('{area} hit a problem.', { area: this.props.label })}</b>
         <small>{this.state.error.message}</small>
         <button className="btn small" onClick={() => this.setState({ error: null })}>
-          Try again
+          {t('Try again')}
         </button>
       </div>
     );

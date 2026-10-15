@@ -9,6 +9,7 @@ import { addWorldFeatures } from '../editor/worldFeatures';
 import { WORLD_PRESETS, type WorldPreset } from '../presets/worlds';
 import { useEditor } from '../store/editorStore';
 import { TextField } from './controls/controls';
+import { useTranslation } from 'react-i18next';
 
 /** A small drawing of a world's sketch: land, seas, ranges and volcanoes. */
 function SketchThumb({ preset }: { preset: WorldPreset }) {
@@ -41,6 +42,7 @@ function SketchThumb({ preset }: { preset: WorldPreset }) {
  * from its sketch. `sample` lets the read-only viewer build one to explore.
  */
 export function WorldPicker({ onBack, onCreated, sample }: { onBack: () => void; onCreated?: () => void; sample?: boolean }) {
+  const { t } = useTranslation();
   const units = useEditor((s) => s.units);
   const [pick, setPick] = useState<WorldPreset>(WORLD_PRESETS[0]);
   const [name, setName] = useState('');
@@ -52,7 +54,7 @@ export function WorldPicker({ onBack, onCreated, sample }: { onBack: () => void;
     try {
       const m = pick.map;
       const planet = m.kind === 'planet' ? { ...defaultPlanet('standard'), radiusKm: m.radiusKm } : flatMap(m.widthKm, m.heightKm, 'standard');
-      await editor.createMap(name.trim() || pick.name, { ...planet, maxElevation: m.maxElevation }, { source: `world:${pick.id}`, start: 'builtin' });
+      await editor.createMap(name.trim() || t(pick.name), { ...planet, maxElevation: m.maxElevation }, { source: `world:${pick.id}`, start: 'builtin' });
       onCreated?.();
       const o = pick.options;
       await generateWorld(
@@ -84,27 +86,27 @@ export function WorldPicker({ onBack, onCreated, sample }: { onBack: () => void;
   };
   return (
     <div className="new-map">
-      <h3 className="gen-h">Start from a built-in world</h3>
+      <h3 className="gen-h">{t('Start from a built-in world')}</h3>
       <div className="world-cards">
         {WORLD_PRESETS.map((p) => (
           <button key={p.id} className={'world-card' + (p.id === pick.id ? ' on' : '')} onClick={() => setPick(p)} aria-pressed={p.id === pick.id}>
             <SketchThumb preset={p} />
-            <b>{p.name}</b>
-            <small>{p.tagline}</small>
+            <b>{t(p.name)}</b>
+            <small>{t(p.tagline)}</small>
           </button>
         ))}
       </div>
       <div className="world-detail">
-        <p>{pick.description}</p>
+        <p>{t(pick.description)}</p>
         <p className="hint">
           {pick.map.kind === 'planet'
-            ? `A whole planet of ${formatLength(pick.map.radiusKm, units)} radius.`
-            : `A flat map of ${formatLength(pick.map.widthKm, units)} × ${formatLength(pick.map.heightKm, units)}.`}{' '}
-          The generator builds its relief, rivers, climate and towns, so you can reshape everything afterwards.
-          {pick.local && ' Kept on this computer only.'}
+            ? t('A whole planet of {r} radius.', { r: formatLength(pick.map.radiusKm, units) })
+            : t('A flat map of {w} × {h}.', { w: formatLength(pick.map.widthKm, units), h: formatLength(pick.map.heightKm, units) })}{' '}
+          {t('The generator builds its relief, rivers, climate and towns, so you can reshape everything afterwards.')}
+          {pick.local && ' ' + t('Kept on this computer only.')}
         </p>
       </div>
-      {!sample && <TextField label="Name" value={name} placeholder={pick.name} onChange={setName} />}
+      {!sample && <TextField label={t('Name')} value={name} placeholder={t(pick.name)} onChange={setName} />}
       {error && (
         <p className="form-error" role="alert">
           {error}
@@ -112,13 +114,13 @@ export function WorldPicker({ onBack, onCreated, sample }: { onBack: () => void;
       )}
       <div className="new-map-foot">
         <button className="btn ghost small" onClick={onBack} disabled={working}>
-          <ArrowLeft size={13} /> Back
+          <ArrowLeft size={13} /> {t('Back')}
         </button>
-        <a className="btn ghost small" href={COMMUNITY_LINKS.suggestWorld.href} target="_blank" rel="noopener noreferrer" title={COMMUNITY_LINKS.suggestWorld.title}>
-          {COMMUNITY_LINKS.suggestWorld.label} <ExternalLink size={12} />
+        <a className="btn ghost small" href={COMMUNITY_LINKS.suggestWorld.href} target="_blank" rel="noopener noreferrer" title={t(COMMUNITY_LINKS.suggestWorld.title)}>
+          {t(COMMUNITY_LINKS.suggestWorld.label)} <ExternalLink size={12} />
         </a>
         <button className="btn primary" onClick={create} disabled={working}>
-          {working ? <LoaderCircle size={14} className="spin" /> : <Castle size={14} />} Create {pick.name}
+          {working ? <LoaderCircle size={14} className="spin" /> : <Castle size={14} />} {t('Create {name}', { name: t(pick.name) })}
         </button>
       </div>
     </div>

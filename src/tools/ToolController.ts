@@ -28,8 +28,11 @@ import { hexToNumber, STYLE_PRESETS } from '../render/styles';
 import { useDoc } from '../store/docStore';
 import { brushGroupOf, togglePanel, useEditor, type ToolId } from '../store/editorStore';
 import { Stroke, type TerrainOp } from '../terrain/brushes';
+import { erodeRiver, newWaterCells, waterIn } from '../terrain/riverErosion';
+import { sampleSpline } from '../render/vectorGeometry';
 import type { TileChange } from '../terrain/TerrainModel';
 import { hitAny, hitPeak, hitVertex, insertionIndex, nearX, objectHandleHit, type HitContext } from './hitTest';
+import { i18n, t } from '../i18n';
 
 type Drag =
   // the Info tool pans too; a press that does not move is a click on `info`
@@ -57,6 +60,7 @@ const BRUSH_COLORS: Partial<Record<ToolId, number>> = {
   flatten: 0xf6d77c,
   ridge: 0xffb27a,
   erase: 0xff8a8a,
+  river: 0x7fd3ff,
 };
 
 function isTyping(e: KeyboardEvent) {
@@ -203,29 +207,29 @@ export class ToolController {
 
   private updateCursorStyle() {
     if (!this.canvas) return;
-    const t = this.tool;
+    const tool = this.tool;
     let c = 'crosshair';
     if (useEditor.getState().referenceEdit) c = 'move';
-    else if (t === 'pan') c = this.drag?.kind === 'pan' ? 'grabbing' : 'grab';
-    else if (t === 'select') c = 'default';
-    else if (t === 'info') c = this.drag?.kind === 'pan' && this.drag.info?.moved ? 'grabbing' : 'help';
-    else if (brushGroupOf(t)) c = 'none';
-    else if (t === 'label') c = 'text';
+    else if (tool === 'pan') c = this.drag?.kind === 'pan' ? 'grabbing' : 'grab';
+    else if (tool === 'select') c = 'default';
+    else if (tool === 'info') c = this.drag?.kind === 'pan' && this.drag.info?.moved ? 'grabbing' : 'help';
+    else if (brushGroupOf(tool)) c = 'none';
+    else if (tool === 'label') c = 'text';
     this.canvas.style.cursor = c;
   }
 
   private updateBrushCursor() {
     if (!editor.layers) return;
     const st = useEditor.getState();
-    const t = this.tool;
-    const g = brushGroupOf(t);
+    const tool = this.tool;
+    const g = brushGroupOf(tool);
     if (!g || !this.pointer.inside) {
       this.overlay().set({ brush: null });
     } else {
-      let color = BRUSH_COLORS[t] ?? 0xffffff;
-      if (t === 'paint') color = hexToNumber(STYLE_PRESETS.atlas.biomes[st.biome] ?? '#ffffff');
-      if (t === 'fog') color = this.fogOp() === 'fogHide' ? 0xd8ccff : 0xfff2a8;
-      if ((t === 'raise' || t === 'lower') && (this.shift || this.alt)) color = t === 'raise' ? 0x8fd6ff : 0xffffff;
+      let color = BRUSH_COLORS[tool] ?? 0xffffff;
+      if (tool === 'paint') color = hexToNumber(STYLE_PRESETS.atlas.biomes[st.biome] ?? '#ffffff');
+      if (tool === 'fog') color = this.fogOp() === 'fogHide' ? 0xd8ccff : 0xfff2a8;
+      if ((tool === 'raise' || tool === 'lower') && (this.shift || this.alt)) color = tool === 'raise' ? 0x8fd6ff : 0xffffff;
       const b = st.brushes[g];
       this.overlay().set({ brush: { x: this.pointer.x, y: this.pointer.y, radiusKm: b.radiusKm, falloff: b.falloff, color } });
     }
@@ -343,7 +347,7 @@ export class ToolController {
         break;
       case 'object':
         if (!st.assetId) {
-          st.notify('Pick an asset in the library first');
+          st.notify(t('Pick an asset in the library first'));
           useEditor.getState().set({ assetPanelOpen: true });
           return;
         }
@@ -421,7 +425,7 @@ export class ToolController {
           if (!o) break;
           let ang = (Math.atan2(nearX(editor.model.geo, o.x, x) - o.x, -(y - o.y)) * 180) / Math.PI;
           if (e.shiftKey) ang = Math.round(ang / 15) * 15;
-          updateObjects([d.id], { rotation: Math.round(ang * 10) / 10 }, 'Rotate', d.key);
+          updateObjects([d.id], { rotation: Math.round(ang * 10) / 10 }, t('Rotate'), d.key);
           break;
         }
         case 'scale': {
@@ -429,15 +433,15 @@ export class ToolController {
           if (!o) break;
           const dist = Math.hypot(nearX(editor.model.geo, o.x, x) - o.x, y - o.y);
           const s = clamp((d.startScale * dist) / Math.max(1e-6, d.startDist), 0.05, 40);
-          updateObjects([d.id], { scale: Math.round(s * 1000) / 1000 }, 'Scale', d.key);
+          updateObjects([d.id], { scale: Math.round(s * 1000) / 1000 }, t('Scale'), d.key);
           break;
         }
         case 'vertex':
           this.dragVertex(d, x, y);
           break;
         case 'labelAnchor': {
-          const t = useDoc.getState().doc.territories[d.id];
-          if (t) updateFeature('territory', d.id, { labelPos: [nearX(editor.model.geo, t.points[0][0], x), y] }, 'Move territory label', d.key);
+          const terr = useDoc.getState().doc.territories[d.id];
+          if (terr) updateFeature('territory', d.id, { labelPos: [nearX(editor.model.geo, terr.points[0][0], x), y] }, t('Move territory label'), d.key);
           break;
         }
         case 'freehand': {
@@ -527,7 +531,7 @@ export class ToolController {
     if (e.altKey && brushGroupOf(this.tool)) {
       const g = brushGroupOf(this.tool)!;
       const b = useEditor.getState().brushes[g];
-      useEditor.getState().setBrush(g, { radiusKm: clampRadius(b.radiusKm * Math.exp(-dy * 0.002)) });
+      useEditor.getState().setBrush(g, { radiusKm: clampRadius(b.radiusKm * Math.exp(-dy * 0.002), g) });
       return;
     }
     const rect = this.canvas!.getBoundingClientRect();
@@ -544,19 +548,19 @@ export class ToolController {
   private onDblClick = (e: MouseEvent) => {
     if (editor.projView) return;
     const [x, y] = this.world(e);
-    const t = this.tool;
+    const tool = this.tool;
     if (this.draft) {
       // the second click of the double-click already added a point; drop it
       if (this.draft.points.length > 2) this.draft.points.pop();
       this.finishDraft();
       return;
     }
-    if (t === 'measure') {
+    if (tool === 'measure') {
       this.measureDone = true;
       this.showMeasure(null);
       return;
     }
-    if (t === 'select') {
+    if (tool === 'select') {
       // insert a control point on the selected path / territory
       const sel = useEditor.getState().selection;
       if (sel.length !== 1) return;
@@ -568,8 +572,8 @@ export class ToolController {
       const idx = insertionIndex(item.points, px, y, ref.kind === 'territory');
       const pts = item.points.slice();
       pts.splice(idx, 0, [px, y]);
-      if (ref.kind === 'path') updateFeature('path', ref.id, { points: pts }, 'Add point');
-      else updateFeature('territory', ref.id, { points: pts }, 'Add point');
+      if (ref.kind === 'path') updateFeature('path', ref.id, { points: pts }, t('Add point'));
+      else updateFeature('territory', ref.id, { points: pts }, t('Add point'));
     }
   };
 
@@ -596,7 +600,7 @@ export class ToolController {
     const sl = useDoc.getState().doc.systemLayers;
     const lockedLayer = tool === 'paint' ? sl.biomes : tool === 'fog' ? sl.fog : tool === 'erase' ? null : sl.terrain;
     if (lockedLayer?.locked) {
-      useEditor.getState().notify('That layer is locked — unlock it in the Layers panel');
+      useEditor.getState().notify(t('That layer is locked — unlock it in the Layers panel'));
       return true;
     }
     return false;
@@ -630,6 +634,9 @@ export class ToolController {
       case 'fog':
         op = this.fogOp();
         break;
+      case 'river':
+        op = inv ? 'waterErase' : 'waterPaint';
+        break;
       default:
         op = 'erase';
     }
@@ -654,7 +661,8 @@ export class ToolController {
     d.stroke.setParams(st.brushes[g]);
     const geo = model.geo;
     const rCells = st.brushes[g].radiusKm / geo.kmPerCellY;
-    const spacing = Math.max(0.35, rCells * 0.16);
+    // dabs overlap at least by half, so even the finest river brush leaves no gaps
+    const spacing = Math.max(Math.min(0.35, rCells * 0.5), rCells * 0.16);
     const dx = geo.deltaX(d.last[0], x);
     const dy = y - d.last[1];
     const dist = Math.hypot(dx, dy);
@@ -681,7 +689,7 @@ export class ToolController {
       const after = { objects: cur.objects, paths: cur.paths, labels: cur.labels };
       const setVec = (v: typeof before) => useDoc.setState((s) => ({ doc: { ...s.doc, ...v }, revision: s.revision + 1 }));
       history.push({
-        label: 'Erase',
+        label: t('Erase'),
         cost: 4096 + (change ? [...change.before.values(), ...change.after.values()].reduce((a, t) => a + (t?.byteLength ?? 0), 0) : 0),
         undo: () => {
           if (change) model.applyTiles(change, 'before');
@@ -697,16 +705,26 @@ export class ToolController {
     }
     if (!change) return;
     const names: Record<TerrainOp, string> = {
-      raise: 'Raise terrain',
-      lower: 'Lower terrain',
-      smooth: 'Smooth terrain',
-      flatten: 'Flatten terrain',
-      ridge: 'Build mountains',
-      paint: 'Paint biome',
-      erase: 'Erase biome',
-      fogHide: 'Hide with fog',
-      fogReveal: 'Reveal fog',
+      raise: t('Raise terrain'),
+      lower: t('Lower terrain'),
+      smooth: t('Smooth terrain'),
+      flatten: t('Flatten terrain'),
+      ridge: t('Build mountains'),
+      paint: t('Paint biome'),
+      erase: t('Erase biome'),
+      fogHide: t('Hide with fog'),
+      fogReveal: t('Reveal fog'),
+      waterPaint: t('Paint river'),
+      waterErase: t('Erase water'),
     };
+    // painted rivers cut their bed and valley into the terrain, in the same undo step
+    if (stroke.op === 'waterPaint' && useEditor.getState().riverCarve) {
+      const carve = erodeRiver(model, { fresh: newWaterCells(model, change), wet: (x, y) => waterIn(model, x, y) });
+      if (carve) {
+        pushTileChanges([change, carve], names[stroke.op], model);
+        return;
+      }
+    }
     pushTileChange(change, names[stroke.op], model);
   }
 
@@ -776,8 +794,8 @@ export class ToolController {
               const min = ref.kind === 'path' ? 2 : 3;
               if (item.points.length > min) {
                 const pts = item.points.filter((_, i) => i !== vi);
-                if (ref.kind === 'path') updateFeature('path', ref.id, { points: pts }, 'Delete point');
-                else updateFeature('territory', ref.id, { points: pts }, 'Delete point');
+                if (ref.kind === 'path') updateFeature('path', ref.id, { points: pts }, t('Delete point'));
+                else updateFeature('territory', ref.id, { points: pts }, t('Delete point'));
               }
               return;
             }
@@ -868,7 +886,7 @@ export class ToolController {
       }
       next = { x: right ? fx : fx - w, y: below ? fy : fy - h, w, h };
     }
-    setReference(next, 'Move reference image', d.key);
+    setReference(next, t('Move reference image'), d.key);
   }
 
   /** Info tool: show the card of the landmass or water body clicked. */
@@ -916,8 +934,8 @@ export class ToolController {
     if (!item) return;
     const pts = item.points.slice();
     pts[d.index] = [nearX(editor.model!.geo, item.points[0][0], x), y];
-    if (d.ref.kind === 'path') updateFeature('path', d.ref.id, { points: pts }, 'Edit path', d.key);
-    else updateFeature('territory', d.ref.id, { points: pts }, 'Edit border', d.key);
+    if (d.ref.kind === 'path') updateFeature('path', d.ref.id, { points: pts }, t('Edit path'), d.key);
+    else updateFeature('territory', d.ref.id, { points: pts }, t('Edit border'), d.key);
   }
 
   // ------------------------------------------------------------ objects
@@ -927,7 +945,7 @@ export class ToolController {
     const geo = editor.model!.geo;
     const layer = useDoc.getState().doc.objectLayers.find((l) => l.id === st.activeObjectLayer);
     if (layer?.locked) {
-      st.notify(`Layer “${layer.name}” is locked`);
+      st.notify(t('Layer “{name}” is locked', { name: t(layer.name) }));
       return;
     }
     const o = newObject({ assetId: st.assetId!, x: geo.wrapX(x), y, size: st.stamp.sizePx / editor.zoom, name: '' });
@@ -954,7 +972,7 @@ export class ToolController {
       rotation: (Math.random() * 2 - 1) * s.randomRotation,
       flipX: s.randomFlip && Math.random() < 0.5,
     });
-    useDoc.getState().commit('Stamp objects', (dd) => ({ objects: { ...dd.objects, [o.id]: o } }), key);
+    useDoc.getState().commit(t('Stamp objects'), (dd) => ({ objects: { ...dd.objects, [o.id]: o } }), key);
   }
 
   // ------------------------------------------------------------ labels & peaks
@@ -973,7 +991,7 @@ export class ToolController {
     const style = STYLE_PRESETS[ctx.doc.view.style];
     const l: MapLabel = {
       id: uid('label-'),
-      text: 'New label',
+      text: t('New label'),
       x: ctx.geo.wrapX(x),
       y,
       size: d.sizePx / editor.zoom,
@@ -989,7 +1007,7 @@ export class ToolController {
       hidden: false,
       locked: false,
     };
-    addFeature('label', l, 'Add label');
+    addFeature('label', l, t('Add label'));
     st.select([{ kind: 'label', id: l.id }]);
     st.set({ focusLabel: l.id });
   }
@@ -1008,7 +1026,7 @@ export class ToolController {
     }
     const m = editor.model!;
     if (m.heightAt(x, y) <= m.seaLevel) {
-      st.notify('Peaks can only be designated on land');
+      st.notify(t('Peaks can only be designated on land'));
       return;
     }
     const id = designatePeak(m.geo.wrapX(x), y);
@@ -1067,6 +1085,45 @@ export class ToolController {
     this.commitDrawing(dr.tool, dr.points);
   }
 
+  /** A drawn river and the valley it cuts, as one undo step. */
+  private addRiverWithValley(p: PathFeature) {
+    const model = editor.model!;
+    const W = model.W;
+    // the cells under the river's line, as wide as the river
+    const cells = new Map<number, [number, number]>();
+    const r = Math.max(0.5, p.width / 2);
+    for (const [x, y] of sampleSpline(p.points, 6)) {
+      const R = Math.ceil(r);
+      for (let dy = -R; dy <= R; dy++)
+        for (let dx = -R; dx <= R; dx++) {
+          if (dx * dx + dy * dy > r * r + 0.5) continue;
+          const cx = Math.floor(x + dx);
+          const cy = Math.floor(y + dy);
+          if (cy < 0 || cy >= model.H) continue;
+          cells.set(cy * W + (((cx % W) + W) % W), [cx, cy]);
+        }
+    }
+    const before = useDoc.getState().doc.paths;
+    const after = { ...before, [p.id]: p };
+    const setPaths = (paths: typeof before) => useDoc.setState((s) => ({ doc: { ...s.doc, paths }, revision: s.revision + 1 }));
+    setPaths(after);
+    const end = p.points[p.points.length - 1];
+    const carve = erodeRiver(model, { fresh: cells.values(), wet: (x, y) => cells.has(y * W + x), mouth: [end[0], end[1]] });
+    history.push({
+      label: t('Draw river'),
+      cost: carve ? [...carve.before.values(), ...carve.after.values()].reduce((a, t) => a + (t?.byteLength ?? 0), 2048) : 2048,
+      undo: () => {
+        if (carve) model.applyTiles(carve, 'before');
+        setPaths(before);
+      },
+      redo: () => {
+        if (carve) model.applyTiles(carve, 'after');
+        setPaths(after);
+      },
+    });
+    track('first_edit');
+  }
+
   private cancelDraft() {
     this.draft = null;
     this.overlay().set({ draft: null });
@@ -1095,14 +1152,15 @@ export class ToolController {
         hidden: false,
         locked: false,
       };
-      addFeature('path', p, tool === 'river' ? 'Draw river' : 'Draw road');
+      if (tool === 'river' && st.riverCarve) this.addRiverWithValley(p);
+      else addFeature('path', p, tool === 'river' ? t('Draw river') : t('Draw road'));
       st.select([{ kind: 'path', id: p.id }]);
     } else if (tool === 'territory' && pts.length >= 3) {
       const d = st.territoryDefaults;
       const count = Object.keys(useDoc.getState().doc.territories).length;
-      const t: Territory = {
+      const terr: Territory = {
         id: uid('terr-'),
-        name: `New realm ${count + 1}`,
+        name: t('New realm {n}', { n: count + 1 }),
         type: d.type,
         points: pts,
         color: d.color,
@@ -1117,8 +1175,8 @@ export class ToolController {
         hidden: false,
         locked: false,
       };
-      addFeature('territory', t, 'Draw territory');
-      st.select([{ kind: 'territory', id: t.id }]);
+      addFeature('territory', terr, t('Draw territory'));
+      st.select([{ kind: 'territory', id: terr.id }]);
     }
   }
 
@@ -1229,7 +1287,7 @@ export class ToolController {
     }
     if (pts.length >= 2) {
       const last = pts[pts.length - 1];
-      labels.push({ x: last[0], y: last[1] - 6 / editor.zoom, text: (pts.length > 2 ? 'Total ' : '') + formatLength(total, useEditor.getState().units) });
+      labels.push({ x: last[0], y: last[1] - 6 / editor.zoom, text: pts.length > 2 ? t('Total {len}', { len: formatLength(total, useEditor.getState().units) }) : formatLength(total, useEditor.getState().units) });
     }
     this.overlay().set({ measure: pts.length ? { points: pts, arcs, labels } : null });
     editor.requestRender();
@@ -1356,7 +1414,7 @@ export class ToolController {
       if (g) {
         const b = st.brushes[g];
         if (e.shiftKey) st.setBrush(g, { strength: clamp(b.strength + (up ? 0.05 : -0.05), 0.01, 1) });
-        else st.setBrush(g, { radiusKm: clampRadius(b.radiusKm * (up ? 1.15 : 1 / 1.15)) });
+        else st.setBrush(g, { radiusKm: clampRadius(b.radiusKm * (up ? 1.15 : 1 / 1.15), g) });
       } else if (st.tool === 'object') {
         st.set({ stamp: { ...st.stamp, sizePx: clamp(st.stamp.sizePx * (up ? 1.15 : 1 / 1.15), 8, 600) } });
         this.updateStampPreview();
@@ -1366,7 +1424,7 @@ export class ToolController {
     }
     if (st.tool === 'paint' && /^[1-8]$/.test(k)) {
       st.set({ biome: Number(k) - 1 });
-      st.notify(`Biome: ${BIOMES[Number(k) - 1].name}`);
+      st.notify(t('Biome: {name}', { name: t(BIOMES[Number(k) - 1].name) }));
       return;
     }
     const map: Record<string, ToolId> = {
@@ -1415,6 +1473,23 @@ function darken(hex: string): string {
   return `#${f(0)}${f(2)}${f(4)}`;
 }
 
+/** Push several raster changes (e.g. water and the valley it cut) as one undo step. */
+export function pushTileChanges(changes: TileChange[], label: string, model = editor.model!) {
+  let bytes = 0;
+  for (const c of changes) for (const v of [...c.before.values(), ...c.after.values()]) bytes += v?.byteLength ?? 0;
+  history.push({
+    label,
+    cost: bytes,
+    undo: () => {
+      for (const c of changes.slice().reverse()) model.applyTiles(c, 'before');
+    },
+    redo: () => {
+      for (const c of changes) model.applyTiles(c, 'after');
+    },
+  });
+  track('first_edit');
+}
+
 /** Push a raster change onto the undo stack. */
 export function pushTileChange(change: TileChange, label: string, model = editor.model!) {
   let bytes = 0;
@@ -1432,14 +1507,15 @@ export function pushTileChange(change: TileChange, label: string, model = editor
 export const tools = new ToolController();
 Object.assign(window as object, { __tools: tools });
 
-// measurement labels follow the display units
+// measurement labels follow the display units and the interface language
+i18n.on('languageChanged', () => tools.refreshMeasure());
 useEditor.subscribe((s, prev) => {
   if (s.units !== prev.units) tools.refreshMeasure();
-  if (s.referenceEdit !== prev.referenceEdit) tools.refreshCursor();
+  if (s.referenceEdit !== prev.referenceEdit || s.riverMode !== prev.riverMode) tools.refreshCursor();
 });
 
 /** Keep a brush radius within what makes sense for the open map. */
-function clampRadius(km: number): number {
-  const r = editor.model ? brushRange(editor.model.geo) : { min: 5, max: 6000 };
+function clampRadius(km: number, group: string): number {
+  const r = editor.model ? brushRange(editor.model.geo, group) : { min: 5, max: 6000 };
   return clamp(km, r.min, r.max);
 }

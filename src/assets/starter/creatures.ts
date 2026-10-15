@@ -1,4 +1,5 @@
 import { asset, C, glowDef, INK, ink, shadow, sparkle, waves, type StarterAsset } from './kit';
+import { N_ } from '../../i18n/mark';
 
 const mirrorX = (d: string, w = 128) =>
   d.replace(/(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g, (_, x: string, y: string) => `${w - parseFloat(x)} ${y}`);
@@ -9,8 +10,8 @@ const redWing = 'M56 56 Q42 40 30 34 Q18 28 8 22 Q18 38 16 50 Q24 52 26 62 Q34 6
 const redBones = 'M30 34 L16 50 M30 34 L26 62 M30 34 L40 72';
 const redDragon = asset(
   'dragon-red',
-  'Red wyrm',
-  'Dragons',
+  N_('Red wyrm'),
+  N_('Dragons'),
   ['dragon', 'fire', 'red', 'flying'],
   128,
   128,
@@ -52,8 +53,8 @@ const redDragon = asset(
 const lungBody = 'M18 102 C28 78 46 112 64 88 C80 66 94 94 104 66 C108 56 106 48 102 44';
 const easternDragon = asset(
   'dragon-eastern',
-  'Eastern lung dragon',
-  'Dragons',
+  N_('Eastern lung dragon'),
+  N_('Dragons'),
   ['dragon', 'eastern', 'serpent', 'celestial'],
   128,
   128,
@@ -86,8 +87,8 @@ const easternDragon = asset(
 
 const frostDragon = asset(
   'dragon-frost',
-  'Frost dragon',
-  'Dragons',
+  N_('Frost dragon'),
+  N_('Dragons'),
   ['dragon', 'ice', 'frost', 'snow', 'north'],
   128,
   128,
@@ -126,8 +127,8 @@ const frostDragon = asset(
 const hoardBody = 'M100 100 C122 86 116 52 92 48 C68 44 40 50 28 66 C18 80 20 96 32 104';
 const blackDragon = asset(
   'dragon-hoard',
-  'Dragon on its hoard',
-  'Dragons',
+  N_('Dragon on its hoard'),
+  N_('Dragons'),
   ['dragon', 'black', 'hoard', 'gold', 'lair', 'sleeping'],
   128,
   128,
@@ -181,8 +182,8 @@ const blackDragon = asset(
 
 const giant = asset(
   'monster-giant',
-  'Hill giant',
-  'Monsters',
+  N_('Hill giant'),
+  N_('Monsters'),
   ['giant', 'monster', 'hill', 'brute'],
   128,
   128,
@@ -216,8 +217,8 @@ const giant = asset(
 
 const troll = asset(
   'monster-troll',
-  'Troll',
-  'Monsters',
+  N_('Troll'),
+  N_('Monsters'),
   ['troll', 'monster', 'bridge', 'cave'],
   128,
   128,
@@ -249,8 +250,8 @@ const troll = asset(
 const wyvernWingNear = 'M64 66 Q60 44 46 30 L30 12 Q40 26 44 36 Q52 38 54 48 Q62 50 64 58 Q72 58 80 64 Z';
 const wyvern = asset(
   'monster-wyvern',
-  'Wyvern',
-  'Monsters',
+  N_('Wyvern'),
+  N_('Monsters'),
   ['wyvern', 'drake', 'flying', 'monster'],
   128,
   128,
@@ -281,8 +282,8 @@ const wyvern = asset(
 
 const lich = asset(
   'monster-lich',
-  'Lich',
-  'Monsters',
+  N_('Lich'),
+  N_('Monsters'),
   ['undead', 'lich', 'necromancer', 'skeleton', 'death'],
   128,
   128,
@@ -317,8 +318,8 @@ const lich = asset(
 const tentacle = (d: string) => `<path d="${d}" fill="#a8455a" ${ink(2.2)}/>`;
 const kraken = asset(
   'monster-kraken',
-  'Kraken',
-  'Monsters',
+  N_('Kraken'),
+  N_('Monsters'),
   ['kraken', 'sea', 'monster', 'ocean', 'tentacles'],
   128,
   128,
@@ -349,8 +350,8 @@ const kraken = asset(
 
 const serpent = asset(
   'monster-sea-serpent',
-  'Sea serpent',
-  'Monsters',
+  N_('Sea serpent'),
+  N_('Monsters'),
   ['serpent', 'sea', 'monster', 'leviathan'],
   128,
   96,

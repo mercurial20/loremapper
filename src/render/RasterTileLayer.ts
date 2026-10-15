@@ -13,10 +13,11 @@ interface TileEntry {
   tx: number;
   ty: number;
   mesh: Mesh<Geometry, Shader>;
-  own: Partial<Record<'height' | 'biomeA' | 'biomeB' | 'fog', BufferImageSource>>;
+  own: Partial<Record<'height' | 'biomeA' | 'biomeB' | 'fog' | 'water', BufferImageSource>>;
   hasOwnHeight: boolean;
   hasOwnBiome: boolean;
   hasOwnFog: boolean;
+  hasOwnWater: boolean;
   dirty: boolean;
 }
 
@@ -37,11 +38,13 @@ let fogProgram: GlProgram | null = null;
 export class RasterTileLayer {
   readonly container = new Container();
   private tiles = new Map<number, TileEntry>();
-  private defaults: Partial<Record<'height' | 'biome' | 'fog', BufferImageSource>> = {};
+  private defaults: Partial<Record<'height' | 'biome' | 'fog' | 'water', BufferImageSource>> = {};
   private anyDirty = true;
   /** Texture edge length for full-res (height) and half-res (biome, fog) tiles. */
   private readonly S: number;
   private readonly Sh: number;
+  /** Texture edge length for the finer water tiles. */
+  private readonly Sw: number;
   private readonly tileUniforms = new Map<number, UniformGroup>();
 
   private model: TerrainModel;
@@ -56,6 +59,7 @@ export class RasterTileLayer {
     this.ramp = ramp;
     this.S = model.TS + APRON * 2;
     this.Sh = model.biome.TS + APRON * 2;
+    this.Sw = model.water.TS + APRON * 2;
     if (model.W % model.TS !== 0) throw new Error('Grid width must be a multiple of the tile size');
     if (kind === 'terrain' && !terrainProgram) terrainProgram = GlProgram.from({ vertex: TILE_VERTEX, fragment: TERRAIN_FRAGMENT, name: 'terrain' });
     if (kind === 'fog' && !fogProgram) fogProgram = GlProgram.from({ vertex: TILE_VERTEX, fragment: FOG_FRAGMENT, name: 'fog' });
@@ -64,8 +68,7 @@ export class RasterTileLayer {
     for (let ty = 0; ty < g.NY; ty++) for (let tx = 0; tx < g.NX; tx++) this.createTile(tx, ty);
   }
 
-  private makeSource(format: 'r32float' | 'rgba8unorm' | 'r8unorm', data: RasterArray, linear: boolean): BufferImageSource {
-    const size = format === 'r32float' ? this.S : this.Sh;
+  private makeSource(format: 'r32float' | 'rgba8unorm' | 'r8unorm', data: RasterArray, linear: boolean, size = format === 'r32float' ? this.S : this.Sh): BufferImageSource {
     return new BufferImageSource({
       resource: data,
       width: size,
@@ -84,6 +87,7 @@ export class RasterTileLayer {
     if (this.kind === 'terrain') {
       this.defaults.height = this.makeSource('r32float', new Float32Array(n).fill(this.model.height.defaultValue), false);
       this.defaults.biome = this.makeSource('rgba8unorm', new Uint8Array(nh * 4), true);
+      this.defaults.water = this.makeSource('r8unorm', new Uint8Array(this.Sw * this.Sw), true, this.Sw);
     } else {
       this.defaults.fog = this.makeSource('r8unorm', new Uint8Array(nh).fill(this.model.fog.defaultValue), true);
     }
@@ -122,6 +126,9 @@ export class RasterTileLayer {
             uTexSize: { value: this.S, type: 'f32' },
             uBioOrigin: { value: halfOrigin, type: 'vec2<f32>' },
             uBioSize: { value: this.Sh, type: 'f32' },
+            // water texture origin, in water cells
+            uWatOrigin: { value: new Float32Array([tx * this.model.water.TS - APRON, ty * this.model.water.TS - APRON]), type: 'vec2<f32>' },
+            uWatSize: { value: this.Sw, type: 'f32' },
           })
         : new UniformGroup({
             uTexOrigin: { value: halfOrigin, type: 'vec2<f32>' },
@@ -136,6 +143,7 @@ export class RasterTileLayer {
       hasOwnHeight: false,
       hasOwnBiome: false,
       hasOwnFog: false,
+      hasOwnWater: false,
       dirty: true,
     };
     entry.mesh.visible = this.kind === 'terrain';
@@ -152,6 +160,7 @@ export class RasterTileLayer {
           uHeight: (own.height ?? this.defaults.height)!,
           uBiomeA: (own.biomeA ?? this.defaults.biome)!,
           uBiomeB: (own.biomeB ?? this.defaults.biome)!,
+          uWater: (own.water ?? this.defaults.water)!,
           uRamp: this.ramp!,
           style: this.styleUniforms,
           tile: tu,
@@ -167,6 +176,7 @@ export class RasterTileLayer {
   /** Raster change notification → mark affected tile textures dirty. */
   onChange(layer: RasterLayer, rect: CellRect | null) {
     if (this.kind === 'terrain' && layer === 'fog') return;
+    if (this.kind === 'fog' && layer === 'water') return;
     if (this.kind === 'fog' && layer !== 'fog') return;
     this.anyDirty = true;
     if (!rect) {
@@ -299,9 +309,23 @@ export class RasterTileLayer {
             delete t.own.biomeB;
           }
         }
+        const needW = this.neighbourhoodAllocated(this.model.water, t.tx, t.ty);
+        if (needW !== t.hasOwnWater) {
+          rebuild = true;
+          t.hasOwnWater = needW;
+          if (needW) t.own.water = this.makeSource('r8unorm', new Uint8Array(this.Sw * this.Sw), true, this.Sw);
+          else {
+            if (t.own.water) retired.push(t.own.water);
+            delete t.own.water;
+          }
+        }
         if (t.own.height) {
           this.fill(this.model.height, t.tx, t.ty, [{ out: t.own.height.resource as Float32Array, chFrom: 0, chCount: 1 }]);
           t.own.height.update();
+        }
+        if (t.own.water) {
+          this.fill(this.model.water, t.tx, t.ty, [{ out: t.own.water.resource as Uint8Array, chFrom: 0, chCount: 1 }]);
+          t.own.water.update();
         }
         if (t.own.biomeA && t.own.biomeB) {
           this.fill(this.model.biome, t.tx, t.ty, [

@@ -1,10 +1,11 @@
 import { arch, asset, box, C, crenels, dome, flag, gable, house, INK, ink, rock, shadow, tower, type StarterAsset } from './kit';
+import { N_ } from '../../i18n/mark';
 
-const CAT = 'Political & cultural';
+const CAT = N_('Political & cultural');
 
 const palace = asset(
   'palace',
-  'Royal palace',
+  N_('Royal palace'),
   CAT,
   ['palace', 'royal', 'king', 'capital', 'throne'],
   128,
@@ -53,7 +54,7 @@ const yurt = (cx: number, base: number, w: number, h: number, band = C.banner, f
 
 const nomadCamp = asset(
   'nomad-camp',
-  'Nomadic camp',
+  N_('Nomadic camp'),
   CAT,
   ['nomad', 'camp', 'yurt', 'ger', 'steppe', 'tribe'],
   128,
@@ -83,7 +84,7 @@ const tug = (x: number, base: number, h: number, tail = '#f2ece0') => {
 
 const khagan = asset(
   'khagan-orda',
-  "Khagan's headquarters",
+  N_("Khagan's headquarters"),
   CAT,
   ['khagan', 'khan', 'orda', 'horde', 'steppe', 'capital', 'yurt'],
   128,
@@ -126,7 +127,7 @@ const palisade = (x0: number, x1: number, base: number, h: number) => {
 
 const tribal = asset(
   'tribal-settlement',
-  'Tribal settlement',
+  N_('Tribal settlement'),
   CAT,
   ['tribe', 'tribal', 'huts', 'village', 'clan'],
   128,
@@ -146,7 +147,7 @@ const tribal = asset(
 
 const council = asset(
   'republic-council',
-  'Republican council hall',
+  N_('Republican council hall'),
   CAT,
   ['republic', 'council', 'senate', 'forum', 'government'],
   128,
@@ -185,7 +186,7 @@ const logTower = (cx: number, base: number, w: number, h: number) =>
 
 const frontierFort = asset(
   'frontier-fort',
-  'Frontier fort',
+  N_('Frontier fort'),
   CAT,
   ['fort', 'frontier', 'outpost', 'palisade', 'border'],
   128,
@@ -208,7 +209,7 @@ const barrel = (x: number, y: number) =>
 
 const tradePost = asset(
   'trade-post',
-  'Trade post',
+  N_('Trade post'),
   CAT,
   ['trade', 'market', 'merchant', 'caravan', 'post'],
   128,
@@ -235,7 +236,7 @@ const tradePost = asset(
 
 const borderMarker = asset(
   'border-marker',
-  'Border marker',
+  N_('Border marker'),
   CAT,
   ['border', 'boundary', 'marker', 'stone', 'frontier'],
   96,

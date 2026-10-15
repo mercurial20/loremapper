@@ -5,6 +5,7 @@ import '@fontsource/im-fell-english/400.css';
 import '@fontsource/im-fell-english/400-italic.css';
 import '@fontsource-variable/inter';
 import type { LabelFont } from '../model/types';
+import { N_ } from '../i18n/mark';
 
 export const FONT_FAMILY: Record<LabelFont, string> = {
   display: 'Cinzel Variable',
@@ -25,10 +26,10 @@ export const FONT_STACK: Record<LabelFont, string[]> = {
 };
 
 export const FONT_LABEL: Record<LabelFont, string> = {
-  display: 'Cinzel (display)',
-  serif: 'Garamond (book)',
-  script: 'Fell English (old hand)',
-  sans: 'Inter (modern)',
+  display: N_('Cinzel (display)'),
+  serif: N_('Garamond (book)'),
+  script: N_('Fell English (old hand)'),
+  sans: N_('Inter (modern)'),
 };
 
 /** Wait until the bundled map fonts are usable by canvas text rendering. */

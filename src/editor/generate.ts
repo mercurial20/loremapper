@@ -12,6 +12,7 @@ import type { TileChange } from '../terrain/TerrainModel';
 import { editor } from './Editor';
 import { newObject } from './commands';
 import { track } from '../analytics';
+import { t } from '../i18n';
 
 export type RiverAmount = 'none' | 'few' | 'normal' | 'many';
 const RIVERS: Record<RiverAmount, [world: number, view: number]> = { none: [0, 0], few: [14, 4], normal: [32, 8], many: [70, 16] };
@@ -146,7 +147,7 @@ function runWorker(p: GenParams): Promise<GenResult> {
     useEditor.getState().set({
       busyCancel: () => {
         done();
-        reject(new Cancelled('Generation cancelled'));
+        reject(new Cancelled(t('Generation cancelled')));
       },
     });
     w.onmessage = (e: MessageEvent<WorkerReply>) => {
@@ -209,13 +210,15 @@ export async function generateWorld(o: GenerateOptions, opts: { sample?: boolean
   // the viewer doesn't edit maps (it may only build its own sample world)
   if (st.readOnly && !opts.sample) return;
   const whole = o.type === 'continents' || o.type === 'pangaea' || o.region === 'world';
-  st.set({ busy: 'Generating terrain…' });
+  st.set({ busy: t('Generating terrain…') });
   try {
     const res = await runWorker(genParams(o));
     const changes: TileChange[] = [];
     if (whole && res.region.w === model.W) {
       changes.push(model.replaceLayer('height', res.height));
       changes.push(model.replaceLayer('biome', res.biome ?? null, 0));
+      // a new world: rivers painted on the old one would run across it
+      if (model.water.tiles.size) changes.push(model.replaceLayer('water', null, 0));
     } else {
       const gen = res.height;
       changes.push(
@@ -268,7 +271,7 @@ export async function generateWorld(o: GenerateOptions, opts: { sample?: boolean
       useDoc.setState((s) => ({ doc: { ...s.doc, paths: d.paths, objects: d.objects }, revision: s.revision + 1 }));
     setContent(after);
     history.push({
-      label: 'Generate terrain',
+      label: t('Generate terrain'),
       cost: changes.reduce((s, c) => s + [...c.before.values(), ...c.after.values()].reduce((a, t) => a + (t?.byteLength ?? 0), 0), 0),
       undo: () => {
         for (const c of changes.slice().reverse()) model.applyTiles(c, 'before');
@@ -279,12 +282,12 @@ export async function generateWorld(o: GenerateOptions, opts: { sample?: boolean
         setContent(after);
       },
     });
-    useEditor.getState().notify(whole ? 'World generated' : 'Land generated in view');
+    useEditor.getState().notify(whole ? t('World generated') : t('Land generated in view'));
     track('world_generated', { preset: presetOf(o), realism: o.realism });
   } catch (e) {
-    if (e instanceof Cancelled) useEditor.getState().notify('Generation cancelled — the map is unchanged');
+    if (e instanceof Cancelled) useEditor.getState().notify(t('Generation cancelled — the map is unchanged'));
     else {
-      useEditor.getState().notify('Generation failed: ' + (e instanceof Error ? e.message : String(e)), 'error');
+      useEditor.getState().notify(t('Generation failed: {error}', { error: e instanceof Error ? e.message : String(e) }), 'error');
       track('operation_failed', { op: 'generate' });
     }
   } finally {

@@ -1,11 +1,12 @@
 import { asset, box, C, gable, glowDef, INK, ink, mountain, rock, shadow, sparkle, tree, type StarterAsset } from './kit';
+import { N_ } from '../../i18n/mark';
 
 // ---------------------------------------------------------------- mountains
 
 const peak = asset(
   'mountain-peak',
-  'Mountain peak',
-  'Mountains',
+  N_('Mountain peak'),
+  N_('Mountains'),
   ['mountain', 'peak', 'hill'],
   128,
   96,
@@ -14,8 +15,8 @@ const peak = asset(
 
 const range = asset(
   'mountain-range',
-  'Rugged range',
-  'Mountains',
+  N_('Rugged range'),
+  N_('Mountains'),
   ['mountains', 'range', 'rugged', 'ridge'],
   128,
   96,
@@ -28,8 +29,8 @@ const range = asset(
 
 const snowy = asset(
   'mountain-snowy',
-  'Snow-capped peak',
-  'Mountains',
+  N_('Snow-capped peak'),
+  N_('Mountains'),
   ['mountain', 'snow', 'peak', 'alpine', 'ice'],
   128,
   96,
@@ -40,8 +41,8 @@ const snowy = asset(
 
 const volcano = asset(
   'mountain-volcano',
-  'Volcano',
-  'Mountains',
+  N_('Volcano'),
+  N_('Mountains'),
   ['volcano', 'lava', 'fire', 'mountain', 'smoke'],
   128,
   112,
@@ -76,8 +77,8 @@ const furrows = (x0: number, y0: number, x1: number, y1: number, dx: number, dy:
 
 const grain = asset(
   'farm-grain',
-  'Grain fields',
-  'Farms',
+  N_('Grain fields'),
+  N_('Farms'),
   ['farm', 'grain', 'wheat', 'field', 'agriculture'],
   128,
   96,
@@ -106,8 +107,8 @@ const fruitTree = (x: number, y: number) =>
 
 const orchard = asset(
   'farm-orchard',
-  'Orchard',
-  'Farms',
+  N_('Orchard'),
+  N_('Farms'),
   ['farm', 'orchard', 'fruit', 'apple', 'trees'],
   128,
   96,
@@ -126,8 +127,8 @@ const sheep = (x: number, y: number) =>
 
 const livestock = asset(
   'farm-livestock',
-  'Livestock farm',
-  'Farms',
+  N_('Livestock farm'),
+  N_('Farms'),
   ['farm', 'livestock', 'barn', 'sheep', 'cattle', 'ranch'],
   128,
   96,
@@ -192,24 +193,24 @@ const nuggets = (cx: number, cy: number, light: string, dark: string, n = 7) => 
 };
 
 const ore = (id: string, name: string, tags: string[], light: string, dark: string, vein: string, extra = '') =>
-  asset(id, name, 'Mining & resources', ['mine', 'ore', 'resource', ...tags], 128, 112, mineBase(vein) + nuggets(94, 98, light, dark) + extra);
+  asset(id, name, N_('Mining & resources'), ['mine', 'ore', 'resource', ...tags], 128, 112, mineBase(vein) + nuggets(94, 98, light, dark) + extra);
 
-const iron = ore('resource-iron', 'Iron mine', ['iron', 'metal'], '#9a5a45', '#4f2a20', '#7a3a2a');
+const iron = ore('resource-iron', N_('Iron mine'), ['iron', 'metal'], '#9a5a45', '#4f2a20', '#7a3a2a');
 const copper = ore(
   'resource-copper',
-  'Copper mine',
+  N_('Copper mine'),
   ['copper', 'metal'],
   '#d27d3e',
   '#7c3f1a',
   '#c06a2f',
   `<circle cx="90" cy="96" r="1.8" fill="#4fa28c"/><circle cx="100" cy="100" r="1.6" fill="#4fa28c"/><circle cx="86" cy="102" r="1.4" fill="#4fa28c"/>`,
 );
-const goldMine = ore('resource-gold', 'Gold mine', ['gold', 'precious'], '#f6cd4f', '#a77a14', '#e2b23a', sparkle(98, 88, 4) + sparkle(84, 94, 2.6) + sparkle(30, 70, 3));
-const silver = ore('resource-silver', 'Silver mine', ['silver', 'precious'], '#e3e8ec', '#8995a0', '#c8d0d6', sparkle(100, 89, 3.4, '#ffffff') + sparkle(86, 96, 2.4, '#ffffff'));
+const goldMine = ore('resource-gold', N_('Gold mine'), ['gold', 'precious'], '#f6cd4f', '#a77a14', '#e2b23a', sparkle(98, 88, 4) + sparkle(84, 94, 2.6) + sparkle(30, 70, 3));
+const silver = ore('resource-silver', N_('Silver mine'), ['silver', 'precious'], '#e3e8ec', '#8995a0', '#c8d0d6', sparkle(100, 89, 3.4, '#ffffff') + sparkle(86, 96, 2.4, '#ffffff'));
 const coal = asset(
   'resource-coal',
-  'Coal mine',
-  'Mining & resources',
+  N_('Coal mine'),
+  N_('Mining & resources'),
   ['coal', 'mine', 'fuel', 'resource'],
   128,
   112,
@@ -235,8 +236,8 @@ const prism = (x: number, base: number, w: number, h: number, angle: number, lig
 
 const crystal = asset(
   'resource-crystal',
-  'Crystal deposit',
-  'Mining & resources',
+  N_('Crystal deposit'),
+  N_('Mining & resources'),
   ['crystal', 'quartz', 'resource', 'cave'],
   128,
   112,
@@ -264,8 +265,8 @@ const gem = (x: number, y: number, s: number, light: string, mid: string, dark: 
 
 const gems = asset(
   'resource-gems',
-  'Magical gemstones',
-  'Mining & resources',
+  N_('Magical gemstones'),
+  N_('Mining & resources'),
   ['gem', 'gemstone', 'magic', 'arcane', 'jewel', 'resource'],
   128,
   112,

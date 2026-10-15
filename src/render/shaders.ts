@@ -104,11 +104,14 @@ out vec4 finalColor;
 uniform sampler2D uHeight;
 uniform sampler2D uBiomeA;
 uniform sampler2D uBiomeB;
+uniform sampler2D uWater;
 uniform sampler2D uRamp;
 uniform vec2 uTexOrigin;
 uniform float uTexSize;
 uniform vec2 uBioOrigin;
 uniform float uBioSize;
+uniform vec2 uWatOrigin;
+uniform float uWatSize;
 
 uniform float uSea;
 uniform float uMaxElev;
@@ -143,6 +146,10 @@ uniform float uCel;
 uniform float uPosterize;
 uniform float uPixel;
 uniform float uHatch;
+// painted water: shown with the Rivers & roads layer (its opacity, 0 when hidden)
+uniform float uWaterVis;
+// biome edges: 0 crisp … 1 soft, wide fringes
+uniform float uBiomeSoft;
 
 ${NOISE}
 
@@ -201,8 +208,9 @@ vec3 biomeColor(float i) {
   return texture(uRamp, vec2((i + 0.5) / 8.0, 3.5 / 4.0)).rgb;
 }
 
-// painted tree crowns on a lattice of P cells around the planet; rgb + coverage
-vec4 trees(vec2 p, float P, float density, vec3 base) {
+// painted tree crowns on a lattice of P cells around the planet: crown colour + coverage,
+// and how much the crowns shade the ground between them
+vec4 trees(vec2 p, float P, float density, vec3 base, out float groundShadow) {
   vec2 cell = floor(p);
   vec4 best = vec4(0.0);
   float bestY = -1e9;
@@ -229,10 +237,7 @@ vec4 trees(vec2 p, float P, float density, vec3 base) {
       }
     }
   }
-  if (best.a < 1.0) {
-    vec3 ground = base * (0.62 - 0.22 * shadow);
-    best = vec4(mix(ground, best.rgb, best.a), 1.0);
-  }
+  groundShadow = shadow;
   return best;
 }
 
@@ -367,9 +372,11 @@ void main() {
   vec2 bioUV = (w * 0.5 - uBioOrigin) / uBioSize;
   vec4 bA = texture(uBiomeA, bioUV);
   vec4 bB = texture(uBiomeB, bioUV);
+  // ragged noise along biome edges; softer edges keep less of it
   float edgeN = fbmW(w, 1.3, 41.0, 3) - 0.5;
-  bA = clamp(bA + edgeN * 0.9 * bA * (1.0 - bA) * 2.0, 0.0, 1.0) * uBiomeOpacity;
-  bB = clamp(bB + edgeN * 0.9 * bB * (1.0 - bB) * 2.0, 0.0, 1.0) * uBiomeOpacity;
+  float edgeK = 0.9 * (1.0 - 0.75 * uBiomeSoft);
+  bA = clamp(bA + edgeN * edgeK * bA * (1.0 - bA) * 2.0, 0.0, 1.0) * uBiomeOpacity;
+  bB = clamp(bB + edgeN * edgeK * bB * (1.0 - bB) * 2.0, 0.0, 1.0) * uBiomeOpacity;
 
   float lod = uBiomePattern;
   float lodFine = smoothstep(7.0, 22.0, uZoom) * uBiomePattern;
@@ -419,16 +426,26 @@ void main() {
   float fd = bA.g;
   if (fd > 0.01) {
     vec3 fbase = biomeColor(1.0);
-    float dens = smoothstep(0.05, 0.75, fd + (fbmW(w, 0.9, 0.0, 3) - 0.5) * 0.3);
+    // trees thin out towards the edge; how far the fringe reaches depends on the edge softness
+    float fringe = mix(0.35, 0.85, uBiomeSoft);
+    float dens = smoothstep(0.03, fringe, fd + (fbmW(w, 0.9, 0.0, 3) - 0.5) * 0.3);
     float tl = lodLevel(9.0);
     float t0 = floor(tl);
     float sa = exp2(t0);
-    vec4 ta = trees(w * sa, W * sa, dens, fbase);
-    vec4 tb = trees(w * sa * 2.0 + vec2(0.0, 0.37), W * sa * 2.0, dens, fbase);
-    vec4 tr = mix(ta, tb, smoothstep(0.3, 0.7, tl - t0));
-    vec3 forestFlat = fbase * (0.82 + 0.25 * fbmW(w, 2.0, 0.0, 3));
-    vec3 fcol = mix(forestFlat, tr.rgb, lod);
-    land = mix(land, fcol, smoothstep(0.0, 0.35, fd));
+    float sha;
+    float shb;
+    vec4 ta = trees(w * sa, W * sa, dens, fbase, sha);
+    vec4 tb = trees(w * sa * 2.0 + vec2(0.0, 0.37), W * sa * 2.0, dens, fbase, shb);
+    float tm = smoothstep(0.3, 0.7, tl - t0);
+    vec4 tr = mix(ta, tb, tm);
+    float tsh = mix(sha, shb, tm);
+    // the forest floor darkens gently and only where the forest is dense; at the edge the trees stand on the open land
+    float floorAmt = smoothstep(0.1, mix(0.5, 0.95, uBiomeSoft), fd);
+    vec3 floorCol = mix(land, fbase * (0.74 - 0.16 * tsh), floorAmt);
+    vec3 withTrees = mix(floorCol, tr.rgb, tr.a);
+    vec3 forestFlat = mix(land, fbase * (0.84 + 0.22 * fbmW(w, 2.0, 0.0, 3)), smoothstep(0.05, fringe, fd));
+    vec3 fcol = mix(forestFlat, withTrees, lod);
+    land = mix(land, fcol, smoothstep(0.0, mix(0.35, 0.6, uBiomeSoft), fd));
   }
 
   // shading
@@ -469,6 +486,24 @@ void main() {
   water = mix(water, uRippleColor, rip * uRippleAlpha * uRipples);
 
   vec3 col = mix(water, land, landA);
+
+  // ---------- painted water (rivers, streams, lakes) ----------
+  if (uWaterVis > 0.0) {
+    // the water grid is WATER_DETAIL (4) times finer than the terrain's
+    vec2 ww = w * 4.0;
+    float wv = texture(uWater, (ww - uWatOrigin) / uWatSize).r;
+    if (wv > 0.02) {
+      // slightly ragged banks
+      wv += (vn(ww, 1.7, 33.0) - 0.5) * 0.16;
+      float fwv = max(fwidth(wv), 1e-4);
+      float wdist = (wv - 0.5) / fwv;
+      float wa = uPixel > 0.0 ? step(0.5, wv) : smoothstep(-0.6, 0.6, wdist);
+      vec3 rc = ramp(1.0, 0.1) * (0.97 + 0.05 * fbmW(w, 0.6, 77.0, 2));
+      col = mix(col, rc, wa * uWaterVis * landA);
+      float bank = 1.0 - smoothstep(uCoastWidth * 0.4 - 0.35, uCoastWidth * 0.4 + 0.6, abs(wdist));
+      col = mix(col, uCoastInk, bank * 0.7 * uWaterVis * landA);
+    }
+  }
 
   // ---------- contours ----------
   if (uContours > 0.5) {
