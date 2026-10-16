@@ -73,6 +73,10 @@ export interface UpliftInput {
    * the same way when its window grows or shifts.
    */
   origin?: [number, number, number];
+  /** Initial heights (without units), instead of the seeded roughness. */
+  initial?: Float32Array;
+  /** Return the relief without units and before slopes give way (to measure it, not to keep it). */
+  raw?: boolean;
 }
 
 /** Relief carved from the uplift, metres above the outlets; cells without uplift stay at 0. */
@@ -89,12 +93,11 @@ export function upliftRelief(input: UpliftInput): Float32Array {
   const rough = input.roughness ?? 1e-3;
   for (let i = 0; i < n; i++) {
     if (uplift[i] <= 0) continue;
-    const x = Math.round(ox + (i % w) * sc);
-    const y = Math.round(oy + Math.floor(i / w) * sc);
-    let k = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(seed, 1442695041);
-    k = Math.imul(k ^ (k >>> 13), 1274126177);
-    k ^= k >>> 16;
-    z[i] = uplift[i] * rough * ((k >>> 0) / 4294967296);
+    if (input.initial) {
+      z[i] = input.initial[i];
+      continue;
+    }
+    z[i] = uplift[i] * rough * cellNoise(Math.round(ox + (i % w) * sc), Math.round(oy + Math.floor(i / w) * sc), seed);
   }
 
   const rec = new Int32Array(n);
@@ -207,6 +210,7 @@ export function upliftRelief(input: UpliftInput): Float32Array {
 
   // scale to the summit, then let slopes steeper than the threshold give way: from the outlets
   // up, each cell settles against its already-settled receiver
+  if (input.raw) return Float32Array.from(z);
   let top = 0;
   for (let i = 0; i < n; i++) top = Math.max(top, z[i]);
   const out = new Float32Array(n);
@@ -223,6 +227,14 @@ export function upliftRelief(input: UpliftInput): Float32Array {
     out[c] = r === c ? v : Math.min(v, out[r] + MAX_SLOPE * dist[c] * cellM);
   }
   return out;
+}
+
+/** A value in [0, 1) that belongs to a cell of the map (and a seed). */
+export function cellNoise(x: number, y: number, seed: number): number {
+  let k = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(seed | 0, 1442695041);
+  k = Math.imul(k ^ (k >>> 13), 1274126177);
+  k ^= k >>> 16;
+  return (k >>> 0) / 4294967296;
 }
 
 /** Fill `order` with all cells, every receiver before its donors (breadth-first from the outlets). */

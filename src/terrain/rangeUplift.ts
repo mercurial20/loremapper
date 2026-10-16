@@ -1,5 +1,5 @@
 import { clamp, fbm } from '../core/math';
-import { upliftRelief } from './upliftErosion';
+import { cellNoise, upliftRelief } from './upliftErosion';
 
 /*
  * The uplift of mountain ranges drawn as crest lines, and the relief rivers carve
@@ -15,6 +15,8 @@ import { upliftRelief } from './upliftErosion';
 
 /** The part of the range's half width over which uplift falls off at its edges. */
 const EDGE = 0.45;
+/** How much stronger the uplift is on the crest than across the rest of the belt. */
+const CREST = 0.25;
 
 export interface RangeJobLine {
   /** Points along the crest, x/y pairs in window cells. */
@@ -105,7 +107,9 @@ export function rangeUplift(job: RangeJob): Float32Array {
             // uplift is broad across the belt and falls off near its edges, as in real orogens;
             // the rivers, not the uplift, make the crest and the valleys
             const e = clamp((1 - q) / EDGE, 0, 1);
-            let u = e * e * (3 - 2 * e);
+            // a gentle rise towards the drawn crest keeps the main divide on it, and leaves a
+            // lower trough between two chains for a valley along them
+            let u = e * e * (3 - 2 * e) * (1 - CREST + CREST * (1 - q));
             u *= r.height * (line.h0 + (line.h1 - line.h0) * a) * swell(x, y);
             // free ends round off over about half a width
             const e0 = line.freeStart ? clamp(along / (0.6 * hw), 0, 1) : 1;
@@ -131,32 +135,69 @@ export function rangeErodibility(job: RangeJob, irregularity: number, halfWidth:
 }
 
 /**
- * The ranges' relief in the window (metres), and their uplift (0 … 1). Each range is carved on
- * its own, so it reaches its own height whatever its neighbours are; where they meet, the
- * higher land wins.
+ * The ranges' relief in the window (metres), and their belts (0 … 1).
+ *
+ * Ranges that touch are carved together, as one landscape: water from both runs into one
+ * river, so two parallel chains get a valley along their length between them (as the Indus and
+ * the Tsangpo run between the ranges of the Himalaya) and a branch meets its range at a fork,
+ * not a seam. Each range still reaches its own height: a first, coarse pass measures how high
+ * each one came out, and the second pass scales each one's uplift to match (the relief grows
+ * in proportion to the uplift).
  */
 export function rangeRelief(job: RangeJob): { relief: Float32Array; uplift: Float32Array } {
-  const n = job.w * job.h;
-  const relief = new Float32Array(n);
-  const uplift = new Float32Array(n);
-  for (const r of job.ranges) {
-    const one: RangeJob = { ...job, ranges: [{ ...r, height: 1 }], peakM: job.peakM * r.height, seed: r.seed };
-    const u = rangeUplift(one);
-    const z = upliftRelief({
-      w: job.w,
-      h: job.h,
-      uplift: u.slice(),
-      cellKm: job.cellKm,
-      peakM: one.peakM,
-      seed: r.seed,
-      erodibility: rangeErodibility(one, r.irregularity, r.halfWidth),
-      roughness: 0.02 + 0.08 * r.irregularity,
-      origin: [job.ox, job.oy, job.scale],
-    });
-    for (let k = 0; k < n; k++) {
-      if (z[k] > relief[k]) relief[k] = z[k];
-      if (u[k] > uplift[k]) uplift[k] = u[k];
-    }
+  const { w, h } = job;
+  const n = w * h;
+  const R = job.ranges;
+  // each range's own belt, and the land it would make on its own
+  const one = R.map((r) => ({ ...job, ranges: [{ ...r, height: 1 }], seed: r.seed }) as RangeJob);
+  const belts = one.map((j) => rangeUplift(j));
+  const rock = one.map((j, i) => rangeErodibility(j, R[i].irregularity, R[i].halfWidth));
+  const belt = new Float32Array(n);
+  for (const b of belts) for (let k = 0; k < n; k++) if (b[k] > belt[k]) belt[k] = b[k];
+
+  /** The combined uplift for some scale of each range, with the range that leads in each cell. */
+  const fields = (scale: number[], W: number, H: number, f: number) => {
+    const N = W * H;
+    const uplift = new Float32Array(N);
+    const owner = new Int16Array(N).fill(-1);
+    const erod = new Float32Array(N).fill(1);
+    const initial = new Float32Array(N);
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const o = y * W + x;
+        const k = Math.min(h - 1, y * f) * w + Math.min(w - 1, x * f);
+        for (let i = 0; i < R.length; i++) {
+          const v = belts[i][k] * R[i].height * scale[i];
+          if (v > uplift[o]) {
+            uplift[o] = v;
+            owner[o] = i;
+          }
+        }
+        const i = owner[o];
+        if (i < 0) continue;
+        erod[o] = rock[i][k];
+        // the leading range's own roughness, so "another variant" of one range changes it alone
+        initial[o] = uplift[o] * (0.02 + 0.08 * R[i].irregularity) * cellNoise(Math.round(job.ox + x * f * job.scale), Math.round(job.oy + y * f * job.scale), R[i].seed);
+      }
+    return { uplift, owner, erod, initial };
+  };
+
+  let scale = R.map(() => 1);
+  if (R.length > 1) {
+    // first pass, coarse: how high does each range come out?
+    const f = n > 40_000 ? 2 : 1;
+    const W = Math.ceil(w / f);
+    const H = Math.ceil(h / f);
+    const c = fields(scale, W, H, f);
+    const z = upliftRelief({ w: W, h: H, uplift: c.uplift, cellKm: job.cellKm * f, peakM: 1, erodibility: c.erod, initial: c.initial, raw: true });
+    const top = R.map(() => 0);
+    for (let o = 0; o < W * H; o++) if (c.owner[o] >= 0 && z[o] > top[c.owner[o]]) top[c.owner[o]] = z[o];
+    // relief per unit of asked height; ranges that came out short are pushed up harder
+    const eff = top.map((t, i) => t / R[i].height);
+    const best = Math.max(...eff);
+    scale = eff.map((e) => (e > 0 ? best / e : 1));
   }
-  return { relief, uplift };
+  const c = fields(scale, w, h, 1);
+  const relief = upliftRelief({ w, h, uplift: c.uplift, cellKm: job.cellKm, peakM: job.peakM, erodibility: c.erod, initial: c.initial });
+  return { relief, uplift: belt };
 }
