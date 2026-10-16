@@ -2,8 +2,17 @@ import { Geo } from '../core/geo';
 import { BIOME_CHANNELS, type PlanetSettings } from '../core/planet';
 import { TileGrid, type RasterArray } from './TileGrid';
 
-export type RasterLayer = 'height' | 'biome' | 'fog' | 'water' | 'relief';
-export const RASTER_LAYERS: RasterLayer[] = ['height', 'biome', 'fog', 'water', 'relief'];
+export type RasterLayer = 'height' | 'biome' | 'fog' | 'water' | 'relief' | 'lake';
+export const RASTER_LAYERS: RasterLayer[] = ['height', 'biome', 'fog', 'water', 'relief', 'lake'];
+/** The lake layer's value where there is no lake. */
+export const NO_WATER = -30000;
+/**
+ * Shore cells carry their lake's level plus this, to tell them from the water: the map draws a
+ * lake's shore where the land meets the level, but only next to cells that are under water.
+ */
+export const SHORE_MARK = 50000;
+/** The water level a lake-layer value stands for (shore cells carry it too), or NO_WATER. */
+export const lakeLevel = (v: number) => (v > SHORE_MARK / 2 ? v - SHORE_MARK : v);
 
 /** Water cells per terrain cell along each axis. */
 export const WATER_DETAIL = 4;
@@ -50,11 +59,18 @@ export class TerrainModel {
    * under them, and any sculpting on top, stays: the land without them is `height − relief`.
    */
   readonly relief: TileGrid<Float32Array>;
+  /**
+   * Lakes: the level of the water's surface, metres (datum), or NO_WATER (and on the dry
+   * shore, the level plus SHORE_MARK). Water shows where it
+   * stands above the ground, so a lake has its own level, above or below the sea, and its
+   * depth is the level minus the ground.
+   */
+  readonly lake: TileGrid<Float32Array>;
   /** Per-layer tile keys changed since last persisted. */
-  readonly persistDirty: Record<RasterLayer, Set<number>> = { height: new Set(), biome: new Set(), fog: new Set(), water: new Set(), relief: new Set() };
+  readonly persistDirty: Record<RasterLayer, Set<number>> = { height: new Set(), biome: new Set(), fog: new Set(), water: new Set(), relief: new Set(), lake: new Set() };
   /** Layers whose default value / whole content changed since last persist. */
   readonly persistReset = new Set<RasterLayer>();
-  readonly revision: Record<RasterLayer, number> = { height: 0, biome: 0, fog: 0, water: 0, relief: 0 };
+  readonly revision: Record<RasterLayer, number> = { height: 0, biome: 0, fog: 0, water: 0, relief: 0, lake: 0 };
   private listeners = new Set<RasterListener>();
 
   constructor(planet: PlanetSettings) {
@@ -69,6 +85,7 @@ export class TerrainModel {
     this.fog = new TileGrid(W / 2, H / 2, TS / 2, 1, (n) => new Uint8Array(n), 0, 2, wrap);
     this.water = new TileGrid(W * WATER_DETAIL, H * WATER_DETAIL, TS * WATER_DETAIL, 1, (n) => new Uint8Array(n), 0, 1 / WATER_DETAIL, wrap);
     this.relief = new TileGrid(W, H, TS, 1, (n) => new Float32Array(n), 0, 1, wrap);
+    this.lake = new TileGrid(W, H, TS, 1, (n) => new Float32Array(n), NO_WATER, 1, wrap);
   }
 
   get W() {

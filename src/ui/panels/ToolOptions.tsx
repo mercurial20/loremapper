@@ -362,27 +362,29 @@ export function ToolOptions() {
           <Toggle label={t('Labels')} checked={st.eraseTargets.labels} onChange={(v) => st.set({ eraseTargets: { ...st.eraseTargets, labels: v } })} />
         </div>
       )}
-      {tool === 'river' && (
+      {tool === 'lake' && (
         <>
           <Segmented
-            label={t('Draw rivers')}
-            value={st.riverMode}
-            onChange={(v) => st.set({ riverMode: v })}
+            label={t('Make a lake')}
+            value={st.lakeMode}
+            onChange={(v) => st.set({ lakeMode: v })}
             options={[
-              {
-                value: 'brush',
-                label: (
-                  <>
-                    {t('Brush')}
-                    <AlphaBadge tip={t('A new tool that is still being tested: it may work unstably or not quite right.')} />
-                  </>
-                ),
-                title: t('Paint water exactly where you want it, any width; Shift or Alt erases'),
-              },
-              { value: 'path', label: t('Path'), title: t('A smooth line that tapers from source to mouth') },
+              { value: 'fill', label: t('Fill a hollow'), title: t('Click a hollow: water fills it up to where it would spill over') },
+              { value: 'paint', label: t('Paint'), title: t('Paint a lake where you want it; its bed is cut below the water') },
             ]}
           />
-          <Hint>{st.riverMode === 'brush' ? t('Paint rivers, streams and lakes like with a brush. Shift or Alt erases water.') : t('Drag to draw freehand, or click points and double-click / Enter to finish.')}</Hint>
+          <Hint>
+            {st.lakeMode === 'fill'
+              ? t('Click in a hollow: water rises to the lowest point of its rim, so the shore follows the land. Shift or Alt click removes a lake.')
+              : t('Paint the lake. Its level is the lowest point of its shore, and its bed is cut below it, deepest in the middle. Shift or Alt removes water.')}
+          </Hint>
+          {st.lakeMode === 'paint' && (
+            <Slider label={t('Deepest point')} value={st.lakeDepth} min={2} max={600} log onChange={(v) => st.set({ lakeDepth: Math.round(v) })} format={(v) => formatHeight(v, st.units)} />
+          )}
+        </>
+      )}
+      {tool === 'river' && (
+        <>
           <Toggle
             label={t('Carve a valley')}
             checked={st.riverCarve}

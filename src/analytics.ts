@@ -44,7 +44,7 @@ const SCHEMA = {
   projection_viewed: { projection: ['mercator', 'mollweide', 'equalEarth', 'orthographic', 'azimuthal', 'gott'] },
   style_changed: { style: ['parchment', 'atlas', 'political', 'relief', 'anime', 'strategy', 'pixel', 'antique'] },
   tool_used: {
-    tool: ['select', 'info', 'pan', 'raise', 'lower', 'ridge', 'smooth', 'flatten', 'paint', 'erase', 'river', 'road', 'object', 'label', 'territory', 'fog', 'peak', 'measure'],
+    tool: ['select', 'info', 'pan', 'raise', 'lower', 'ridge', 'smooth', 'flatten', 'paint', 'erase', 'river', 'lake', 'road', 'object', 'label', 'territory', 'fog', 'peak', 'measure'],
   },
   operation_failed: { op: ['generate', 'export', 'import'] },
 } as const;

@@ -13,11 +13,12 @@ interface TileEntry {
   tx: number;
   ty: number;
   mesh: Mesh<Geometry, Shader>;
-  own: Partial<Record<'height' | 'biomeA' | 'biomeB' | 'fog' | 'water', BufferImageSource>>;
+  own: Partial<Record<'height' | 'biomeA' | 'biomeB' | 'fog' | 'water' | 'lake', BufferImageSource>>;
   hasOwnHeight: boolean;
   hasOwnBiome: boolean;
   hasOwnFog: boolean;
   hasOwnWater: boolean;
+  hasOwnLake: boolean;
   dirty: boolean;
 }
 
@@ -38,7 +39,7 @@ let fogProgram: GlProgram | null = null;
 export class RasterTileLayer {
   readonly container = new Container();
   private tiles = new Map<number, TileEntry>();
-  private defaults: Partial<Record<'height' | 'biome' | 'fog' | 'water', BufferImageSource>> = {};
+  private defaults: Partial<Record<'height' | 'biome' | 'fog' | 'water' | 'lake', BufferImageSource>> = {};
   private anyDirty = true;
   /** Texture edge length for full-res (height) and half-res (biome, fog) tiles. */
   private readonly S: number;
@@ -88,6 +89,7 @@ export class RasterTileLayer {
       this.defaults.height = this.makeSource('r32float', new Float32Array(n).fill(this.model.height.defaultValue), false);
       this.defaults.biome = this.makeSource('rgba8unorm', new Uint8Array(nh * 4), true);
       this.defaults.water = this.makeSource('r8unorm', new Uint8Array(this.Sw * this.Sw), true, this.Sw);
+      this.defaults.lake = this.makeSource('r32float', new Float32Array(n).fill(this.model.lake.defaultValue), false);
     } else {
       this.defaults.fog = this.makeSource('r8unorm', new Uint8Array(nh).fill(this.model.fog.defaultValue), true);
     }
@@ -144,6 +146,7 @@ export class RasterTileLayer {
       hasOwnBiome: false,
       hasOwnFog: false,
       hasOwnWater: false,
+      hasOwnLake: false,
       dirty: true,
     };
     entry.mesh.visible = this.kind === 'terrain';
@@ -161,6 +164,7 @@ export class RasterTileLayer {
           uBiomeA: (own.biomeA ?? this.defaults.biome)!,
           uBiomeB: (own.biomeB ?? this.defaults.biome)!,
           uWater: (own.water ?? this.defaults.water)!,
+          uLake: (own.lake ?? this.defaults.lake)!,
           uRamp: this.ramp!,
           style: this.styleUniforms,
           tile: tu,
@@ -320,6 +324,20 @@ export class RasterTileLayer {
             if (t.own.water) retired.push(t.own.water);
             delete t.own.water;
           }
+        }
+        const needL = this.neighbourhoodAllocated(this.model.lake, t.tx, t.ty);
+        if (needL !== t.hasOwnLake) {
+          rebuild = true;
+          t.hasOwnLake = needL;
+          if (needL) t.own.lake = this.makeSource('r32float', new Float32Array(n), false);
+          else {
+            if (t.own.lake) retired.push(t.own.lake);
+            delete t.own.lake;
+          }
+        }
+        if (t.own.lake) {
+          this.fill(this.model.lake, t.tx, t.ty, [{ out: t.own.lake.resource as Float32Array, chFrom: 0, chCount: 1 }]);
+          t.own.lake.update();
         }
         if (t.own.height) {
           this.fill(this.model.height, t.tx, t.ty, [{ out: t.own.height.resource as Float32Array, chFrom: 0, chCount: 1 }]);

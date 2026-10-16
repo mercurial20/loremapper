@@ -1,5 +1,5 @@
 /** Toolbar tool definitions (name, shortcut, icon, help text). */
-import { Eraser, Hand, Info, MousePointer2, Ruler, Shapes, Type } from 'lucide-react';
+import { Eraser, Hand, Info, MousePointer2, Ruler, Shapes, Type, Waves } from 'lucide-react';
 import type { ComponentType, SVGProps } from 'react';
 import type { ToolId } from '../store/editorStore';
 import {
@@ -43,7 +43,8 @@ export const TOOL_GROUPS: ToolDef[][] = [
     { id: 'erase', name: N_('Eraser'), key: 'E', icon: Eraser, help: N_('Erase painted biomes and (optionally) objects, path points and labels under the brush.') },
   ],
   [
-    { id: 'river', name: N_('River'), key: 'W', icon: RiverIcon, help: N_('Paint rivers, streams and lakes with a brush (Shift or Alt erases), or switch to Path for a smooth tapering line.') },
+    { id: 'river', name: N_('River'), key: 'W', icon: RiverIcon, help: N_('Drag to draw a river freehand, or click points and double-click / Enter to finish. It tapers from source to mouth.') },
+    { id: 'lake', name: N_('Lake'), key: 'K', icon: Waves, help: N_('Click a hollow to fill it with water up to where it would spill over, or paint a lake. Shift or Alt removes water.') },
     { id: 'road', name: N_('Road'), key: 'D', icon: RoadIcon, help: N_('Drag to draw freehand, or click points and double-click / Enter to finish.') },
     { id: 'object', name: N_('Place objects'), key: 'O', icon: Shapes, help: N_('Click to place the selected asset, or switch to stamp mode and drag.') },
     { id: 'label', name: N_('Label'), key: 'T', icon: Type, help: N_('Click to add a text label. Click a label to edit it.') },

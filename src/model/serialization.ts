@@ -1,4 +1,5 @@
 import { defaultPlanet } from '../core/planet';
+import { NO_WATER } from '../terrain/TerrainModel';
 import type { ProjectRecord } from '../persistence/db';
 import { defaultView, emptyDocument, type MapDocument, type ProjectMeta } from './types';
 import { t } from '../i18n';
@@ -25,11 +26,12 @@ const MIGRATIONS: Record<number, Migration> = {
     const defaults = (rec.rasterDefaults ?? {}) as Record<string, unknown>;
     return { ...rec, formatVersion: 3, rasterDefaults: { ...defaults, water: 0 } };
   },
-  // 3 → 4 (v1.3): mountain ranges drawn as lines, and the raster of their relief. Older maps have none.
+  // 3 → 4 (v1.3): mountain ranges drawn as lines with the raster of their relief, and lakes with
+  // their own water level. Older maps have neither.
   3: (rec) => {
     const defaults = (rec.rasterDefaults ?? {}) as Record<string, unknown>;
     const doc = (rec.doc ?? {}) as Record<string, unknown>;
-    return { ...rec, formatVersion: 4, rasterDefaults: { ...defaults, relief: 0 }, doc: { ranges: {}, ...doc } };
+    return { ...rec, formatVersion: 4, rasterDefaults: { ...defaults, relief: 0, lake: NO_WATER }, doc: { ranges: {}, ...doc } };
   },
 };
 

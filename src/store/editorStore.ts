@@ -20,6 +20,7 @@ export type ToolId =
   | 'paint'
   | 'erase'
   | 'river'
+  | 'lake'
   | 'road'
   | 'object'
   | 'label'
@@ -38,6 +39,8 @@ export function brushGroupOf(tool: ToolId): BrushGroup | null {
   if (TERRAIN_TOOLS.includes(tool)) return 'terrain';
   // the river tool paints water with a brush unless it's drawing paths
   if (tool === 'river' && useEditor.getState().riverMode === 'brush') return 'water';
+  // the lake tool paints a lake's shape with the water brush, or fills a hollow with a click
+  if (tool === 'lake' && useEditor.getState().lakeMode === 'paint') return 'water';
   if (tool === 'paint') return 'paint';
   if (tool === 'fog') return 'fog';
   if (tool === 'erase') return 'erase';
@@ -131,6 +134,10 @@ interface EditorState {
   riverMode: 'brush' | 'path';
   /** Rivers cut a bed and a soft valley into the terrain as they are drawn. */
   riverCarve: boolean;
+  /** Lake tool: fill a hollow up to where it spills (a click), or paint a lake's shape. */
+  lakeMode: 'fill' | 'paint';
+  /** Lake tool, painting: depth of a painted lake's middle, metres. */
+  lakeDepth: number;
   /** Mountain range tool: build ranges with a brush, or draw their crests as lines (alpha). */
   rangeMode: 'brush' | 'lines';
   /** The mountain range being drawn or edited (lines mode). */
@@ -255,8 +262,10 @@ export const useEditor = create<EditorState>((set, get) => ({
   panelHidden: storedPanelHidden(),
   viewProjection: null,
   referenceEdit: false,
-  riverMode: 'brush',
+  riverMode: 'path',
   riverCarve: true,
+  lakeMode: 'fill',
+  lakeDepth: 40,
   rangeMode: 'lines',
   activeRange: null,
   raiseMethod: 'classic',

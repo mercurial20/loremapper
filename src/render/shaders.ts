@@ -105,6 +105,8 @@ uniform sampler2D uHeight;
 uniform sampler2D uBiomeA;
 uniform sampler2D uBiomeB;
 uniform sampler2D uWater;
+// lakes: the level of the water's surface (metres, datum), or below -20000 where there is none
+uniform sampler2D uLake;
 uniform sampler2D uRamp;
 uniform vec2 uTexOrigin;
 uniform float uTexSize;
@@ -505,6 +507,45 @@ void main() {
       col = mix(col, rc, wa * uWaterVis * landA);
       float bank = 1.0 - smoothstep(uCoastWidth * 0.4 - 0.35, uCoastWidth * 0.4 + 0.6, abs(wdist));
       col = mix(col, uCoastInk, bank * 0.7 * uWaterVis * landA);
+    }
+  }
+
+  // ---------- lakes: water with its own level ----------
+  {
+    // cells under water hold the level; their dry shore holds it plus 50000
+    vec2 lt = w - uTexOrigin - 0.5;
+    vec2 li = floor(lt);
+    vec2 lf = lt - li;
+    float lv = -30000.0;
+    float wetA = 0.0;
+    float wsum = 0.0;
+    for (int j = 0; j < 2; j++)
+      for (int i = 0; i < 2; i++) {
+        ivec2 p = ivec2(clamp(li + vec2(float(i), float(j)), vec2(0.0), vec2(uTexSize - 1.0)));
+        float v = texelFetch(uLake, p, 0).r;
+        float wgt = (i == 0 ? 1.0 - lf.x : lf.x) * (j == 0 ? 1.0 - lf.y : lf.y);
+        bool isWater = v > -20000.0 && v < 25000.0;
+        float lvl = v > 25000.0 ? v - 50000.0 : v;
+        if (v > -20000.0) lv = max(lv, lvl);
+        wetA += isWater ? wgt : 0.0;
+        wsum += wgt;
+      }
+    if (lv > -20000.0) {
+      // the shore is where the smooth ground meets the level, so it follows the land's curves
+      float ld = lv - h;
+      // the level is flat, so the water's edge sharpens with the ground's slope (not fwidth, which
+      // jumps where a lake's cells end and would draw their steps)
+      float fl = max(gmag * px * (uPixel > 0.0 ? uPixel : 1.0), 1e-3);
+      float la = uPixel > 0.0 ? step(0.0, ld) : smoothstep(-0.5, 0.5, ld / fl);
+      // and only next to cells that are under water: beyond them (past a lake's outlet, or where
+      // the smoothed ground dips just under the level on a dry shore) there is no water
+      la *= smoothstep(0.05, 0.3, wetA / max(wsum, 1e-6));
+      // deeper water is darker, as in the sea
+      vec3 lc = ramp(1.0, 0.03 + 0.55 * pow(clamp(ld / 400.0, 0.0, 1.0), 0.6));
+      lc *= 0.99 + 0.02 * fbmW(w, 0.3, 100.0, 3);
+      col = mix(col, lc, la);
+      float lbank = (1.0 - smoothstep(uCoastWidth * 0.5 - 0.35, uCoastWidth * 0.5 + 0.6, abs(ld / fl))) * step(0.001, la + (ld < 0.0 ? smoothstep(0.05, 0.3, wetA / max(wsum, 1e-6)) : 0.0));
+      col = mix(col, uCoastInk, lbank * 0.75);
     }
   }
 
