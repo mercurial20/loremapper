@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.3-alpha.3] — 2026-10-16
+
+### Added
+
+- **Mountain ranges drawn as lines** (alpha, now the default in the Mountain ranges tool). Draw a range's crest; start or end a line on another crest to branch off it. Rivers then carve the range into ridges and valleys (stream-power erosion), and ranges that touch are carved together, with valleys between parallel chains. Each range has its height, width, irregularity and asymmetry, *Another variant*, and *Bake into terrain* to sculpt it further with the brushes. The previous brush stays available.
+- **Raise: Erosion method** (alpha): paint where land rises and rivers carve it into ridges and valleys. *Classic* stays the default.
+- **Lakes with their own water level** (Lake tool, <kbd>K</kbd>):
+  - *Fill a hollow*: a click fills a hollow up to the lowest point of its rim, so the shore follows the land;
+  - *Paint*: the shore follows the brush, the bed is cut below the water; painting on from a lake extends it, and water painted into the sea becomes a bay;
+  - shores look like the sea's: fractal detail, coast line and ripples; deeper water is darker;
+  - a selected lake shows its area and depth, and its level can be lowered or raised up to where it would spill (*Fill to the brim*).
+- **Rivers as one network with the sea and lakes.** Rivers are now drawn as the map's water: a river's mouth opens into the sea or a lake without a line across it, and a tributary flows into its river without a seam. Below each tributary the river widens. While drawing, a river's end snaps to the shore of the sea or a lake, or onto another river; a river drawn from its mouth upstream is turned around.
+- **One way to select anything.** *Select* <kbd>V</kbd> now picks objects, rivers, roads, realms and labels, and also lakes, islands, continents and seas. Click it again or press Esc to let go; switching to a tool that does not work on it lets go too. Islands inside lakes are islands of their own.
+
+### Changed
+
+- *Info* is part of *Select* (<kbd>I</kbd> still switches to it); hovering shows what is under the cursor below the map.
+- Rivers take the colour of the map's water; a river no longer has a colour of its own.
+- The River tool draws paths only; the water-painting brush is replaced by the Lake tool's *Paint*. Water painted earlier stays on the map.
+- Classic brush presets no longer have ragged edges.
+
 ## [1.2.3-alpha.2] — 2026-10-15
 
 ### Fixed
