@@ -6,13 +6,8 @@ export type RasterLayer = 'height' | 'biome' | 'fog' | 'water' | 'relief' | 'lak
 export const RASTER_LAYERS: RasterLayer[] = ['height', 'biome', 'fog', 'water', 'relief', 'lake'];
 /** The lake layer's value where there is no lake. */
 export const NO_WATER = -30000;
-/**
- * Shore cells carry their lake's level plus this, to tell them from the water: the map draws a
- * lake's shore where the land meets the level, but only next to cells that are under water.
- */
-export const SHORE_MARK = 50000;
-/** The water level a lake-layer value stands for (shore cells carry it too), or NO_WATER. */
-export const lakeLevel = (v: number) => (v > SHORE_MARK / 2 ? v - SHORE_MARK : v);
+/** Whether a lake-layer value is a lake's level (early versions also marked dry shores, far above any level). */
+export const isLake = (v: number) => v > -20000 && v < 25000;
 
 /** Water cells per terrain cell along each axis. */
 export const WATER_DETAIL = 4;
@@ -60,10 +55,9 @@ export class TerrainModel {
    */
   readonly relief: TileGrid<Float32Array>;
   /**
-   * Lakes: the level of the water's surface, metres (datum), or NO_WATER (and on the dry
-   * shore, the level plus SHORE_MARK). Water shows where it
-   * stands above the ground, so a lake has its own level, above or below the sea, and its
-   * depth is the level minus the ground.
+   * Lakes: on the cells under a lake, the level of its surface, metres (datum); NO_WATER
+   * elsewhere. A lake has its own level, above or below the sea, and its depth is the level
+   * minus the ground; the map draws its shore where the smoothed ground meets the level.
    */
   readonly lake: TileGrid<Float32Array>;
   /** Per-layer tile keys changed since last persisted. */

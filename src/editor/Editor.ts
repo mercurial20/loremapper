@@ -25,6 +25,7 @@ import { ReferenceLayer } from '../render/ReferenceLayer';
 import { track } from '../analytics';
 import { TerrainModel } from '../terrain/TerrainModel';
 import { i18n, t } from '../i18n';
+import { selectedLake } from './lakes';
 
 export interface Layers {
   objects: ObjectLayer;
@@ -37,6 +38,9 @@ export interface Layers {
 }
 
 const SAVE_DELAY = 900;
+/** A bump of the lakes' revision is already queued. */
+let lakeBump = false;
+let lakeGeoTimer = 0;
 
 /**
  * Editor runtime: owns the active project's raster model and renderer and
@@ -233,6 +237,7 @@ class Editor {
           renderer.requestRender();
         }
         if (s.fogPreview !== prev.fogPreview) renderer.setFogPreview(s.fogPreview);
+        if (s.selectedLake !== prev.selectedLake || s.lakeRev !== prev.lakeRev) renderer.setLakeSelection(selectedLake());
         if (s.referenceEdit !== prev.referenceEdit) {
           this.layers?.reference.setEditing(s.referenceEdit);
           renderer.requestRender();
@@ -261,6 +266,19 @@ class Editor {
       model.subscribe((layer) => {
         this.scheduleSave();
         if (layer === 'height') this.schedulePeaks();
+        // lakes split the land into islands and are water bodies of their own
+        if (layer === 'lake') {
+          clearTimeout(lakeGeoTimer);
+          lakeGeoTimer = window.setTimeout(refreshGeographyIfShown, 450);
+        }
+        // lakes (and the ground under them) changed: what shows them is worked out again, once
+        if ((layer === 'lake' || layer === 'height') && !lakeBump) {
+          lakeBump = true;
+          queueMicrotask(() => {
+            lakeBump = false;
+            useEditor.getState().set({ lakeRev: useEditor.getState().lakeRev + 1 });
+          });
+        }
       }),
       renderer.onView(() => {
         const c = renderer.camera;
@@ -454,9 +472,9 @@ class Editor {
       if (!this.projView) this.projView = new ProjectedView(r, this.host!, p);
       else this.projView.setParams(p, refit);
       r.frameOverride = () => this.projView?.render();
-      // the projected view is for looking: Info and Pan work there
+      // the projected view is for looking: Select (to see what is where) and Pan work there
       const st = useEditor.getState();
-      if (!st.readOnly && st.tool !== 'info' && st.tool !== 'pan') st.set({ tool: 'info', prevTool: st.tool });
+      if (!st.readOnly && st.tool !== 'select' && st.tool !== 'pan') st.set({ tool: 'select', prevTool: st.tool });
     } else {
       r.frameOverride = null;
       this.projView?.destroy();

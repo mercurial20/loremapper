@@ -7,6 +7,7 @@ import { LandsList, RegionInspector } from './panels/GeographyPanel';
 import { LayersPanel, ViewerLayers } from './panels/LayersPanel';
 import { ViewerInfo } from './panels/ViewerInfo';
 import { SelectionInspector } from './panels/SelectionInspector';
+import { LakeControls } from './panels/LakeInspector';
 import { selectionTitle } from './panels/selectionTitle';
 import { ToolOptions } from './panels/ToolOptions';
 import { ALL_TOOLS } from './toolDefs';
@@ -24,6 +25,7 @@ export function RightPanel() {
   const set = useEditor((s) => s.set);
   const objectCount = useDoc((s) => Object.keys(s.doc.objects).length);
   const def = ALL_TOOLS.find((t) => t.id === tool);
+  const lake = useEditor((s) => s.selectedLake);
   const closeRegion = (
     <button className="icon-btn small" onClick={clearInspect} title={t('Close (Esc)')} aria-label={t('Close')}>
       <X size={14} />
@@ -71,11 +73,17 @@ export function RightPanel() {
     <aside className="right-panel">
       <div className="right-scroll">
         {sel.length > 0 && (
-          <Section title={selectionTitle(sel[0]?.kind, sel.length)} className="selection-section">
+          <Section title={selectionTitle(sel[0]?.kind, sel.length)} className="selection-section" actions={closeRegion}>
             <SelectionInspector />
           </Section>
         )}
-        {region && sel.length === 0 && (
+        {lake && sel.length === 0 && (
+          <Section title={kindLabel('lake')} className="selection-section" actions={closeRegion}>
+            <LakeControls measured={!!region} />
+            {region && <RegionInspector r={region} />}
+          </Section>
+        )}
+        {region && !lake && sel.length === 0 && (
           <Section title={kindLabel(region.kind)} className="selection-section" actions={closeRegion}>
             <RegionInspector r={region} />
           </Section>

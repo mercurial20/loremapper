@@ -1,5 +1,5 @@
 import { assetLibrary } from '../assets/library';
-import { clearInspect, inspectAt } from '../editor/geography';
+import { inspectAt, pickRegionAt } from '../editor/geography';
 import { formatLength } from '../core/units';
 import { brushRange } from '../ui/format';
 import { clamp, simplifyPath, uid } from '../core/math';
@@ -30,20 +30,21 @@ import { brushGroupOf, togglePanel, useEditor, type ToolId } from '../store/edit
 import { Stroke, type TerrainOp } from '../terrain/brushes';
 import { erodeRiver, newWaterCells, waterIn } from '../terrain/riverErosion';
 import { carveUplift } from '../terrain/upliftStroke';
-import { clearLake, fillBasin, lakeAt, paintLake, setLake, touchingLakes } from '../terrain/lakes';
+import { clearLake, fillBasin, lakeAt, lakeDepthAt, paintLake, setLake, touchingLakes } from '../terrain/lakes';
+import { pickLake, selectLake } from '../editor/lakes';
 import { addCrestLine, snapToCrest } from '../editor/ranges';
 import { crestCurve } from '../terrain/ranges';
 import { sampleSpline } from '../render/vectorGeometry';
-import type { TileChange } from '../terrain/TerrainModel';
+import type { TerrainModel, TileChange } from '../terrain/TerrainModel';
 import { hitAny, hitPeak, hitVertex, insertionIndex, nearX, objectHandleHit, type HitContext } from './hitTest';
 import { i18n, t } from '../i18n';
 
 type Drag =
   // the Info tool pans too; a press that does not move is a click on `info`
   | { kind: 'reference'; corner: number; start: Vec2; orig: { x: number; y: number; w: number; h: number }; key: string }
-  | { kind: 'pan'; sx: number; sy: number; info?: { x: number; y: number; ox: number; oy: number; moved: boolean } }
-  | { kind: 'stroke'; stroke: Stroke; last: Vec2; lastDab: number; erase?: EraseState; lakeErase?: boolean }
-  | { kind: 'move'; start: Vec2; base: MapDocument; refs: SelectionRef[]; moved: boolean; key: string }
+  | { kind: 'pan'; sx: number; sy: number }
+  | { kind: 'stroke'; stroke: Stroke; last: Vec2; lastDab: number; erase?: EraseState; lakeErase?: boolean; start?: Vec2 }
+  | { kind: 'move'; start: Vec2; base: MapDocument; refs: SelectionRef[]; moved: boolean; key: string; toggle?: boolean }
   | { kind: 'marquee'; start: Vec2; additive: boolean }
   | { kind: 'rotate'; id: string; key: string }
   | { kind: 'scale'; id: string; startDist: number; startScale: number; key: string }
@@ -216,7 +217,6 @@ export class ToolController {
     if (useEditor.getState().referenceEdit) c = 'move';
     else if (tool === 'pan') c = this.drag?.kind === 'pan' ? 'grabbing' : 'grab';
     else if (tool === 'select') c = 'default';
-    else if (tool === 'info') c = this.drag?.kind === 'pan' && this.drag.info?.moved ? 'grabbing' : 'help';
     else if (brushGroupOf(tool)) c = 'none';
     else if (tool === 'label') c = 'text';
     this.canvas.style.cursor = c;
@@ -288,6 +288,7 @@ export class ToolController {
           elevation: m.heightAt(x, y) - m.seaLevel,
           biome: m.biomeAt(x, y),
           fog: m.fogAt(x, y),
+          lake: lakeLevelAt(m, x, y),
         },
       });
     });
@@ -324,10 +325,9 @@ export class ToolController {
     this.alt = e.altKey;
     const [x, y] = this.world(e);
     this.pointer = { ...this.pointer, x, y, inside: true };
-    if (e.button === 1 || e.button === 2 || this.tool === 'pan' || this.tool === 'info') {
+    if (e.button === 1 || e.button === 2 || this.tool === 'pan') {
       if (e.button === 0) track('tool_used', { tool: this.tool });
-      const info = e.button === 0 && this.tool === 'info' ? { x, y, ox: e.clientX, oy: e.clientY, moved: false } : undefined;
-      this.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, info };
+      this.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY };
       this.updateCursorStyle();
       return;
     }
@@ -401,11 +401,6 @@ export class ToolController {
     if (d) {
       switch (d.kind) {
         case 'pan':
-          if (d.info && !d.info.moved) {
-            if (Math.hypot(e.clientX - d.info.ox, e.clientY - d.info.oy) < 4) break;
-            d.info.moved = true;
-            this.updateCursorStyle();
-          }
           editor.renderer.camera.pan(e.clientX - d.sx, e.clientY - d.sy);
           d.sx = e.clientX;
           d.sy = e.clientY;
@@ -485,7 +480,7 @@ export class ToolController {
     if (editor.projView) {
       const d = this.projDrag;
       this.projDrag = null;
-      if (d && !d.moved && this.tool === 'info') {
+      if (d && !d.moved && this.tool === 'select') {
         const w = this.world(e);
         if (w) {
           useEditor.getState().select([]);
@@ -504,17 +499,25 @@ export class ToolController {
     }
     switch (d.kind) {
       case 'pan':
-        if (d.info && !d.info.moved) this.infoClick(d.info.x, d.info.y);
         break;
       case 'stroke':
-        if (this.tool === 'lake') this.endLakeStroke(d.stroke, !!d.lakeErase);
+        if (this.tool === 'lake') {
+          // a click on a lake (no drag) selects it
+          const click = d.start && Math.hypot(d.last[0] - d.start[0], d.last[1] - d.start[1]) < 1;
+          if (click && !d.lakeErase && lakeAt(editor.model, editor.model.geo.wrapX(d.start![0]), d.start![1]).length) {
+            const change = d.stroke.finish();
+            if (change) editor.model.applyTiles(change, 'before');
+            selectLake([Math.floor(editor.model.geo.wrapX(d.start![0])), Math.floor(d.start![1])]);
+          } else this.endLakeStroke(d.stroke, !!d.lakeErase);
+        }
         else this.endStroke(d.stroke, d.erase);
         break;
       case 'marquee':
         this.finishMarquee(d);
         break;
       case 'move':
-        if (!d.moved && d.refs.length && !this.shift) {
+        if (!d.moved && d.toggle) useEditor.getState().select([]);
+        else if (!d.moved && d.refs.length && !this.shift) {
           // plain click on an already-selected item: narrow selection to it
           const hit = hitAny(this.hitCtx(), this.pointer.x, this.pointer.y);
           if (hit) useEditor.getState().select([hit]);
@@ -663,7 +666,7 @@ export class ToolController {
     const erase: EraseState | undefined = tool === 'erase' ? { before: null } : undefined;
     if (tool !== 'erase' || st.eraseTargets.biomes) stroke.dab(x, y);
     if (erase) this.eraseFeaturesAt(x, y, erase);
-    this.drag = { kind: 'stroke', stroke, last: [x, y], lastDab: performance.now(), erase, lakeErase: tool === 'lake' && inv };
+    this.drag = { kind: 'stroke', stroke, last: [x, y], lastDab: performance.now(), erase, lakeErase: tool === 'lake' && inv, start: [x, y] };
   }
 
   private strokeTo(x: number, y: number) {
@@ -779,16 +782,31 @@ export class ToolController {
     }
   }
 
-  /** Lake tool, filling: water fills the hollow under the cursor up to where it would spill (or, inverted, the lake there drains). */
+  /**
+   * Lake tool, a click: on a lake, selects it (its level and figures show in the panel); elsewhere
+   * water fills the hollow under the cursor up to where it would spill. Inverted, the lake there drains.
+   */
   private lakeClick(x: number, y: number, remove: boolean) {
     const model = editor.model!;
     const st = useEditor.getState();
+    const wx = model.geo.wrapX(x);
+    const at: Vec2 = [Math.floor(wx), Math.floor(y)];
+    const here = lakeAt(model, wx, y);
     if (remove) {
-      const change = clearLake(model, lakeAt(model, model.geo.wrapX(x), y, true));
+      const change = here.length ? clearLake(model, here) : null;
       if (change) pushTileChange(change, t('Remove a lake'), model);
+      selectLake(null);
       return;
     }
-    const basin = fillBasin(model, model.geo.wrapX(x), y);
+    if (here.length) {
+      selectLake(at);
+      return;
+    }
+    if (st.lakeMode === 'paint') {
+      selectLake(null);
+      return;
+    }
+    const basin = fillBasin(model, wx, y);
     if ('reason' in basin) {
       st.notify(basin.reason === 'too-big' ? t('This hollow is too large to fill.') : t('No hollow here: water would run off downhill. Click lower, in a dip, or paint a lake.'));
       return;
@@ -797,9 +815,11 @@ export class ToolController {
     const joined = touchingLakes(model, basin.cells);
     const change = setLake(model, [...basin.cells, ...joined.cells], Math.max(basin.level, joined.level));
     if (change) pushTileChange(change, t('Fill a lake'), model);
+    const k = basin.cells[0];
+    selectLake([k % model.W, (k / model.W) | 0]);
   }
 
-  /** Lake tool, painting: the painted shape becomes a lake with its bed cut below its level (or, inverted, loses its water). */
+  /** Lake tool, painting: the painted shape becomes a lake whose shore runs along it (or, inverted, loses its water). */
   private endLakeStroke(stroke: Stroke, remove: boolean) {
     const change = stroke.finish();
     if (!change) return;
@@ -807,7 +827,8 @@ export class ToolController {
     // the painted water was only the shape: take it back off the water layer
     const wg = model.water;
     const D = wg.TS / model.TS;
-    const cells = new Set<number>();
+    // how much of each terrain cell this stroke painted, 0 … 1
+    const cover = new Map<number, number>();
     for (const [k, tile] of change.after) {
       if (!tile) continue;
       const before = change.before.get(k);
@@ -815,25 +836,29 @@ export class ToolController {
       const ty = Math.floor(k / wg.NX);
       for (let y = 0; y < model.TS; y++)
         for (let x = 0; x < model.TS; x++) {
-          // a terrain cell is in the lake when most of it was painted by this stroke
           let sum = 0;
           for (let j = 0; j < D; j++)
             for (let i = 0; i < D; i++) {
               const li = (y * D + j) * wg.TS + x * D + i;
               sum += Math.max(0, tile[li] - (before ? before[li] : 0));
             }
-          if (sum / (D * D) >= 128) cells.add((ty * model.TS + y) * model.W + tx * model.TS + x);
+          const c = sum / (D * D * 255);
+          const wy = ty * model.TS + y;
+          const wx = tx * model.TS + x;
+          if (c > 0.01 && wy < model.H && wx < model.W) cover.set(wy * model.W + wx, Math.min(1, c));
         }
     }
     model.applyTiles(change, 'before');
-    if (!cells.size) return;
+    if (!cover.size) return;
     if (remove) {
+      const cells = [...cover].filter(([, c]) => c >= 0.5).map(([k]) => k);
       const c = clearLake(model, cells);
       if (c) pushTileChange(c, t('Remove a lake'), model);
       return;
     }
-    const changes = paintLake(model, cells, useEditor.getState().lakeDepth);
+    const { changes, cells } = paintLake(model, cover, useEditor.getState().lakeDepth);
     if (changes.length) pushTileChanges(changes, t('Paint a lake'), model);
+    if (cells.length) selectLake([cells[0] % model.W, (cells[0] / model.W) | 0]);
   }
 
   /** Eraser: remove objects / path points / labels under the brush. */
@@ -927,13 +952,18 @@ export class ToolController {
       return;
     }
     const already = sel.some((r) => r.id === hit.id);
+    // a click on the one thing selected lets it go (unless it is dragged)
+    const toggle = !e.shiftKey && sel.length === 1 && already;
     let next = sel;
     if (e.shiftKey) next = already ? sel.filter((r) => r.id !== hit.id) : [...sel, hit];
     else if (!already) next = [hit];
     st.select(next);
-    if (hit.kind === 'peak') return;
+    if (hit.kind === 'peak') {
+      if (toggle) st.select([]);
+      return;
+    }
     const movable = next.filter((r) => r.kind !== 'peak');
-    if (movable.length) this.drag = { kind: 'move', start: [x, y], base: doc, refs: movable, moved: false, key };
+    if (movable.length) this.drag = { kind: 'move', start: [x, y], base: doc, refs: movable, moved: false, key, toggle };
   }
 
   private updateHover(x: number, y: number) {
@@ -998,11 +1028,23 @@ export class ToolController {
   }
 
   /** Info tool: show the card of the landmass or water body clicked. */
-  private infoClick(x: number, y: number) {
+  /**
+   * Select tool, a click on no object: the lake there, or else the landmass or water body. A click
+   * on what is already selected lets it go.
+   */
+  private pickTerrain(x: number, y: number) {
+    const model = editor.model!;
     const st = useEditor.getState();
-    st.select([]);
     if (st.panelHidden) togglePanel(true);
-    void inspectAt(x, y);
+    const wx = model.geo.wrapX(x);
+    if (lakeDepthAt(model, wx, y).depth > 0) {
+      const cells = lakeAt(model, wx, y);
+      if (cells.length) {
+        pickLake(cells, [Math.floor(wx), Math.floor(y)]);
+        return;
+      }
+    }
+    void pickRegionAt(wx, y);
   }
 
   private finishMarquee(d: Extract<Drag, { kind: 'marquee' }>) {
@@ -1011,8 +1053,8 @@ export class ToolController {
     editor.requestRender();
     const click = !m || (Math.abs(m.x1 - m.x0) * editor.zoom < 3 && Math.abs(m.y1 - m.y0) * editor.zoom < 3);
     if (click || !m) {
-      // a plain click on empty map only deselects (the Info tool shows what is there)
-      if (!d.additive) clearInspect();
+      // a click on no object: the lake, landmass or water body there
+      if (!d.additive) this.pickTerrain(d.start[0], d.start[1]);
       return;
     }
     const x0 = Math.min(m.x0, m.x1);
@@ -1450,10 +1492,7 @@ export class ToolController {
     }
     // the viewer has no editing shortcuts; Escape still clears what is shown
     if (useEditor.getState().readOnly) {
-      if (e.key === 'Escape') {
-        useEditor.getState().select([]);
-        clearInspect();
-      }
+      if (e.key === 'Escape') useEditor.getState().deselect();
       return;
     }
     this.shift = e.shiftKey;
@@ -1511,10 +1550,7 @@ export class ToolController {
     if (k === 'Escape') {
       if (this.draft) this.cancelDraft();
       else if (this.tool === 'measure') this.clearMeasure();
-      else {
-        st.select([]);
-        clearInspect();
-      }
+      else st.deselect();
       return;
     }
     if (k === 'Enter') {
@@ -1584,7 +1620,7 @@ export class ToolController {
       t: 'label',
       g: 'territory',
       x: 'fog',
-      i: 'info',
+      i: 'select',
       u: 'measure',
       p: 'peak',
     };
@@ -1612,6 +1648,13 @@ function darken(hex: string): string {
   const v = hex.replace('#', '');
   const f = (i: number) => Math.round(parseInt(v.slice(i, i + 2), 16) * 0.55).toString(16).padStart(2, '0');
   return `#${f(0)}${f(2)}${f(4)}`;
+}
+
+/** The level of the lake at a point, where the map shows its water. */
+function lakeLevelAt(m: TerrainModel, x: number, y: number): number | null {
+  if (y < 0 || y >= m.H) return null;
+  const { depth, level } = lakeDepthAt(m, m.geo.wrapX(x), y);
+  return depth > 0 ? level : null;
 }
 
 /** Push several raster changes (e.g. water and the valley it cut) as one undo step. */

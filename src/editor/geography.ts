@@ -13,8 +13,11 @@ import { N_, t } from '../i18n';
  * Landmasses and water bodies of the current map, measured in a worker and
  * cached until the terrain or the sea level changes.
  */
-let current: { geo: Geography; revision: number; sea: number; model: unknown } | null = null;
-let pending: { revision: number; promise: Promise<Geography | null> } | null = null;
+let current: { geo: Geography; revision: string; sea: number; model: unknown } | null = null;
+let pending: { revision: string; promise: Promise<Geography | null> } | null = null;
+
+/** What the measurement depends on: the ground and the lakes on it. */
+const revisionOf = (m: { revision: { height: number; lake: number } }) => `${m.revision.height}:${m.revision.lake}`;
 
 export function resetGeography() {
   current = null;
@@ -26,7 +29,7 @@ export function resetGeography() {
 /** The latest measurement if it still matches the terrain. */
 export function freshGeography(): Geography | null {
   const m = editor.model;
-  if (!m || !current || current.model !== m || current.revision !== m.revision.height || current.sea !== m.seaLevel) return null;
+  if (!m || !current || current.model !== m || current.revision !== revisionOf(m) || current.sea !== m.seaLevel) return null;
   return current.geo;
 }
 
@@ -36,7 +39,7 @@ export function ensureGeography(): Promise<Geography | null> {
   if (!model) return Promise.resolve(null);
   const fresh = freshGeography();
   if (fresh) return Promise.resolve(fresh);
-  const revision = model.revision.height;
+  const revision = revisionOf(model);
   if (pending && pending.revision === revision) return pending.promise;
   useEditor.getState().set({ geoBusy: true });
   const sea = model.seaLevel;
@@ -52,7 +55,18 @@ export function ensureGeography(): Promise<Geography | null> {
     };
     const g = model.height;
     const tiles = [...g.tiles.entries()].map(([k, data]) => ({ tx: k % g.NX, ty: Math.floor(k / g.NX), data: data as Float32Array }));
-    const req: GeographyRequest = { tiles, tileSize: g.TS, defaultHeight: g.defaultValue, W: model.W, H: model.H, surface: model.geo.flat ? { kind: 'flat', cellKm: model.geo.cellKm } : { kind: 'planet', radiusKm: model.planet.radiusKm }, seaLevel: sea };
+    const lg = model.lake;
+    const lakeTiles = [...lg.tiles.entries()].map(([k, data]) => ({ tx: k % lg.NX, ty: Math.floor(k / lg.NX), data }));
+    const req: GeographyRequest = {
+      tiles,
+      lakeTiles,
+      tileSize: g.TS,
+      defaultHeight: g.defaultValue,
+      W: model.W,
+      H: model.H,
+      surface: model.geo.flat ? { kind: 'flat', cellKm: model.geo.cellKm } : { kind: 'planet', radiusKm: model.planet.radiusKm },
+      seaLevel: sea,
+    };
     // tiles are copied by structured clone (a fast memory copy); the editor keeps its own
     w.postMessage(req);
   }).then((geo) => {
@@ -70,7 +84,7 @@ export function ensureGeography(): Promise<Geography | null> {
 }
 
 /** The tool that answers "what is here?": Info in the editor, a tap (Select) in the viewer. */
-const asksWhatIsHere = (st: { tool: string; readOnly: boolean }) => st.tool === 'info' || (st.readOnly && st.tool === 'select');
+const asksWhatIsHere = (st: { tool: string; readOnly: boolean }) => st.tool === 'select';
 
 /**
  * Re-measure after terrain edits while something shows the results — or
@@ -84,7 +98,12 @@ export function refreshGeographyIfShown() {
 function publish(g: Geography) {
   const st = useEditor.getState();
   let inspect = st.inspect;
-  if (inspect) {
+  const lake = st.selectedLake;
+  if (lake) {
+    // a selected lake shows as its water body (with its name, size and shore)
+    const r = regionAt(g, lake[0] + 0.5, lake[1] + 0.5);
+    inspect = r && !r.land && r.level !== undefined ? { land: false, id: r.id, anchorX: lake[0] + 0.5, anchorY: lake[1] + 0.5 } : null;
+  } else if (inspect) {
     // find the inspected region again from its anchor
     const r = regionAt(g, inspect.anchorX, inspect.anchorY);
     inspect = r && r.land === inspect.land ? { ...inspect, id: r.id } : null;
@@ -130,19 +149,38 @@ export function showRegion(r: RegionInfo) {
 }
 
 function select(r: RegionInfo, ax: number, ay: number) {
-  useEditor.getState().set({ inspect: { land: r.land, id: r.id, anchorX: ax, anchorY: ay }, inspectorOpen: true });
+  // a lake with its own level is selected as a lake: its level and depth can be changed
+  const lake: Vec2 | null = r.level !== undefined ? [Math.floor(ax), Math.floor(ay)] : null;
+  useEditor.getState().set({ selection: [], inspect: { land: r.land, id: r.id, anchorX: ax, anchorY: ay }, selectedLake: lake, inspectorOpen: true });
   setOutline(r);
 }
 
+/**
+ * Select the landmass or water body at a map position (a click with Select on no object); a
+ * click on the one already selected lets it go.
+ */
+export async function pickRegionAt(x: number, y: number) {
+  const g = await ensureGeography();
+  if (!g) return;
+  const r = regionAt(g, x, y);
+  if (!r) return;
+  const st = useEditor.getState();
+  const cur = st.inspect;
+  if (cur && cur.land === r.land && cur.id === r.id) st.deselect();
+  else select(r, x, y);
+}
+
+/** Let go of the inspected landmass or water body (and anything else selected). */
 export function clearInspect() {
-  useEditor.getState().set({ inspect: null });
+  useEditor.getState().deselect();
   setOutline(null);
 }
 
 /** Show a region's shoreline on the map (the world ocean's would trace every coast, so it has none). */
 function setOutline(r: RegionInfo | null) {
   const g = current?.geo;
-  const lines = r && g && !(r.kind === 'ocean' && !r.land) ? r.outlines.map((n) => g.outlines[n].pts) : null;
+  // a lake glows along its own shore instead (the map draws it)
+  const lines = r && g && !(r.kind === 'ocean' && !r.land) && r.level === undefined ? r.outlines.map((n) => g.outlines[n].pts) : null;
   editor.layers?.overlay.set({ region: lines });
   editor.requestRender();
 }

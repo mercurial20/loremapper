@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cellAreaKm2, makeGrid } from './gen/grid';
-import { analyzeGeography } from './geography';
+import { analyzeGeography, NO_LAKE } from './geography';
 
 describe('geography', () => {
   const W = 256;
@@ -72,5 +72,31 @@ describe('geography', () => {
     expect(f.land[0].areaKm2).toBeCloseTo((80 * 60 - 4) * 4, 6);
     expect(f.mapKm2).toBe(W * H * 4);
     expect(f.water[0].kind).toBe('sea');
+  });
+  it('counts a lake as water: an island in it is an island of its own, and the lake its own water body', () => {
+    const W2 = 64;
+    const H2 = 64;
+    const ground = new Float32Array(W2 * H2).fill(-100);
+    const lake = new Int16Array(W2 * H2).fill(NO_LAKE);
+    // land 300 m high, with a lake at 250 m over a hollow, and a hill rising out of the lake
+    for (let y = 8; y < 56; y++) for (let x = 8; x < 56; x++) ground[y * W2 + x] = 300;
+    for (let y = 20; y < 44; y++)
+      for (let x = 20; x < 44; x++) {
+        const hill = x >= 29 && x < 35 && y >= 29 && y < 35;
+        ground[y * W2 + x] = hill ? 280 : 200;
+        if (!hill) lake[y * W2 + x] = 250;
+      }
+    const f = analyzeGeography(ground, W2, H2, { kind: 'flat', cellKm: 1 }, 0, lake);
+    expect(f.land.length).toBe(2);
+    expect(f.land[0].areaKm2).toBe(48 * 48 - 24 * 24);
+    expect(f.land[1].areaKm2).toBe(36);
+    const lakes = f.water.filter((r) => r.kind === 'lake');
+    expect(lakes.length).toBe(1);
+    expect(lakes[0].level).toBe(250);
+    expect(lakes[0].areaKm2).toBe(24 * 24 - 36);
+    // its depth is below its own level, not the sea's
+    expect(lakes[0].extreme).toBe(-50);
+    // the sea around the land stays one water body, apart from the lake
+    expect(f.water.length).toBe(2);
   });
 });

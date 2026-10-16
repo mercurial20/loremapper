@@ -375,8 +375,8 @@ export function ToolOptions() {
           />
           <Hint>
             {st.lakeMode === 'fill'
-              ? t('Click in a hollow: water rises to the lowest point of its rim, so the shore follows the land. Shift or Alt click removes a lake.')
-              : t('Paint the lake. Its level is the lowest point of its shore, and its bed is cut below it, deepest in the middle. Shift or Alt removes water.')}
+              ? t('Click in a hollow: water rises to the lowest point of its rim, so the shore follows the land. Click a lake to select it; Shift or Alt click removes it.')
+              : t('Paint the lake: its shore follows your brush and its bed is cut below the water, deepest in the middle. Painting on from a lake extends it; a click selects it. Shift or Alt removes water.')}
           </Hint>
           {st.lakeMode === 'paint' && (
             <Slider label={t('Deepest point')} value={st.lakeDepth} min={2} max={600} log onChange={(v) => st.set({ lakeDepth: Math.round(v) })} format={(v) => formatHeight(v, st.units)} />

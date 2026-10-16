@@ -107,6 +107,11 @@ uniform sampler2D uBiomeB;
 uniform sampler2D uWater;
 // lakes: the level of the water's surface (metres, datum), or below -20000 where there is none
 uniform sampler2D uLake;
+// whether this tile has any lake near it
+uniform float uLakeOn;
+// the selected lake: its level, and its bounds (world cells)
+uniform float uLakeSelLevel;
+uniform vec4 uLakeSel;
 uniform sampler2D uRamp;
 uniform vec2 uTexOrigin;
 uniform float uTexSize;
@@ -511,41 +516,77 @@ void main() {
   }
 
   // ---------- lakes: water with its own level ----------
-  {
-    // cells under water hold the level; their dry shore holds it plus 50000
+  float lakeA = 0.0;
+  if (uLakeOn > 0.5) {
+    // Cells under a lake hold its level. The water's edge is where phi, the depth of water over
+    // the ground, crosses zero; phi is smoothed like the ground (the same cubic B-spline), so the
+    // shore is the ground's own curve at the level, wherever the lake's cells end. Dry ground below
+    // the level that is not part of the lake (past its outlet, a hollow beside it, a part rubbed
+    // out) counts as standing as far above the water as it is below it, so no stray water shows.
     vec2 lt = w - uTexOrigin - 0.5;
     vec2 li = floor(lt);
     vec2 lf = lt - li;
+    ivec2 lp = ivec2(clamp(li, vec2(1.0), vec2(uTexSize - 3.0)));
+    float lvs[16];
     float lv = -30000.0;
-    float wetA = 0.0;
-    float wsum = 0.0;
-    for (int j = 0; j < 2; j++)
-      for (int i = 0; i < 2; i++) {
-        ivec2 p = ivec2(clamp(li + vec2(float(i), float(j)), vec2(0.0), vec2(uTexSize - 1.0)));
-        float v = texelFetch(uLake, p, 0).r;
-        float wgt = (i == 0 ? 1.0 - lf.x : lf.x) * (j == 0 ? 1.0 - lf.y : lf.y);
-        bool isWater = v > -20000.0 && v < 25000.0;
-        float lvl = v > 25000.0 ? v - 50000.0 : v;
-        if (v > -20000.0) lv = max(lv, lvl);
-        wetA += isWater ? wgt : 0.0;
-        wsum += wgt;
-      }
+    for (int k = 0; k < 16; k++) {
+      float v = texelFetch(uLake, lp + ivec2(k % 4 - 1, k / 4 - 1), 0).r;
+      lvs[k] = v;
+      if (v > -20000.0 && v < 25000.0) lv = max(lv, v);
+    }
     if (lv > -20000.0) {
-      // the shore is where the smooth ground meets the level, so it follows the land's curves
-      float ld = lv - h;
-      // the level is flat, so the water's edge sharpens with the ground's slope (not fwidth, which
-      // jumps where a lake's cells end and would draw their steps)
-      float fl = max(gmag * px * (uPixel > 0.0 ? uPixel : 1.0), 1e-3);
-      float la = uPixel > 0.0 ? step(0.0, ld) : smoothstep(-0.5, 0.5, ld / fl);
-      // and only next to cells that are under water: beyond them (past a lake's outlet, or where
-      // the smoothed ground dips just under the level on a dry shore) there is no water
-      la *= smoothstep(0.05, 0.3, wetA / max(wsum, 1e-6));
+      vec4 wx = bspline(lf.x);
+      vec4 wy = bspline(lf.y);
+      vec4 dx = vec4(-0.5 * (1.0 - lf.x) * (1.0 - lf.x), 1.5 * lf.x * lf.x - 2.0 * lf.x, 0.5 + lf.x - 1.5 * lf.x * lf.x, 0.5 * lf.x * lf.x);
+      vec4 dy = vec4(-0.5 * (1.0 - lf.y) * (1.0 - lf.y), 1.5 * lf.y * lf.y - 2.0 * lf.y, 0.5 + lf.y - 1.5 * lf.y * lf.y, 0.5 * lf.y * lf.y);
+      vec3 ph = vec3(0.0);
+      // the level of the cell with the most weight here, for the selection
+      float own = -30000.0;
+      float ownW = 0.0;
+      for (int y = 0; y < 4; y++) {
+        float row = 0.0;
+        float drow = 0.0;
+        for (int x = 0; x < 4; x++) {
+          float v = lvs[y * 4 + x];
+          float gh = texelFetch(uHeight, lp + ivec2(x - 1, y - 1), 0).r;
+          bool wet = v > -20000.0 && v < 25000.0;
+          float c = wet ? v - gh : min(-abs(lv - gh), -0.5);
+          row += wx[x] * c;
+          drow += dx[x] * c;
+          float cw = wx[x] * wy[y];
+          if (wet && cw > ownW) {
+            ownW = cw;
+            own = v;
+          }
+        }
+        ph += vec3(wy[y] * row, wy[y] * drow, dy[y] * row);
+      }
+      float pg = length(ph.yz);
+      // the same fractal detail as the sea's coasts, a little calmer on a lake's gentle shelf
+      float phiD = ph.x - coastDetail(w) * min(pg, 3000.0) * 0.9;
+      // measured from phi's own slope: fwidth is not defined inside a branch only some pixels take
+      float lfw = max(pg * px * (uPixel > 0.0 ? uPixel : 1.0), 1e-3);
+      float lpx = phiD / lfw;
+      lakeA = uPixel > 0.0 ? step(0.0, phiD) : smoothstep(-0.5, 0.5, lpx);
       // deeper water is darker, as in the sea
-      vec3 lc = ramp(1.0, 0.03 + 0.55 * pow(clamp(ld / 400.0, 0.0, 1.0), 0.6));
+      vec3 lc = ramp(1.0, 0.03 + 0.55 * pow(clamp(ph.x / 400.0, 0.0, 1.0), 0.6));
+      lc *= 1.0 + shade * 0.05 * uHillshade;
       lc *= 0.99 + 0.02 * fbmW(w, 0.3, 100.0, 3);
-      col = mix(col, lc, la);
-      float lbank = (1.0 - smoothstep(uCoastWidth * 0.5 - 0.35, uCoastWidth * 0.5 + 0.6, abs(ld / fl))) * step(0.001, la + (ld < 0.0 ? smoothstep(0.05, 0.3, wetA / max(wsum, 1e-6)) : 0.0));
-      col = mix(col, uCoastInk, lbank * 0.75);
+      // ripples along the shore, as at sea
+      if (lpx > 0.0 && uRipples > 0.0) {
+        float k = (lpx - 5.0) / 6.5;
+        if (k > 0.0 && k < 4.0) {
+          float band = abs(fract(k) - 0.5) * 6.5;
+          lc = mix(lc, uRippleColor, (1.0 - smoothstep(0.35, 1.0, band)) * (1.0 - k / 4.0) * uRippleAlpha * uRipples);
+        }
+      }
+      // the selected lake glows a little
+      bool sel = own == uLakeSelLevel && w.x >= uLakeSel.x && w.y >= uLakeSel.y && w.x <= uLakeSel.z && w.y <= uLakeSel.w;
+      if (sel) lc = mix(lc, vec3(1.0, 0.92, 0.55), 0.22);
+      col = mix(col, lc, lakeA);
+      float lbank = 1.0 - smoothstep(uCoastWidth * 0.5 - 0.35, uCoastWidth * 0.5 + 0.6, abs(lpx));
+      col = mix(col, sel ? vec3(0.95, 0.7, 0.15) : uCoastInk, lbank * 0.92);
+      if (sel) col = mix(col, vec3(0.95, 0.7, 0.15), (1.0 - smoothstep(uCoastWidth * 0.5 + 1.5, uCoastWidth * 0.5 + 3.5, abs(lpx))) * 0.35);
     }
   }
 
@@ -559,6 +600,8 @@ void main() {
     float lw = major ? 1.15 : 0.6;
     float a = (1.0 - smoothstep(lw - 0.5, lw + 0.6, d)) * (1.0 - smoothstep(0.12, 0.45, cw));
     a *= s > 0.0 ? (major ? 0.75 : 0.5) : 0.22;
+    // a lake hides the land's contours under it
+    a *= 1.0 - lakeA;
     col = mix(col, uContourColor, a);
   }
 

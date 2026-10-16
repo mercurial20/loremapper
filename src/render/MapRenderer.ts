@@ -110,6 +110,8 @@ export class MapRenderer {
       uShadowTint: { value: new Float32Array(3), type: 'vec3<f32>' },
       uWorldSize: { value: new Float32Array([this.model.W, this.model.H]), type: 'vec2<f32>' },
       uSeed: { value: 0, type: 'f32' },
+      uLakeSelLevel: { value: -30000, type: 'f32' },
+      uLakeSel: { value: new Float32Array(4), type: 'vec4<f32>' },
       // fog
       uPreview: { value: 1, type: 'f32' },
       uFogColor: { value: new Float32Array(3), type: 'vec3<f32>' },
@@ -237,6 +239,15 @@ export class MapRenderer {
     this.terrain.container.visible = doc.systemLayers.terrain.visible;
     this.terrain.container.alpha = doc.systemLayers.terrain.opacity;
     this.fog.container.visible = doc.systemLayers.fog.visible;
+    this.requestRender();
+  }
+
+  /** Highlight a lake: its level and bounds (world cells), or none. */
+  setLakeSelection(sel: { level: number; x0: number; y0: number; x1: number; y1: number } | null) {
+    if (!this.styleUniforms) return;
+    const u = this.styleUniforms.uniforms as Record<string, unknown>;
+    u.uLakeSelLevel = sel ? sel.level : -30000;
+    if (sel) u.uLakeSel = new Float32Array([sel.x0, sel.y0, sel.x1 + 1, sel.y1 + 1]);
     this.requestRender();
   }
 

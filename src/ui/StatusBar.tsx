@@ -73,7 +73,7 @@ function RegionUnderCursor({ x, y }: { x: number; y: number }) {
   const busy = useEditor((s) => s.geoBusy);
   const units = useEditor((s) => s.units);
   const names = useDoc((s) => s.doc.regionNames);
-  if (tool !== 'info') return null;
+  if (tool !== 'select') return null;
   const g = freshGeography();
   if (!g || !geography) return <span className="sb-item muted">{busy ? t('Measuring lands and seas…') : ''}</span>;
   const r = regionAt(g, x, y);
@@ -106,7 +106,13 @@ export function StatusBar() {
           <span className={'sb-item ' + (cursor.elevation >= 0 ? 'land' : 'sea')}>
             {cursor.elevation >= 0 ? '▲ ' + t('{h} a.s.l.', { h: formatHeight(cursor.elevation, units) }) : '▼ ' + t('{h} deep', { h: formatHeight(-cursor.elevation, units) })}
           </span>
-          <span className="sb-item">{cursor.elevation >= 0 ? (cursor.biome >= 0 ? t(BIOMES[cursor.biome].name) : t('Unpainted land')) : t('Water')}</span>
+          {cursor.lake !== null && model ? (
+            <span className="sb-item sea">
+              {t('Lake: level {level}, {depth} deep', { level: formatHeight(cursor.lake - model.seaLevel, units), depth: formatHeight(cursor.lake - model.seaLevel - cursor.elevation, units) })}
+            </span>
+          ) : (
+            <span className="sb-item">{cursor.elevation >= 0 ? (cursor.biome >= 0 ? t(BIOMES[cursor.biome].name) : t('Unpainted land')) : t('Water')}</span>
+          )}
           {cursor.fog > 0.02 && <span className="sb-item">{t('Fog {n}%', { n: Math.round(cursor.fog * 100) })}</span>}
           <RegionUnderCursor x={cursor.x} y={cursor.y} />
         </>

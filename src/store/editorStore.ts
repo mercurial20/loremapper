@@ -5,12 +5,11 @@ import type { Units } from '../core/units';
 import type { RegionInfo } from '../terrain/geography';
 import type { BrushParams } from '../terrain/brushes';
 import type { ResolvedPeak } from '../terrain/peaks';
-import type { BorderStyle, LabelFont, RoadStyle, SelectionRef, TerritoryType } from '../model/types';
+import type { BorderStyle, LabelFont, RoadStyle, SelectionRef, TerritoryType, Vec2 } from '../model/types';
 import { N_, t } from '../i18n';
 
 export type ToolId =
   | 'select'
-  | 'info'
   | 'pan'
   | 'raise'
   | 'lower'
@@ -65,6 +64,8 @@ export interface CursorInfo {
   elevation: number;
   biome: number;
   fog: number;
+  /** The level of the lake under the cursor (metres, datum), or null. */
+  lake: number | null;
 }
 
 export type DialogId = null | 'projects' | 'export' | 'generate' | 'planet' | 'shortcuts' | 'newProject' | 'share';
@@ -138,6 +139,10 @@ interface EditorState {
   lakeMode: 'fill' | 'paint';
   /** Lake tool, painting: depth of a painted lake's middle, metres. */
   lakeDepth: number;
+  /** A cell of the selected lake (its figures and level are shown in the tool's panel), or null. */
+  selectedLake: Vec2 | null;
+  /** Bumped whenever lakes change, so what shows them is worked out again. */
+  lakeRev: number;
   /** Mountain range tool: build ranges with a brush, or draw their crests as lines (alpha). */
   rangeMode: 'brush' | 'lines';
   /** The mountain range being drawn or edited (lines mode). */
@@ -148,6 +153,8 @@ interface EditorState {
   upliftPeak: number;
 
   setTool(t: ToolId): void;
+  /** Let go of whatever is selected: objects, a landmass or water body, a lake. */
+  deselect(): void;
   setBrush(g: BrushGroup, p: Partial<BrushParams>): void;
   set(p: Partial<EditorState>): void;
   select(sel: SelectionRef[]): void;
@@ -266,6 +273,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   riverCarve: true,
   lakeMode: 'fill',
   lakeDepth: 40,
+  selectedLake: null,
+  lakeRev: 0,
   rangeMode: 'lines',
   activeRange: null,
   raiseMethod: 'classic',
@@ -277,11 +286,14 @@ export const useEditor = create<EditorState>((set, get) => ({
     // the viewer only looks: select (to inspect) and pan
     if (get().readOnly && tool !== 'select' && tool !== 'pan') return;
     // other projections are for looking; editing goes back to the editable map
-    if (get().viewProjection && !get().readOnly && tool !== 'info' && tool !== 'pan') {
+    if (get().viewProjection && !get().readOnly && tool !== 'select' && tool !== 'pan') {
       set({ viewProjection: null });
       get().notify(t('Back to the editable map: editing works in the equirectangular view'));
     }
-    set({ tool, prevTool: cur, assetPanelOpen: tool === 'object' ? true : get().assetPanelOpen, referenceEdit: false });
+    set({ tool, prevTool: cur, assetPanelOpen: tool === 'object' ? true : get().assetPanelOpen, referenceEdit: false, ...keptOnSwitch(get(), tool) });
+  },
+  deselect() {
+    set({ selection: [], inspect: null, selectedLake: null });
   },
   setBrush(g, p) {
     set({ brushes: { ...get().brushes, [g]: { ...get().brushes[g], ...p } } });
@@ -290,12 +302,27 @@ export const useEditor = create<EditorState>((set, get) => ({
     set(p);
   },
   select(selection) {
-    set(selection.length ? { selection, inspect: null } : { selection });
+    set(selection.length ? { selection, inspect: null, selectedLake: null } : { selection });
   },
   notify(text, kind = 'info') {
     set({ toast: { id: Date.now(), text, kind } });
   },
 }));
+
+/**
+ * What stays selected when switching to `tool`: everything in Select (it shows anything), what a
+ * tool works on in that tool (a lake in the Lake tool, a river or road in theirs…), nothing in
+ * the others, so a selection never gets in the way of painting or panning.
+ */
+function keptOnSwitch(s: EditorState, tool: ToolId): Partial<EditorState> {
+  if (s.readOnly || tool === 'select') return {};
+  const none = { selection: [], inspect: null, selectedLake: null };
+  if (tool === 'lake') return { selection: [], inspect: s.selectedLake ? s.inspect : null };
+  const kinds: Partial<Record<ToolId, SelectionRef['kind']>> = { river: 'path', road: 'path', object: 'object', label: 'label', territory: 'territory', peak: 'peak' };
+  const kind = kinds[tool];
+  if (kind && s.selection.length && s.selection.every((r) => r.kind === kind)) return { inspect: null, selectedLake: null };
+  return none;
+}
 
 /** Camera readout for the status bar & scale bar (updated at most once a frame). */
 export interface ViewInfo {

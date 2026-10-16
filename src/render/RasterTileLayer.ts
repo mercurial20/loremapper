@@ -131,6 +131,7 @@ export class RasterTileLayer {
             // water texture origin, in water cells
             uWatOrigin: { value: new Float32Array([tx * this.model.water.TS - APRON, ty * this.model.water.TS - APRON]), type: 'vec2<f32>' },
             uWatSize: { value: this.Sw, type: 'f32' },
+            uLakeOn: { value: 0, type: 'f32' },
           })
         : new UniformGroup({
             uTexOrigin: { value: halfOrigin, type: 'vec2<f32>' },
@@ -329,6 +330,7 @@ export class RasterTileLayer {
         if (needL !== t.hasOwnLake) {
           rebuild = true;
           t.hasOwnLake = needL;
+          (this.tileUniforms.get(key)!.uniforms as Record<string, unknown>).uLakeOn = needL ? 1 : 0;
           if (needL) t.own.lake = this.makeSource('r32float', new Float32Array(n), false);
           else {
             if (t.own.lake) retired.push(t.own.lake);

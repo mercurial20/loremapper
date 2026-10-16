@@ -26,8 +26,10 @@ export interface RegionInfo {
   extreme: number;
   extremeX: number;
   extremeY: number;
-  /** mean height above (land) or depth below (water) sea level, metres */
+  /** mean height above (land) or depth below (water) sea level, metres; a lake's depth is below its own level */
   mean: number;
+  /** a lake with a level of its own (not the sea's): that level, metres (datum) */
+  level?: number;
   /** indices into Geography.outlines */
   outlines: number[];
 }
@@ -60,7 +62,15 @@ export type Surface = { kind: 'planet'; radiusKm: number } | { kind: 'flat'; cel
  * resolution, row-major W×H): true areas, coastlines, extremes and simplified
  * outlines for every region, in one pass over the map.
  */
-export function analyzeGeography(height: Int16Array | Float32Array, W: number, H: number, surface: Surface, seaLevel: number): Geography {
+/** The lake-level raster's value where a cell holds no lake. */
+export const NO_LAKE = -32768;
+
+/**
+ * `lake` (optional) holds, per cell, the level of a lake standing above the ground there (whole
+ * metres) or NO_LAKE: lakes are water too, so an island in a lake is an island of its own, and a
+ * lake is a water body of its own (never joined to the sea or another lake beside it).
+ */
+export function analyzeGeography(height: Int16Array | Float32Array, W: number, H: number, surface: Surface, seaLevel: number, lake: Int16Array | null = null): Geography {
   const N = W * H;
   const wrap = surface.kind === 'planet';
   // per-row geometry
@@ -86,7 +96,9 @@ export function analyzeGeography(height: Int16Array | Float32Array, W: number, H
   }
 
   // ---- connected regions: 8-connected land and water, scanline flood fill
-  const isLand = (k: number) => height[k] > seaLevel;
+  const isLand = (k: number) => height[k] > seaLevel && (!lake || lake[k] === NO_LAKE);
+  /** Cells that join into one region: land with land, sea with sea, a lake with the same lake. */
+  const sameBody = (a: number, b: number) => (isLand(a) ? isLand(b) : !isLand(b) && (!lake || lake[a] === lake[b]));
   const labels = new Int32Array(N).fill(-2147483648);
   const UNSET = -2147483648;
   const areas: number[][] = [[], []]; // [water, land]
@@ -117,7 +129,7 @@ export function analyzeGeography(height: Int16Array | Float32Array, W: number, H
             ii = (ii + W) % W;
           }
           const n = jj * W + ii;
-          if (labels[n] === UNSET && isLand(n) === land) {
+          if (labels[n] === UNSET && sameBody(k, n)) {
             labels[n] = value;
             stack.push(n);
           }
@@ -194,7 +206,9 @@ export function analyzeGeography(height: Int16Array | Float32Array, W: number, H
     for (let i = 0; i < W; i++) {
       const k = j * W + i;
       const r = regionOf(k);
-      const v = height[k] - seaLevel;
+      const own = lake && lake[k] !== NO_LAKE;
+      if (own) r.level = lake[k];
+      const v = height[k] - (own ? lake[k] : seaLevel);
       r.mean += v * a;
       if (r.land ? v > r.extreme : v < r.extreme) {
         r.extreme = v;
@@ -242,7 +256,7 @@ export function analyzeGeography(height: Int16Array | Float32Array, W: number, H
   // ---- kinds: continents are Australia-sized and up (relative to the map), islets tiny
   const cellKm2 = rowArea[H >> 1];
   for (const r of land) r.kind = r.areaKm2 >= mapKm2 * 0.008 ? 'continent' : r.areaKm2 < Math.max(mapKm2 * 1.5e-5, cellKm2 * 6) ? 'islet' : 'island';
-  water.forEach((r, i) => (r.kind = i === 0 ? (wrap ? 'ocean' : 'sea') : r.areaKm2 >= mapKm2 * 5e-4 ? 'sea' : 'lake'));
+  water.forEach((r, i) => (r.kind = r.level !== undefined ? 'lake' : i === 0 ? (wrap ? 'ocean' : 'sea') : r.areaKm2 >= mapKm2 * 5e-4 ? 'sea' : 'lake'));
 
   const outlines = traceOutlines(labels, W, H, wrap);
   outlines.forEach((o, n) => {
