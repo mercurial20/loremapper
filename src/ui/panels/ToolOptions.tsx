@@ -385,6 +385,7 @@ export function ToolOptions() {
       )}
       {tool === 'river' && (
         <>
+          <Hint>{t('End a river at the sea, a lake or another river and it joins it: the mouth opens into the water, and a river grows wider below each river that flows into it. Drawn from the mouth upstream, it is turned around.')}</Hint>
           <Toggle
             label={t('Carve a valley')}
             checked={st.riverCarve}

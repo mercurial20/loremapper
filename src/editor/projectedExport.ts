@@ -424,36 +424,16 @@ export function drawVectors(p: Painter, style: StylePreset, opts: VectorOptions)
     ctx.restore();
   }
 
-  // rivers below roads
+  // roads
   if (opts.shapes && sys.paths.visible) {
     ctx.save();
     ctx.globalAlpha = sys.paths.opacity;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     const paths = Object.values(doc.paths).filter((x) => !x.hidden && x.points.length >= 2);
-    for (const path of [...paths.filter((x) => x.kind === 'river'), ...paths.filter((x) => x.kind !== 'river')]) {
+    // rivers are water: they come with the terrain
+    for (const path of paths.filter((x) => x.kind !== 'river')) {
       const pts = sampleSpline(path.points, p.cell, false, 4);
-      if (path.kind === 'river') {
-        const wMax = Math.max(path.width * p.cell, 2.2 * u);
-        const wMin = Math.max(path.taper ? path.width * 0.22 * p.cell : path.width * p.cell, 0.9 * u);
-        // widths follow the whole river, even where it is cut into runs
-        const runs = p.runsT(pts);
-        for (const pass of [0, 1])
-          for (const r of runs)
-            for (let i = 1; i < r.length; i++) {
-              const w = wMin + (wMax - wMin) * Math.pow(r[i].t, 0.8);
-              ctx.beginPath();
-              ctx.moveTo(r[i - 1].pt[0], r[i - 1].pt[1]);
-              ctx.lineTo(r[i].pt[0], r[i].pt[1]);
-              // an ink edge first, then the water
-              ctx.strokeStyle = pass === 0 ? style.ink : path.color;
-              ctx.globalAlpha = sys.paths.opacity * (pass === 0 ? 0.55 : 1);
-              ctx.lineWidth = pass === 0 ? w + 1.8 * u : w;
-              ctx.stroke();
-            }
-        ctx.globalAlpha = sys.paths.opacity;
-        continue;
-      }
       const runs = p.runs(pts);
       const w = Math.max(path.width * p.cell, 1.2 * u);
       ctx.strokeStyle = path.color;

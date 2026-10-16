@@ -28,6 +28,8 @@ export interface MapObject {
 export type PathKind = 'river' | 'road';
 export type RoadStyle = 'solid' | 'dashed' | 'dotted' | 'double';
 
+export type PathOutlet = { kind: 'water' } | { kind: 'path'; id: string; t: number };
+
 export interface PathFeature {
   id: string;
   kind: PathKind;
@@ -39,6 +41,12 @@ export interface PathFeature {
   style: RoadStyle;
   /** Rivers: taper from source (thin) to mouth (wide). */
   taper: boolean;
+  /**
+   * Rivers: where the river ends. In the sea or a lake (its mouth is drawn running into the water),
+   * or in another river (a tributary: it joins that river `t` of the way along it, 0 … 1, and
+   * the river grows wider below the join). None: it ends on land.
+   */
+  outlet?: PathOutlet;
   name: string;
   hidden: boolean;
   locked: boolean;

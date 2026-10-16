@@ -101,6 +101,7 @@ export class MapRenderer {
       uPixel: { value: 0, type: 'f32' },
       uHatch: { value: 0, type: 'f32' },
       uWaterVis: { value: 1, type: 'f32' },
+      uRiverVis: { value: 1, type: 'f32' },
       uBiomeSoft: { value: 0.6, type: 'f32' },
       uCoastInk: { value: new Float32Array(3), type: 'vec3<f32>' },
       uCoastWidth: { value: 1.5, type: 'f32' },
@@ -220,6 +221,7 @@ export class MapRenderer {
     u.uPixel = style.pixel ?? 0;
     u.uHatch = style.hatch ?? 0;
     u.uWaterVis = doc.systemLayers.paths.visible ? doc.systemLayers.paths.opacity : 0;
+    u.uRiverVis = u.uWaterVis;
     u.uBiomeSoft = doc.view.biomeSoftness ?? 0.7;
     u.uCoastInk = hexToVec3(style.coastInk);
     u.uCoastWidth = style.coastWidth;

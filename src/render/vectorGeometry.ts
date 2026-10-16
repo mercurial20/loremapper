@@ -83,28 +83,3 @@ export function strokePolyline(g: Graphics, pts: Vec2[], closed = false) {
   if (closed) g.closePath();
 }
 
-/** Ribbon polygon around a polyline with per-point width. */
-export function ribbon(pts: Vec2[], widthAt: (t: number) => number): number[] {
-  const n = pts.length;
-  if (n < 2) return [];
-  const total = polylineLength(pts) || 1;
-  const left: number[] = [];
-  const right: number[] = [];
-  let acc = 0;
-  for (let i = 0; i < n; i++) {
-    if (i > 0) acc += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
-    const a = pts[Math.max(0, i - 1)];
-    const b = pts[Math.min(n - 1, i + 1)];
-    let tx = b[0] - a[0];
-    let ty = b[1] - a[1];
-    const tl = Math.hypot(tx, ty) || 1;
-    tx /= tl;
-    ty /= tl;
-    const hw = widthAt(acc / total) / 2;
-    left.push(pts[i][0] - ty * hw, pts[i][1] + tx * hw);
-    right.push(pts[i][0] + ty * hw, pts[i][1] - tx * hw);
-  }
-  const poly = left.slice();
-  for (let i = right.length - 2; i >= 0; i -= 2) poly.push(right[i], right[i + 1]);
-  return poly;
-}

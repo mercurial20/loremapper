@@ -2,18 +2,20 @@ import { Container, Graphics } from 'pixi.js';
 import type { MapDocument, PathFeature } from '../model/types';
 import type { WorldLayer } from './MapRenderer';
 import { hexToNumber, type StylePreset } from './styles';
-import { dashes, dots, ribbon, sampleSpline, strokePolyline } from './vectorGeometry';
+import { dashes, dots, sampleSpline, strokePolyline } from './vectorGeometry';
 
 interface Entry {
   path: PathFeature;
   g: Graphics;
   bucket: number;
-  style: StylePreset | null;
 }
 
 const zoomBucket = (z: number) => Math.round(Math.log2(z) * 3);
 
-/** Rivers and roads drawn as smooth splines; rebuilt when they change or zoom shifts. */
+/**
+ * Roads drawn as smooth splines; rebuilt when they change or zoom shifts. (Rivers are water:
+ * the terrain shader draws them with the sea and lakes, see RiverField.)
+ */
 export class PathLayer implements WorldLayer {
   readonly container = new Container();
   private entries = new Map<string, Entry>();
@@ -29,14 +31,13 @@ export class PathLayer implements WorldLayer {
   sync(doc: MapDocument) {
     const seen = new Set<string>();
     for (const p of Object.values(doc.paths)) {
+      if (p.kind === 'river') continue;
       seen.add(p.id);
       let e = this.entries.get(p.id);
       if (!e) {
-        e = { path: p, g: new Graphics(), bucket: NaN, style: null };
+        e = { path: p, g: new Graphics(), bucket: NaN };
         this.entries.set(p.id, e);
-        // rivers below roads
-        if (p.kind === 'river') this.container.addChildAt(e.g, 0);
-        else this.container.addChild(e.g);
+        this.container.addChild(e.g);
         this.draw(e);
       } else if (e.path !== p) {
         e.path = p;
@@ -66,21 +67,7 @@ export class PathLayer implements WorldLayer {
     if (p.points.length < 2) return;
     const pts = sampleSpline(p.points, zoom);
     const px = 1 / zoom;
-    const ink = hexToNumber(this.style?.ink ?? '#3a2d1f');
     const color = hexToNumber(p.color);
-    if (p.kind === 'river') {
-      const wMax = Math.max(p.width, 2.2 * px);
-      const wMin = Math.max(p.taper ? p.width * 0.22 : p.width, 0.9 * px);
-      const poly = ribbon(pts, (t) => wMin + (wMax - wMin) * Math.pow(t, 0.8));
-      g.poly(poly).fill({ color });
-      g.poly(poly).stroke({ width: 0.9 * px, color: ink, alpha: 0.55, join: 'round' });
-      // highlight
-      if (wMax * zoom > 5) {
-        strokePolyline(g, pts);
-        g.stroke({ width: Math.max(0.6 * px, wMax * 0.12), color: 0xffffff, alpha: 0.25, cap: 'round', join: 'round' });
-      }
-      return;
-    }
     const w = Math.max(p.width, 1.2 * px);
     switch (p.style) {
       case 'solid':

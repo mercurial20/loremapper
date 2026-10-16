@@ -32,6 +32,7 @@ import { erodeRiver, newWaterCells, waterIn } from '../terrain/riverErosion';
 import { carveUplift } from '../terrain/upliftStroke';
 import { clearLake, fillBasin, lakeAt, lakeDepthAt, paintLake, setLake, touchingLakes } from '../terrain/lakes';
 import { pickLake, selectLake } from '../editor/lakes';
+import { riverSnapAt, snapRiver } from '../editor/riverSnap';
 import { addCrestLine, snapToCrest } from '../editor/ranges';
 import { crestCurve } from '../terrain/ranges';
 import { sampleSpline } from '../render/vectorGeometry';
@@ -453,6 +454,7 @@ export class ToolController {
           if (Math.hypot(e.clientX - d.startScreen[0], e.clientY - d.startScreen[1]) > 6) d.moved = true;
           if (d.moved && Math.hypot(px - last[0], y - last[1]) * editor.zoom > 4) d.points.push([px, y]);
           if (d.moved) this.showDraft(d.points, null);
+          if (this.tool === 'river') this.showRiverSnap(x, y);
           break;
         }
         case 'stamp':
@@ -466,6 +468,7 @@ export class ToolController {
       if (this.tool === 'select') this.updateHover(x, y);
       if (this.draft) this.showDraft(this.draft.points, [nearX(editor.model.geo, this.draft.points[0][0], x), y]);
       if (this.crestLines()) this.showCrestSnap(x, y);
+      if (this.tool === 'river') this.showRiverSnap(x, y);
       if (this.tool === 'measure' && this.measure.length && !this.measureDone) this.showMeasure([x, y]);
     }
     this.updateBrushCursor();
@@ -1191,6 +1194,16 @@ export class ToolController {
   }
 
   /** Mark the point of a crest a line would branch from, when starting or ending one near it. */
+  /** River tool: where the river's end would snap (a shore, or another river). */
+  private showRiverSnap(x: number, y: number) {
+    const at = riverSnapAt(editor.model!, useDoc.getState().doc.paths, [x, y], RIVER_SNAP_PX / editor.zoom);
+    const prev = this.overlay().state.snap;
+    const next = at && at.d > 0 ? at.at : null;
+    if (prev === next || (prev && next && prev[0] === next[0] && prev[1] === next[1])) return;
+    this.overlay().set({ snap: next });
+    editor.requestRender();
+  }
+
   private showCrestSnap(x: number, y: number) {
     const at = snapToCrest([x, y], CREST_SNAP_PX / editor.zoom);
     this.overlay().set({ snap: at ? at.at : null });
@@ -1322,10 +1335,14 @@ export class ToolController {
       this.overlay().set({ snap: null });
     } else if ((tool === 'river' || tool === 'road') && pts.length >= 2) {
       const def = tool === 'river' ? st.pathDefaults.river : st.pathDefaults.road;
+      // a river's mouth meets the sea, a lake or another river
+      const snapped = tool === 'river' ? snapRiver(editor.model!, useDoc.getState().doc.paths, pts, RIVER_SNAP_PX / zoom) : { points: pts, outlet: undefined };
+      this.overlay().set({ snap: null });
       const p: PathFeature = {
         id: uid('path-'),
         kind: tool,
-        points: pts,
+        points: snapped.points,
+        ...(snapped.outlet ? { outlet: snapped.outlet } : {}),
         width: def.width / zoom,
         color: def.color,
         style: tool === 'road' ? st.pathDefaults.road.style : 'solid',
@@ -1694,6 +1711,8 @@ useDoc.subscribe((s, prev) => {
 
 /** How close to a crest (screen px) a new line's end joins it. */
 const CREST_SNAP_PX = 14;
+/** How close to a shore or another river (screen px) a river's end snaps to it. */
+const RIVER_SNAP_PX = 24;
 
 export const tools = new ToolController();
 Object.assign(window as object, { __tools: tools });

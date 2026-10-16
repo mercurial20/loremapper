@@ -32,6 +32,7 @@ import { useEditor, useViewInfo } from '../../store/editorStore';
 import { sampleSpline } from '../../render/vectorGeometry';
 import { ColorField, Hint, MeasureField, NumberField, Select, Slider, TextField, Toggle } from '../controls/controls';
 import { useTranslation } from 'react-i18next';
+import { t } from '../../i18n';
 
 const SWATCHES = ['#b5452f', '#2f5d9a', '#3f8f5a', '#c79a2e', '#7a4aa0', '#2a8a8a', '#8f3a5c', '#5a5a5a'];
 
@@ -225,7 +226,15 @@ function PathInspector({ p }: { p: PathFeature }) {
         <b>{formatLength(len, units)}</b>
       </div>
       <Slider label={t('Width')} value={p.width * zoom} min={0.3} max={60} log onChange={(v) => upd({ width: v / zoom }, 'width')} format={(v) => `${v.toFixed(1)} px · ${formatLength((v / zoom) * g.kmPerCellY, units)}`} />
-      <ColorField label={t('Colour')} value={p.color} swatches={['#4f86ad', '#2e5f86', '#6aa5c8', '#7a5532', '#4b3a2a', '#9a7b52', '#8a2e2e']} onChange={(v) => upd({ color: v }, 'color')} />
+      {p.kind === 'river' ? (
+        // a river is the map's water, so it has no colour of its own
+        <div className="kv">
+          <span>{t('Flows into')}</span>
+          <b>{flowsInto(p)}</b>
+        </div>
+      ) : (
+        <ColorField label={t('Colour')} value={p.color} swatches={['#7a5532', '#4b3a2a', '#9a7b52', '#8a2e2e', '#2d2216', '#5c6b73']} onChange={(v) => upd({ color: v }, 'color')} />
+      )}
       {p.kind === 'road' ? (
         <Select<RoadStyle>
           label={t('Line style')}
@@ -421,6 +430,17 @@ function PeakInspector({ id }: { id: string }) {
       </div>
     </>
   );
+}
+
+/** Where a river ends, in words. */
+function flowsInto(p: PathFeature): string {
+  const o = p.outlet;
+  if (o?.kind === 'water') return t('the sea or a lake');
+  if (o?.kind === 'path') {
+    const main = useDoc.getState().doc.paths[o.id];
+    if (main) return main.name || t('another river');
+  }
+  return t('nowhere (it ends on land)');
 }
 
 export function SelectionInspector() {

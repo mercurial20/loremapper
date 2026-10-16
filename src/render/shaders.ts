@@ -109,6 +109,12 @@ uniform sampler2D uWater;
 uniform sampler2D uLake;
 // whether this tile has any lake near it
 uniform float uLakeOn;
+// rivers: per cell, the nearest bank's river point (offset from the cell's middle), half width
+// (negative at an end), direction and width slope packed; whether this tile has any; how
+// visible rivers are
+uniform sampler2D uRiver;
+uniform float uRiverOn;
+uniform float uRiverVis;
 // the selected lake: its level, and its bounds (world cells)
 uniform float uLakeSelLevel;
 uniform vec4 uLakeSel;
@@ -478,6 +484,72 @@ void main() {
   land *= 1.0 + sh * (sh < 0.0 ? 0.62 : 0.38);
   land = mix(land, uShadowTint, clamp(-sh, 0.0, 1.0) * 0.22);
 
+  // ---------- rivers: the same water as the sea and lakes ----------
+  float riverA = 0.0;
+  vec3 rcol = vec3(0.0);
+  float riverPx = 1e6;
+  float riverHwPx = 0.0;
+  if (uRiverOn > 0.5 && uRiverVis > 0.0) {
+    // the nearest bank among the cells around: distance across each river's line, or to its end.
+    // Each cell's estimate is close but not exact on a bend, so the estimates of the cells near
+    // the pixel are blended smoothly, those close to the nearest bank most (at a join, the other
+    // river's bank barely counts)
+    vec2 rc = floor(w - uTexOrigin);
+    float sds[9];
+    float wts[9];
+    float sd = 1e6;
+    float rhw = 0.0;
+    // never thinner than a fine line when zoomed out
+    float minHw = 0.7 * px * (uPixel > 0.0 ? uPixel : 1.0);
+    for (int k = 0; k < 9; k++) {
+      sds[k] = 1e6;
+      wts[k] = 0.0;
+      ivec2 p = ivec2(clamp(rc + vec2(float(k % 3 - 1), float(k / 3 - 1)), vec2(0.0), vec2(uTexSize - 1.0)));
+      vec4 v = texelFetch(uRiver, p, 0);
+      if (v.z == 0.0) continue;
+      vec2 cc = uTexOrigin + vec2(p) + 0.5;
+      vec2 q = cc + v.xy;
+      bool isEnd = v.z < 0.0;
+      // direction and width slope, packed (see RiverField)
+      float aq = floor((v.w + 0.5) / 2048.0);
+      float a = aq / 1000.0 - 3.14159265;
+      float slope = (v.w - aq * 2048.0) / 500.0 - 2.0;
+      vec2 t = vec2(cos(a), sin(a));
+      vec2 d = w - q;
+      float along = dot(d, t);
+      float dist = isEnd && along < 0.0 ? length(d) : abs(dot(d, vec2(-t.y, t.x)));
+      // the width there, as it grows or narrows along the river
+      float hw0 = abs(v.z);
+      // (only near the point: further on, the next cell knows better, and guessing on would cut
+      // straight edges where the cells holding the river end)
+      float h = max(max(hw0 + slope * clamp(isEnd ? max(along, 0.0) : along, -1.0, 1.0), 0.0), minHw);
+      sds[k] = dist - h;
+      vec2 o = abs(w - cc);
+      float r = max(0.0, 1.0 - max(o.x, o.y) / 1.5);
+      wts[k] = r * r;
+      if (sds[k] < sd) {
+        sd = sds[k];
+        rhw = hw0;
+      }
+    }
+    float acc = 0.0;
+    float wsum = 0.0;
+    for (int k = 0; k < 9; k++) {
+      // estimates far from the nearest one fade out smoothly (a hard cut-off would step)
+      float wk = wts[k] * exp(-max(0.0, sds[k] - sd) / 0.25);
+      acc += min(sds[k], sd + 2.0) * wk;
+      wsum += wk;
+    }
+    if (wsum > 1e-5) sd = acc / wsum;
+    riverPx = sd / max(px * (uPixel > 0.0 ? uPixel : 1.0), 1e-4);
+    riverHwPx = rhw / max(px * (uPixel > 0.0 ? uPixel : 1.0), 1e-4);
+    riverA = (uPixel > 0.0 ? step(riverPx, 0.0) : 1.0 - smoothstep(-0.5, 0.5, riverPx)) * uRiverVis;
+    // a thread of a river (a few pixels wide, without banks) is drawn in deeper water, so it reads
+    rcol = ramp(1.0, 0.04 + 0.1 * clamp(rhw / 6.0, 0.0, 1.0) + 0.45 * (1.0 - smoothstep(1.2, 3.0, riverHwPx)));
+    rcol *= 1.0 + shade * 0.05 * uHillshade;
+    rcol *= 0.99 + 0.02 * fbmW(w, 0.3, 100.0, 3);
+  }
+
   // ---------- water ----------
   float depth = max(-s, 0.0) / 6000.0;
   vec3 water = ramp(1.0, pow(depth, 0.55));
@@ -493,7 +565,8 @@ void main() {
       rip = (1.0 - smoothstep(0.35, 1.0, band)) * (1.0 - k / 4.0);
     }
   }
-  water = mix(water, uRippleColor, rip * uRippleAlpha * uRipples);
+  // (none across a river's mouth)
+  water = mix(water, uRippleColor, rip * uRippleAlpha * uRipples * (1.0 - riverA));
 
   vec3 col = mix(water, land, landA);
 
@@ -515,8 +588,13 @@ void main() {
     }
   }
 
+  // rivers, on land only: in the sea it is the sea
+  col = mix(col, rcol, riverA * landA);
+
   // ---------- lakes: water with its own level ----------
   float lakeA = 0.0;
+  // pixels from the lake's smooth shore (no fractal detail), positive in the water
+  float lakePx0 = -1e6;
   if (uLakeOn > 0.5) {
     // Cells under a lake hold its level. The water's edge is where phi, the depth of water over
     // the ground, crosses zero; phi is smoothed like the ground (the same cubic B-spline), so the
@@ -567,6 +645,7 @@ void main() {
       // measured from phi's own slope: fwidth is not defined inside a branch only some pixels take
       float lfw = max(pg * px * (uPixel > 0.0 ? uPixel : 1.0), 1e-3);
       float lpx = phiD / lfw;
+      lakePx0 = ph.x / lfw;
       lakeA = uPixel > 0.0 ? step(0.0, phiD) : smoothstep(-0.5, 0.5, lpx);
       // deeper water is darker, as in the sea
       vec3 lc = ramp(1.0, 0.03 + 0.55 * pow(clamp(ph.x / 400.0, 0.0, 1.0), 0.6));
@@ -577,14 +656,15 @@ void main() {
         float k = (lpx - 5.0) / 6.5;
         if (k > 0.0 && k < 4.0) {
           float band = abs(fract(k) - 0.5) * 6.5;
-          lc = mix(lc, uRippleColor, (1.0 - smoothstep(0.35, 1.0, band)) * (1.0 - k / 4.0) * uRippleAlpha * uRipples);
+          lc = mix(lc, uRippleColor, (1.0 - smoothstep(0.35, 1.0, band)) * (1.0 - k / 4.0) * uRippleAlpha * uRipples * (1.0 - riverA));
         }
       }
       // the selected lake glows a little
       bool sel = own == uLakeSelLevel && w.x >= uLakeSel.x && w.y >= uLakeSel.y && w.x <= uLakeSel.z && w.y <= uLakeSel.w;
       if (sel) lc = mix(lc, vec3(1.0, 0.92, 0.55), 0.22);
       col = mix(col, lc, lakeA);
-      float lbank = 1.0 - smoothstep(uCoastWidth * 0.5 - 0.35, uCoastWidth * 0.5 + 0.6, abs(lpx));
+      // no shore line across the mouth of a river running in
+      float lbank = (1.0 - smoothstep(uCoastWidth * 0.5 - 0.35, uCoastWidth * 0.5 + 0.6, abs(lpx))) * (1.0 - riverA);
       col = mix(col, sel ? vec3(0.95, 0.7, 0.15) : uCoastInk, lbank * 0.92);
       if (sel) col = mix(col, vec3(0.95, 0.7, 0.15), (1.0 - smoothstep(uCoastWidth * 0.5 + 1.5, uCoastWidth * 0.5 + 3.5, abs(lpx))) * 0.35);
     }
@@ -600,14 +680,26 @@ void main() {
     float lw = major ? 1.15 : 0.6;
     float a = (1.0 - smoothstep(lw - 0.5, lw + 0.6, d)) * (1.0 - smoothstep(0.12, 0.45, cw));
     a *= s > 0.0 ? (major ? 0.75 : 0.5) : 0.22;
-    // a lake hides the land's contours under it
-    a *= 1.0 - lakeA;
+    // lakes and rivers hide the land's contours under them
+    a *= (1.0 - lakeA) * (1.0 - riverA);
     col = mix(col, uContourColor, a);
   }
 
   // ---------- coast ink ----------
-  float coast = 1.0 - smoothstep(uCoastWidth * 0.5 - 0.35, uCoastWidth * 0.5 + 0.6, abs(distPx));
+  // (none across a river's mouth: the river and the sea are one water)
+  float coast = (1.0 - smoothstep(uCoastWidth * 0.5 - 0.35, uCoastWidth * 0.5 + 0.6, abs(distPx))) * (1.0 - riverA);
   col = mix(col, uCoastInk, coast * 0.92);
+  // a river's banks, where it runs over land (its mouth opens into the sea or a lake without one)
+  if (riverPx < 1e5) {
+    float rbank = 1.0 - smoothstep(uCoastWidth * 0.5 - 0.35, uCoastWidth * 0.5 + 0.6, abs(riverPx));
+    // a river a few pixels wide is a blue thread: its banks would swallow it
+    rbank *= smoothstep(1.2, 3.0, riverHwPx);
+    // it stops at the water's smooth edge (the fractal detail of a low shore flickers, and the
+    // bank would break into dashes along it)
+    float landPx0 = (h - uSea) / max(gmag * px * (uPixel > 0.0 ? uPixel : 1.0), 1e-3);
+    float onLand = smoothstep(0.0, 1.5, landPx0) * (1.0 - smoothstep(-1.5, 0.0, lakePx0));
+    col = mix(col, uCoastInk, rbank * 0.92 * onLand * uRiverVis);
+  }
 
   // ---------- height overlay ----------
   if (uOverlay > 0.0) {

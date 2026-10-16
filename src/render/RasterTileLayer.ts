@@ -13,13 +13,16 @@ interface TileEntry {
   tx: number;
   ty: number;
   mesh: Mesh<Geometry, Shader>;
-  own: Partial<Record<'height' | 'biomeA' | 'biomeB' | 'fog' | 'water' | 'lake', BufferImageSource>>;
+  own: Partial<Record<'height' | 'biomeA' | 'biomeB' | 'fog' | 'water' | 'lake' | 'river', BufferImageSource>>;
   hasOwnHeight: boolean;
   hasOwnBiome: boolean;
   hasOwnFog: boolean;
   hasOwnWater: boolean;
   hasOwnLake: boolean;
+  hasOwnRiver: boolean;
   dirty: boolean;
+  /** Only the rivers' texture needs uploading. */
+  riverDirty: boolean;
 }
 
 interface Segment {
@@ -39,7 +42,9 @@ let fogProgram: GlProgram | null = null;
 export class RasterTileLayer {
   readonly container = new Container();
   private tiles = new Map<number, TileEntry>();
-  private defaults: Partial<Record<'height' | 'biome' | 'fog' | 'water' | 'lake', BufferImageSource>> = {};
+  private defaults: Partial<Record<'height' | 'biome' | 'fog' | 'water' | 'lake' | 'river', BufferImageSource>> = {};
+  /** The rivers' field (see RiverField), drawn as water by the terrain shader. */
+  private rivers: TileGrid<Float32Array> | null = null;
   private anyDirty = true;
   /** Texture edge length for full-res (height) and half-res (biome, fog) tiles. */
   private readonly S: number;
@@ -69,7 +74,7 @@ export class RasterTileLayer {
     for (let ty = 0; ty < g.NY; ty++) for (let tx = 0; tx < g.NX; tx++) this.createTile(tx, ty);
   }
 
-  private makeSource(format: 'r32float' | 'rgba8unorm' | 'r8unorm', data: RasterArray, linear: boolean, size = format === 'r32float' ? this.S : this.Sh): BufferImageSource {
+  private makeSource(format: 'r32float' | 'rgba32float' | 'rgba8unorm' | 'r8unorm', data: RasterArray, linear: boolean, size = format === 'r32float' || format === 'rgba32float' ? this.S : this.Sh): BufferImageSource {
     return new BufferImageSource({
       resource: data,
       width: size,
@@ -90,6 +95,7 @@ export class RasterTileLayer {
       this.defaults.biome = this.makeSource('rgba8unorm', new Uint8Array(nh * 4), true);
       this.defaults.water = this.makeSource('r8unorm', new Uint8Array(this.Sw * this.Sw), true, this.Sw);
       this.defaults.lake = this.makeSource('r32float', new Float32Array(n).fill(this.model.lake.defaultValue), false);
+      this.defaults.river = this.makeSource('rgba32float', new Float32Array(n * 4), false);
     } else {
       this.defaults.fog = this.makeSource('r8unorm', new Uint8Array(nh).fill(this.model.fog.defaultValue), true);
     }
@@ -132,6 +138,7 @@ export class RasterTileLayer {
             uWatOrigin: { value: new Float32Array([tx * this.model.water.TS - APRON, ty * this.model.water.TS - APRON]), type: 'vec2<f32>' },
             uWatSize: { value: this.Sw, type: 'f32' },
             uLakeOn: { value: 0, type: 'f32' },
+            uRiverOn: { value: 0, type: 'f32' },
           })
         : new UniformGroup({
             uTexOrigin: { value: halfOrigin, type: 'vec2<f32>' },
@@ -148,7 +155,9 @@ export class RasterTileLayer {
       hasOwnFog: false,
       hasOwnWater: false,
       hasOwnLake: false,
+      hasOwnRiver: false,
       dirty: true,
+      riverDirty: false,
     };
     entry.mesh.visible = this.kind === 'terrain';
     this.tiles.set(key, entry);
@@ -166,6 +175,7 @@ export class RasterTileLayer {
           uBiomeB: (own.biomeB ?? this.defaults.biome)!,
           uWater: (own.water ?? this.defaults.water)!,
           uLake: (own.lake ?? this.defaults.lake)!,
+          uRiver: (own.river ?? this.defaults.river)!,
           uRamp: this.ramp!,
           style: this.styleUniforms,
           tile: tu,
@@ -206,6 +216,31 @@ export class RasterTileLayer {
         if (wx < 0 || wx >= NX) continue;
         const t = this.tiles.get(ty * NX + wx);
         if (t) t.dirty = true;
+      }
+  }
+
+  /** The rivers' field to draw (once, when the map opens). */
+  setRivers(grid: TileGrid<Float32Array>) {
+    this.rivers = grid;
+  }
+
+  /** The rivers changed inside a rect of world cells: upload their texture there again. */
+  riversChanged(rect: CellRect) {
+    if (this.kind !== 'terrain') return;
+    this.anyDirty = true;
+    const TS = this.model.TS;
+    const NX = this.model.height.NX;
+    const NY = this.model.height.NY;
+    const tx0 = Math.floor((rect.x0 - APRON) / TS);
+    const tx1 = Math.floor((rect.x1 + APRON) / TS);
+    const ty0 = Math.max(0, Math.floor((rect.y0 - APRON) / TS));
+    const ty1 = Math.min(NY - 1, Math.floor((rect.y1 + APRON) / TS));
+    for (let ty = ty0; ty <= ty1; ty++)
+      for (let tx = tx0; tx <= tx1; tx++) {
+        const wx = this.model.height.wrap ? ((tx % NX) + NX) % NX : tx;
+        if (wx < 0 || wx >= NX) continue;
+        const t = this.tiles.get(ty * NX + wx);
+        if (t) t.riverDirty = true;
       }
   }
 
@@ -288,9 +323,36 @@ export class RasterTileLayer {
     // sources dropped this pass; destroyed only after no shader references them
     const retired: BufferImageSource[] = [];
     for (const [key, t] of this.tiles) {
-      if (!t.dirty) continue;
+      if (!t.dirty && !t.riverDirty) continue;
+      const full = t.dirty;
       t.dirty = false;
+      t.riverDirty = false;
       let rebuild = false;
+      if (this.kind === 'terrain' && this.rivers) {
+        const needR = this.neighbourhoodAllocated(this.rivers as TileGrid<RasterArray>, t.tx, t.ty);
+        if (needR !== t.hasOwnRiver) {
+          rebuild = true;
+          t.hasOwnRiver = needR;
+          (this.tileUniforms.get(key)!.uniforms as Record<string, unknown>).uRiverOn = needR ? 1 : 0;
+          if (needR) t.own.river = this.makeSource('rgba32float', new Float32Array(n * 4), false);
+          else {
+            if (t.own.river) retired.push(t.own.river);
+            delete t.own.river;
+          }
+        }
+        if (t.own.river) {
+          this.fill(this.rivers as TileGrid<RasterArray>, t.tx, t.ty, [{ out: t.own.river.resource as Float32Array, chFrom: 0, chCount: 4 }]);
+          t.own.river.update();
+        }
+      }
+      if (!full) {
+        if (rebuild) {
+          const old = t.mesh.shader;
+          t.mesh.shader = this.buildShader(key, t.own);
+          old?.destroy(false);
+        }
+        continue;
+      }
       if (this.kind === 'terrain') {
         const needH = this.neighbourhoodAllocated(this.model.height, t.tx, t.ty);
         const needB = this.neighbourhoodAllocated(this.model.biome, t.tx, t.ty);

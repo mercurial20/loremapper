@@ -12,6 +12,7 @@ import { MapRenderer } from '../render/MapRenderer';
 import { ObjectLayer } from '../render/ObjectLayer';
 import { OverlayLayer } from '../render/OverlayLayer';
 import { PathLayer } from '../render/PathLayer';
+import { RiverField } from '../render/riverField';
 import { PeakLayer } from '../render/PeakLayer';
 import { STYLE_PRESETS } from '../render/styles';
 import { LabelLayer, TerritoryLayer } from '../render/TerritoryLayer';
@@ -207,6 +208,9 @@ class Editor {
     const reference = new ReferenceLayer((id) => assetLibrary.referenceBlob(id), () => renderer.requestRender());
     renderer.addLayers([reference, territories, paths, objects, labels, peaks], overlay);
     this.layers = { objects, paths, territories, labels, peaks, overlay, reference };
+    // rivers are drawn by the terrain shader, as water
+    this.rivers = new RiverField(model);
+    renderer.terrain.setRivers(this.rivers.grid);
 
     this.syncDoc(useDoc.getState().doc, null);
     this.applyView();
@@ -297,7 +301,14 @@ class Editor {
     const L = this.layers;
     if (!L || !this.renderer) return;
     if (!prev || doc.objects !== prev.objects || doc.objectLayers !== prev.objectLayers) L.objects.sync(doc);
-    if (!prev || doc.paths !== prev.paths) L.paths.sync(doc);
+    if (!prev || doc.paths !== prev.paths) {
+      L.paths.sync(doc);
+      const rect = this.rivers?.sync(doc.paths);
+      if (rect) {
+        this.renderer.terrain.riversChanged(rect);
+        this.renderer.requestRender();
+      }
+    }
     if (!prev || doc.territories !== prev.territories) L.territories.sync(doc);
     if (!prev || doc.labels !== prev.labels) L.labels.sync(doc);
     if (!prev || doc.reference !== prev.reference) L.reference.sync(doc);
@@ -462,6 +473,8 @@ class Editor {
 
   // ------------------------------------------------------------ helpers
 
+  /** The rivers as the terrain shader draws them. */
+  rivers: RiverField | null = null;
   /** The live view in another projection, while one is chosen (planets only). */
   projView: ProjectedView | null = null;
 
