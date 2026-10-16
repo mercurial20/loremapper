@@ -155,10 +155,10 @@ export type TerrainPreset = 'plains' | 'hills' | 'plateau' | 'mountains' | 'cust
  * height, so a first map looks right without touching a slider.
  */
 export const TERRAIN_PRESETS: Record<Exclude<TerrainPreset, 'custom'>, { label: string; hint: (h: string) => string; params: Omit<BrushParams, 'radiusKm'> }> = {
-  plains: { label: N_('Plains'), hint: (h) => t('Low, flat land that levels off around {h}.', { h }), params: { strength: 0.6, falloff: 0.8, opacity: 1, roughness: 0.15, ceiling: 180, ceilingVar: 0.25 } },
-  hills: { label: N_('Hills'), hint: (h) => t('Rolling uplands that rise to about {h}.', { h }), params: { strength: 0.5, falloff: 0.75, opacity: 1, roughness: 0.3, ceiling: 900, ceilingVar: 0.6 } },
-  plateau: { label: N_('Plateau'), hint: (h) => t('A high, level tableland around {h}.', { h }), params: { strength: 0.6, falloff: 0.5, opacity: 1, roughness: 0.15, ceiling: 1600, ceilingVar: 0.12 } },
-  mountains: { label: N_('Mountains'), hint: () => t('Keeps rising while you paint: build peaks (or use the Mountain range tool).'), params: { strength: 0.75, falloff: 0.85, opacity: 1, roughness: 0.5 } },
+  plains: { label: N_('Plains'), hint: (h) => t('Low, flat land that levels off around {h}.', { h }), params: { strength: 0.6, falloff: 0.8, opacity: 1, roughness: 0, ceiling: 180, ceilingVar: 0.25 } },
+  hills: { label: N_('Hills'), hint: (h) => t('Rolling uplands that rise to about {h}.', { h }), params: { strength: 0.5, falloff: 0.75, opacity: 1, roughness: 0, ceiling: 900, ceilingVar: 0.6 } },
+  plateau: { label: N_('Plateau'), hint: (h) => t('A high, level tableland around {h}.', { h }), params: { strength: 0.6, falloff: 0.5, opacity: 1, roughness: 0, ceiling: 1600, ceilingVar: 0.12 } },
+  mountains: { label: N_('Mountains'), hint: () => t('Keeps rising while you paint: build peaks (or use the Mountain range tool).'), params: { strength: 0.75, falloff: 0.85, opacity: 1, roughness: 0 } },
 };
 
 export function setUnits(units: Units) {
@@ -257,7 +257,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   referenceEdit: false,
   riverMode: 'brush',
   riverCarve: true,
-  rangeMode: 'brush',
+  rangeMode: 'lines',
   activeRange: null,
   raiseMethod: 'classic',
   upliftPeak: 3000,
