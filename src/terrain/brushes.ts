@@ -1,9 +1,25 @@
-import { clamp, fbm, lerp, ridged } from '../core/math';
-import { BIOME_CHANNELS } from '../core/planet';
-import type { RasterArray } from './TileGrid';
-import type { CellRect, RasterLayer, TerrainModel, TileChange } from './TerrainModel';
+import { clamp, fbm, lerp, ridged } from "../core/math";
+import { BIOME_CHANNELS } from "../core/planet";
+import type { RasterArray } from "./TileGrid";
+import type {
+  CellRect,
+  RasterLayer,
+  TerrainModel,
+  TileChange,
+} from "./TerrainModel";
 
-export type TerrainOp = 'raise' | 'lower' | 'smooth' | 'flatten' | 'ridge' | 'paint' | 'erase' | 'fogHide' | 'fogReveal' | 'waterPaint' | 'waterErase';
+export type TerrainOp =
+  | "raise"
+  | "lower"
+  | "smooth"
+  | "flatten"
+  | "ridge"
+  | "paint"
+  | "erase"
+  | "fogHide"
+  | "fogReveal"
+  | "waterPaint"
+  | "waterErase";
 
 export interface BrushParams {
   /** Radius in km on the planet surface. */
@@ -31,17 +47,17 @@ export interface StrokeOptions {
 }
 
 const LAYER_OF: Record<TerrainOp, RasterLayer> = {
-  raise: 'height',
-  lower: 'height',
-  smooth: 'height',
-  flatten: 'height',
-  ridge: 'height',
-  paint: 'biome',
-  erase: 'biome',
-  fogHide: 'fog',
-  fogReveal: 'fog',
-  waterPaint: 'water',
-  waterErase: 'water',
+  raise: "height",
+  lower: "height",
+  smooth: "height",
+  flatten: "height",
+  ridge: "height",
+  paint: "biome",
+  erase: "biome",
+  fogHide: "fog",
+  fogReveal: "fog",
+  waterPaint: "water",
+  waterErase: "water",
 };
 
 /** Max height a raise/lower stroke at 100 % opacity may add, metres. */
@@ -63,13 +79,20 @@ export function raiseRate(strength: number): number {
 }
 
 /** Cell-space half extents of a brush centred on row cy. */
-export function brushExtents(model: TerrainModel, cy: number, radiusKm: number): { rx: number; ry: number } {
+export function brushExtents(
+  model: TerrainModel,
+  cy: number,
+  radiusKm: number,
+): { rx: number; ry: number } {
   const geo = model.geo;
   const ry = Math.max(0.5, radiusKm / geo.kmPerCellY);
   const yTop = clamp(cy - ry, 0, model.H);
   const yBot = clamp(cy + ry, 0, model.H);
   // widest row is the one nearest the pole (all rows are alike on flat maps)
-  const kmX = Math.max(0.02 * geo.kmPerCellX(model.H / 2), Math.min(geo.kmPerCellX(yTop), geo.kmPerCellX(yBot)));
+  const kmX = Math.max(
+    0.02 * geo.kmPerCellX(model.H / 2),
+    Math.min(geo.kmPerCellX(yTop), geo.kmPerCellX(yBot)),
+  );
   const rx = Math.min(model.W / 2, Math.max(0.5, radiusKm / kmX));
   return { rx, ry };
 }
@@ -90,7 +113,12 @@ export class Stroke {
   private params: BrushParams;
   private opts: StrokeOptions;
 
-  constructor(model: TerrainModel, op: TerrainOp, params: BrushParams, opts: StrokeOptions = {}) {
+  constructor(
+    model: TerrainModel,
+    op: TerrainOp,
+    params: BrushParams,
+    opts: StrokeOptions = {},
+  ) {
     this.model = model;
     this.op = op;
     this.params = params;
@@ -133,19 +161,26 @@ export class Stroke {
     const minH = model.planet.minElevation;
     const kmY = geo.kmPerCellY;
 
-    if (op === 'flatten' && this.flattenTarget === undefined) this.flattenTarget = model.heightAt(cx, cy);
+    if (op === "flatten" && this.flattenTarget === undefined)
+      this.flattenTarget = model.heightAt(cx, cy);
 
     // pre-compute ops constants
     const rate = raiseRate(strength) * amount;
     const heightCap = opacity * STROKE_HEIGHT_CAP;
     const smoothK = Math.max(1, Math.round(ry / 10));
     const ridgeScale = Math.max(2, ry * 0.42);
-    const rough = op === 'raise' || op === 'lower' ? clamp(this.params.roughness ?? 0, 0, 1) : 0;
+    const rough =
+      op === "raise" || op === "lower"
+        ? clamp(this.params.roughness ?? 0, 0, 1)
+        : 0;
     // noise periods divide the planet's width so brushes stay seamless across the antimeridian
     const roughPeriod = Math.max(1, Math.round(W / Math.max(1.5, ry * 0.45)));
     const roughCell = W / roughPeriod;
     // finest octave should stay ≥ ~1.5 cells or it aliases on the grid
-    const ridgeOctaves = Math.max(1, Math.min(5, Math.floor(Math.log2(ridgeScale / 1.5)) + 1));
+    const ridgeOctaves = Math.max(
+      1,
+      Math.min(5, Math.floor(Math.log2(ridgeScale / 1.5)) + 1),
+    );
     const ridgePeriod = Math.max(1, Math.round(W / ridgeScale));
     const ridgeCell = W / ridgePeriod;
     // rolling ceilings vary over ~60 km of ground, seamless around the planet
@@ -188,7 +223,16 @@ export class Stroke {
           tile = grid.ensureTile(tx, ty);
           before = this.before.get(key);
           cov = undefined;
-          if (op === 'flatten' || op === 'paint' || op === 'erase' || op === 'fogHide' || op === 'fogReveal' || op === 'waterPaint' || op === 'waterErase') {
+          if (
+            op === "flatten" ||
+            op === "paint" ||
+            op === "erase" ||
+            op === "fogHide" ||
+            op === "fogReveal" ||
+            op === "waterPaint" ||
+            op === "waterErase" ||
+            (op === "raise" && this.params.ceiling !== undefined)
+          ) {
             cov = this.coverage.get(key);
             if (!cov) {
               cov = new Float32Array(TS * TS);
@@ -200,27 +244,40 @@ export class Stroke {
         const t = tile!;
 
         switch (op) {
-          case 'raise':
-          case 'lower':
-          case 'ridge': {
+          case "raise":
+          case "lower":
+          case "ridge": {
             const h = t[li];
             const b = before ? before[li] : grid.defaultValue;
             let delta: number;
-            if (op === 'ridge') {
+            if (op === "ridge") {
               // peaked profile builds a crest along the stroke; ridged noise adds spurs & summits
-              const r = ridged(x / ridgeCell, y / ridgeScale, seed, ridgeOctaves, ridgePeriod);
+              const r = ridged(
+                x / ridgeCell,
+                y / ridgeScale,
+                seed,
+                ridgeOctaves,
+                ridgePeriod,
+              );
               const peak = (1 - d) * (1 - d);
               delta = rate * w * peak * (0.55 + 1.15 * r * Math.sqrt(r));
             } else {
               let ww = w;
               if (rough > 0) {
                 // coherent world-space noise ragged-ises the edge so coasts look natural
-                const n = fbm(x / roughCell, y / roughCell, seed + 17, 4, roughPeriod) * 2 - 1;
+                const n =
+                  fbm(x / roughCell, y / roughCell, seed + 17, 4, roughPeriod) *
+                    2 -
+                  1;
                 // only the outer rim is ragged, so the interior never keeps stray pits
                 const rim = clamp((d - 0.45) / 0.5, 0, 1);
-                ww = clamp(w + n * rough * 1.1 * rim * rim * (3 - 2 * rim), 0, 1);
+                ww = clamp(
+                  w + n * rough * 1.1 * rim * rim * (3 - 2 * rim),
+                  0,
+                  1,
+                );
               }
-              delta = (op === 'raise' ? rate : -rate) * ww;
+              delta = (op === "raise" ? rate : -rate) * ww;
             }
             // deep ocean floor is raised faster so continents emerge quickly;
             // the boost is continuous in depth so no terraces form
@@ -230,56 +287,76 @@ export class Stroke {
             }
             let nh = h + delta;
             // presets like Plains raise land up to a ceiling and then level it off, so it stays flat
-            if (op === 'raise' && this.params.ceiling !== undefined) {
+            if (op === "raise" && this.params.ceiling !== undefined) {
               const v = this.params.ceilingVar ?? 0;
-              const roll = v > 0 ? fbm(x / ceilCell, y / ceilCell, seed + 29, 3, ceilPeriod) * 2 - 1 : 0;
-              const top = sea + this.params.ceiling * Math.max(0.15, 1 + v * roll);
+              const roll =
+                v > 0
+                  ? fbm(x / ceilCell, y / ceilCell, seed + 29, 3, ceilPeriod) *
+                      2 -
+                    1
+                  : 0;
+              const top =
+                sea + this.params.ceiling * Math.max(0.15, 1 + v * roll);
               if (h >= top) nh = h;
               else nh = Math.min(nh, top);
+              // how strongly the stroke reached the cell (the uplift of the Raise tool's erosion method)
+              if (w > cov![li]) cov![li] = w;
             }
             nh = clamp(nh, b - heightCap, b + heightCap);
             t[li] = clamp(nh, minH, Math.max(maxH, b));
             break;
           }
-          case 'smooth': {
+          case "smooth": {
             const h = t[li];
             const avg =
-              (grid.get(x - smoothK, y) + grid.get(x + smoothK, y) + grid.get(x, y - smoothK) + grid.get(x, y + smoothK) + h * 2) / 6;
-            t[li] = lerp(h, avg, w * clamp(strength * 0.9 * amount, 0, 1) * opacity);
+              (grid.get(x - smoothK, y) +
+                grid.get(x + smoothK, y) +
+                grid.get(x, y - smoothK) +
+                grid.get(x, y + smoothK) +
+                h * 2) /
+              6;
+            t[li] = lerp(
+              h,
+              avg,
+              w * clamp(strength * 0.9 * amount, 0, 1) * opacity,
+            );
             break;
           }
-          case 'flatten': {
+          case "flatten": {
             const c = 1 - (1 - cov![li]) * (1 - w * flow * 0.6);
             cov![li] = c;
             const b = before ? before[li] : grid.defaultValue;
             t[li] = lerp(b, this.flattenTarget!, c * opacity);
             break;
           }
-          case 'paint':
-          case 'erase': {
+          case "paint":
+          case "erase": {
             // within one stroke the edge never gets denser than the brush's own falloff,
             // so soft brushes leave soft biome edges (a forest thins out instead of stopping)
-            const c = Math.max(cov![li], Math.min(w, 1 - (1 - cov![li]) * (1 - w * flow)));
+            const c = Math.max(
+              cov![li],
+              Math.min(w, 1 - (1 - cov![li]) * (1 - w * flow)),
+            );
             cov![li] = c;
             const a = c * opacity;
             const base = li * C;
             for (let ch = 0; ch < BIOME_CHANNELS; ch++) {
               const bv = before ? before[base + ch] : 0;
               let nv = bv * (1 - a);
-              if (op === 'paint' && ch === biomeCh) nv = bv + (255 - bv) * a;
+              if (op === "paint" && ch === biomeCh) nv = bv + (255 - bv) * a;
               t[base + ch] = nv + 0.5;
             }
             break;
           }
-          case 'fogHide':
-          case 'fogReveal':
-          case 'waterPaint':
-          case 'waterErase': {
+          case "fogHide":
+          case "fogReveal":
+          case "waterPaint":
+          case "waterErase": {
             const c = 1 - (1 - cov![li]) * (1 - w * flow);
             cov![li] = c;
             const a = c * opacity;
             const bv = before ? before[li] : grid.defaultValue;
-            const add = op === 'fogHide' || op === 'waterPaint';
+            const add = op === "fogHide" || op === "waterPaint";
             const nv = add ? bv + (255 - bv) * a : bv * (1 - a);
             t[li] = add ? Math.max(t[li], nv + 0.5) : Math.min(t[li], nv + 0.5);
             break;
@@ -287,9 +364,23 @@ export class Stroke {
         }
       }
     }
-    const rect = { x0: x0 * gs, y0: y0 * gs, x1: (x1 + 1) * gs - 1, y1: (y1 + 1) * gs - 1 };
+    const rect = {
+      x0: x0 * gs,
+      y0: y0 * gs,
+      x1: (x1 + 1) * gs - 1,
+      y1: (y1 + 1) * gs - 1,
+    };
     model.changed(this.layer, rect);
     return rect;
+  }
+
+  /**
+   * How strongly the stroke reached each cell so far (0 … 1), per tile of its layer. Kept for
+   * brushes that cover rather than add (and for raising with a ceiling); empty otherwise. Read it
+   * before `finish`, which lets it go.
+   */
+  get reach(): ReadonlyMap<number, Float32Array> {
+    return this.coverage;
   }
 
   /** Finish the stroke. Returns the undo record, or null when nothing changed. */

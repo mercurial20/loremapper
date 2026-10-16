@@ -44,6 +44,41 @@ export interface PathFeature {
   locked: boolean;
 }
 
+/** One crest line of a mountain range: the main divide, or a branch off another line. */
+export interface RangeLine {
+  id: string;
+  /** Points along the crest, continuous (unwrapped) world coords. */
+  points: Vec2[];
+  /**
+   * A branch: the line it grows from, and where along it (0 … 1 of its length). The line may
+   * belong to another range (`range`): a branch drawn off a range becomes a range of its own,
+   * so it can be lower, narrower or of another nature than the one it grows from.
+   */
+  from?: { line: string; t: number; range?: string };
+}
+
+/**
+ * A mountain range drawn as crest lines. Its relief is computed from the lines (uplift carved
+ * by rivers) and kept apart from the land under it (see TerrainModel.relief), so it can be
+ * reshaped or removed later.
+ */
+export interface MountainRange {
+  id: string;
+  name: string;
+  lines: RangeLine[];
+  /** Highest summits, metres above the land around. */
+  heightM: number;
+  /** Width across the range, km. */
+  widthKm: number;
+  /** 0 = even along its length … 1 = summits in clusters, a crest that wanders. */
+  irregularity: number;
+  /** −1 … 1: which side is the short, steep one (0 = both alike). */
+  asymmetry: number;
+  /** Picks one of the many ways rivers could carve the same range. */
+  seed: number;
+  locked: boolean;
+}
+
 export const TERRITORY_TYPES = ['kingdom', 'khaganate', 'republic', 'empire', 'tribe', 'city', 'other'] as const;
 export type TerritoryType = (typeof TERRITORY_TYPES)[number];
 export const TERRITORY_TYPE_LABELS: Record<TerritoryType, string> = {
@@ -173,6 +208,7 @@ export interface ReferenceImage {
 export interface MapDocument {
   objects: Record<string, MapObject>;
   paths: Record<string, PathFeature>;
+  ranges: Record<string, MountainRange>;
   territories: Record<string, Territory>;
   labels: Record<string, MapLabel>;
   peaks: Record<string, PeakAnnotation>;
@@ -221,6 +257,7 @@ export function emptyDocument(): MapDocument {
   return {
     objects: {},
     paths: {},
+    ranges: {},
     territories: {},
     labels: {},
     peaks: {},

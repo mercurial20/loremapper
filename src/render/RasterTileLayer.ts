@@ -175,6 +175,8 @@ export class RasterTileLayer {
 
   /** Raster change notification → mark affected tile textures dirty. */
   onChange(layer: RasterLayer, rect: CellRect | null) {
+    // the ranges' relief is drawn as part of the height, which changes with it
+    if (layer === 'relief') return;
     if (this.kind === 'terrain' && layer === 'fog') return;
     if (this.kind === 'fog' && layer === 'water') return;
     if (this.kind === 'fog' && layer !== 'fog') return;

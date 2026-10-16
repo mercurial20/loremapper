@@ -33,6 +33,8 @@ export type BrushGroup = 'terrain' | 'paint' | 'fog' | 'erase' | 'water';
 export const TERRAIN_TOOLS: ToolId[] = ['raise', 'lower', 'smooth', 'flatten', 'ridge'];
 
 export function brushGroupOf(tool: ToolId): BrushGroup | null {
+  // the mountain range tool draws crest lines instead of brushing, in its lines mode
+  if (tool === 'ridge' && useEditor.getState().rangeMode === 'lines') return null;
   if (TERRAIN_TOOLS.includes(tool)) return 'terrain';
   // the river tool paints water with a brush unless it's drawing paths
   if (tool === 'river' && useEditor.getState().riverMode === 'brush') return 'water';
@@ -129,6 +131,14 @@ interface EditorState {
   riverMode: 'brush' | 'path';
   /** Rivers cut a bed and a soft valley into the terrain as they are drawn. */
   riverCarve: boolean;
+  /** Mountain range tool: build ranges with a brush, or draw their crests as lines (alpha). */
+  rangeMode: 'brush' | 'lines';
+  /** The mountain range being drawn or edited (lines mode). */
+  activeRange: string | null;
+  /** Raise tool: build land directly, or paint uplift that rivers carve into mountains (alpha). */
+  raiseMethod: 'classic' | 'erosion';
+  /** Raise tool, erosion method: height of the highest summit above sea level, metres. */
+  upliftPeak: number;
 
   setTool(t: ToolId): void;
   setBrush(g: BrushGroup, p: Partial<BrushParams>): void;
@@ -247,6 +257,10 @@ export const useEditor = create<EditorState>((set, get) => ({
   referenceEdit: false,
   riverMode: 'brush',
   riverCarve: true,
+  rangeMode: 'brush',
+  activeRange: null,
+  raiseMethod: 'classic',
+  upliftPeak: 3000,
 
   setTool(tool) {
     const cur = get().tool;

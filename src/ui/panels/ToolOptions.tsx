@@ -1,11 +1,13 @@
-import { CloudFog, Eye, Sun } from 'lucide-react';
+import { CloudFog, Dices, Eye, Sun, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useAssets } from '../../assets/library';
 import { formatHeight, formatLength } from '../../core/units';
 import { brushRange } from '../format';
 import { BIOMES } from '../../core/planet';
 import { restoreSuppressedPeaks } from '../../editor/commands';
+import { bakeRange, deleteRange, updateRange } from '../../editor/ranges';
 import { editor } from '../../editor/Editor';
-import { TERRITORY_TYPES, TERRITORY_TYPE_LABELS, type BorderStyle, type LabelFont, type RoadStyle, type TerritoryType } from '../../model/types';
+import { TERRITORY_TYPES, TERRITORY_TYPE_LABELS, type BorderStyle, type LabelFont, type MountainRange, type RoadStyle, type TerritoryType } from '../../model/types';
 import { FONT_LABEL } from '../../render/fonts';
 import { STYLE_PRESETS } from '../../render/styles';
 import { useDoc } from '../../store/docStore';
@@ -53,6 +55,114 @@ function TerrainPresets() {
   );
 }
 
+/** Settings of the mountain range being drawn (lines mode); applied a moment after the last change. */
+function RangeLines() {
+  const { t } = useTranslation();
+  const ranges = useDoc((s) => s.doc.ranges);
+  const active = useEditor((s) => s.activeRange);
+  const units = useEditor((s) => s.units);
+  const set = useEditor((s) => s.set);
+  const r = active ? ranges[active] : undefined;
+  const [draft, setDraft] = useState<Partial<MountainRange>>({});
+  const timer = useRef(0);
+  useEffect(() => setDraft({}), [active, r]);
+  const change = (patch: Partial<MountainRange>) => {
+    const next = { ...draft, ...patch };
+    setDraft(next);
+    clearTimeout(timer.current);
+    if (r) timer.current = window.setTimeout(() => updateRange(r.id, next), 500);
+  };
+  const v = r ? { ...r, ...draft } : null;
+  const cellKm = editor.model?.geo.kmPerCellY ?? 1;
+  const list = Object.values(ranges);
+  return (
+    <>
+      <Hint>{t('Draw the crest of a range: drag, or click points and double-click / Enter to finish. Start or end a line on a crest to branch off it. When you let go, rivers carve the range into ridges and valleys.')}</Hint>
+      {list.length > 0 && (
+        <Select label={t('Range')} value={active && ranges[active] ? active : ''} onChange={(id) => set({ activeRange: id || null })} options={[{ value: '', label: t('None (draw a new one)') }, ...list.map((x) => ({ value: x.id, label: x.name }))]} />
+      )}
+      {v && r && (
+        <>
+          {r.lines[0]?.from?.range && ranges[r.lines[0].from.range] && <Hint>{t('A branch of {name}: it started out like it, and can be changed on its own.', { name: ranges[r.lines[0].from.range].name })}</Hint>}
+          <Slider label={t('Highest peaks')} value={v.heightM} min={300} max={9000} log onChange={(x) => change({ heightM: Math.round(x / 10) * 10 })} format={(x) => formatHeight(x, units)} />
+          <Slider label={t('Width')} value={v.widthKm} min={Math.max(2, 8 * cellKm)} max={Math.max(50, 600 * cellKm)} log onChange={(x) => change({ widthKm: Math.round(x * 10) / 10 })} format={(x) => formatLength(x, units)} />
+          <Slider
+            label={t('Irregularity')}
+            value={v.irregularity}
+            min={0}
+            max={1}
+            onChange={(x) => change({ irregularity: x })}
+            format={(x) => `${Math.round(x * 100)}%`}
+            hint={t('How much the crest wanders and the summits gather in groups, with saddles between them')}
+          />
+          <Slider
+            label={t('Asymmetry')}
+            value={v.asymmetry}
+            min={-1}
+            max={1}
+            onChange={(x) => change({ asymmetry: Math.abs(x) < 0.05 ? 0 : x })}
+            format={(x) => (x > 0 ? t('steep on the left') : x < 0 ? t('steep on the right') : t('even'))}
+            hint={t('One flank short and steep, the other long; left and right as you drew the crest')}
+          />
+          <div className="btn-row">
+            <button className="btn" onClick={() => updateRange(r.id, { ...draft, seed: Math.floor(Math.random() * 1e9) })} title={t('The same range, carved another way')}>
+              <Dices size={14} /> {t('Another variant')}
+            </button>
+          </div>
+          <div className="btn-row">
+            <button className="btn" onClick={() => bakeRange(r.id)} title={t('Keep these mountains as plain terrain to sculpt with the brushes; the range stops being editable as lines')}>
+              {t('Bake into terrain')}
+            </button>
+            <button className="btn danger" onClick={() => deleteRange(r.id)} title={t('Remove the range and its mountains; the land under it stays')}>
+              <Trash2 size={14} /> {t('Delete')}
+            </button>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+/** Raise tool: build land directly, or paint uplift that rivers carve into mountains. */
+function RaiseMethod() {
+  const { t } = useTranslation();
+  const method = useEditor((s) => s.raiseMethod);
+  const peak = useEditor((s) => s.upliftPeak);
+  const units = useEditor((s) => s.units);
+  const set = useEditor((s) => s.set);
+  return (
+    <>
+      <div className="terrain-presets">
+        <Segmented
+          label={t('Method')}
+          value={method}
+          onChange={(v) => set({ raiseMethod: v })}
+          options={[
+            { value: 'classic', label: t('Classic'), title: t('Build land directly, with the kind of land you pick') },
+            {
+              value: 'erosion',
+              label: (
+                <>
+                  {t('Erosion')}
+                  <AlphaBadge tip={t('A new tool that is still being tested: it may work unstably or not quite right.')} />
+                </>
+              ),
+              title: t('Paint where mountains rise; rivers carve them into ridges and valleys'),
+            },
+          ]}
+        />
+        {method === 'erosion' && (
+          <>
+            <Slider label={t('Highest peaks')} value={peak} min={300} max={9000} log onChange={(v) => set({ upliftPeak: Math.round(v / 10) * 10 })} format={(v) => formatHeight(v, units)} />
+            <Hint>{t('Paint where the mountains rise. When you let go, rivers carve them into ridges and branching valleys, as erosion shapes real ranges. Wider strokes make wider ranges.')}</Hint>
+          </>
+        )}
+      </div>
+      {method === 'classic' && <TerrainPresets />}
+    </>
+  );
+}
+
 function BrushControls({ group, showOpacity = true }: { group: BrushGroup; showOpacity?: boolean }) {
   const { t } = useTranslation();
   const b = useEditor((s) => s.brushes[group]);
@@ -63,11 +173,13 @@ function BrushControls({ group, showOpacity = true }: { group: BrushGroup; showO
     if (g === 'terrain' && tool === 'raise' && !('radiusKm' in p && Object.keys(p).length === 1)) useEditor.getState().set({ terrainPreset: 'custom' });
   };
   const units = useEditor((s) => s.units);
+  // painting uplift has no ragged edges or stroke cap: the rivers shape it
+  const uplift = useEditor((s) => tool === 'raise' && group === 'terrain' && s.raiseMethod === 'erosion');
   useDoc((s) => s.meta);
   const range = editor.model ? brushRange(editor.model.geo, group) : { min: 5, max: 6000 };
   return (
     <>
-      {tool === 'raise' && group === 'terrain' && <TerrainPresets />}
+      {tool === 'raise' && group === 'terrain' && <RaiseMethod />}
       <Slider
         label={t('Radius')}
         value={Math.min(range.max, Math.max(range.min, b.radiusKm))}
@@ -88,7 +200,7 @@ function BrushControls({ group, showOpacity = true }: { group: BrushGroup; showO
         hint={t('Shift + [ / ]')}
       />
       <Slider label={t('Falloff (softness)')} value={b.falloff} min={0} max={1} onChange={(v) => setBrush(group, { falloff: v })} format={(v) => `${Math.round(v * 100)}%`} />
-      {(tool === 'raise' || tool === 'lower') && (
+      {(tool === 'raise' || tool === 'lower') && !uplift && (
         <Slider
           label={t('Edge roughness')}
           value={b.roughness ?? 0}
@@ -99,7 +211,7 @@ function BrushControls({ group, showOpacity = true }: { group: BrushGroup; showO
           hint={t('Ragged, natural coastlines instead of round brush blobs')}
         />
       )}
-      {showOpacity && (
+      {showOpacity && !uplift && (
         <Slider
           label={tool === 'raise' || tool === 'lower' || tool === 'ridge' ? t('Stroke cap (opacity)') : t('Opacity')}
           value={b.opacity}
@@ -279,8 +391,29 @@ export function ToolOptions() {
           />
         </>
       )}
+      {tool === 'ridge' && (
+        <Segmented
+          label={t('Build ranges')}
+          value={st.rangeMode}
+          onChange={(v) => st.set({ rangeMode: v })}
+          options={[
+            { value: 'brush', label: t('Brush'), title: t('Drag along a line to build a jagged mountain range with summits and spurs.') },
+            {
+              value: 'lines',
+              label: (
+                <>
+                  {t('Lines')}
+                  <AlphaBadge tip={t('A new tool that is still being tested: it may work unstably or not quite right.')} />
+                </>
+              ),
+              title: t('Draw crest lines and branch them; rivers carve the range, and you can reshape it later'),
+            },
+          ]}
+        />
+      )}
+      {tool === 'ridge' && st.rangeMode === 'lines' && <RangeLines />}
       {tool === 'fog' ? <FogControls /> : group && <BrushControls group={group} />}
-      {tool === 'ridge' && <Hint>{t('Tip: drag slowly along the spine of the range; repeat strokes to push summits towards 10,000 m.')}</Hint>}
+      {tool === 'ridge' && st.rangeMode === 'brush' && <Hint>{t('Tip: drag slowly along the spine of the range; repeat strokes to push summits towards 10,000 m.')}</Hint>}
       {(tool === 'raise' || tool === 'lower') && <Hint>{t('Raising is boosted below sea level so new land emerges quickly from the deep ocean floor.')}</Hint>}
       {tool === 'object' && <ObjectToolControls />}
       {((tool === 'river' && st.riverMode === 'path') || tool === 'road') && (

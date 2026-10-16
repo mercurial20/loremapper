@@ -41,7 +41,7 @@ function upsample(src: Uint8Array, n: number, k: number): Uint8Array {
 }
 
 function tileArray(layer: RasterLayer, buf: ArrayBuffer): RasterArray {
-  return layer === 'height' ? new Float32Array(buf) : new Uint8Array(buf);
+  return layer === 'height' || layer === 'relief' ? new Float32Array(buf) : new Uint8Array(buf);
 }
 
 /** Load a project's record and raster tiles into a fresh TerrainModel. */
@@ -71,7 +71,7 @@ export async function putProjectRecord(meta: ProjectMeta, doc: MapDocument, mode
     formatVersion: FORMAT_VERSION,
     meta,
     doc,
-    rasterDefaults: { height: model.height.defaultValue, biome: model.biome.defaultValue, fog: model.fog.defaultValue, water: model.water.defaultValue },
+    rasterDefaults: { height: model.height.defaultValue, biome: model.biome.defaultValue, fog: model.fog.defaultValue, water: model.water.defaultValue, relief: model.relief.defaultValue },
     thumbnail: thumbnail ?? prev?.thumbnail,
     updatedAt: Date.now(),
   };
@@ -89,7 +89,7 @@ export async function saveDirtyTiles(projectId: string, model: TerrainModel): Pr
   let n = 0;
   const reset = new Set(model.persistReset);
   model.persistReset.clear();
-  const dirty: Record<RasterLayer, Set<number>> = { height: new Set(), biome: new Set(), fog: new Set(), water: new Set() };
+  const dirty: Record<RasterLayer, Set<number>> = { height: new Set(), biome: new Set(), fog: new Set(), water: new Set(), relief: new Set() };
   for (const l of RASTER_LAYERS) {
     for (const k of model.persistDirty[l]) dirty[l].add(k);
     model.persistDirty[l].clear();

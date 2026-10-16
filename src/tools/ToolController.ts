@@ -29,6 +29,9 @@ import { useDoc } from '../store/docStore';
 import { brushGroupOf, togglePanel, useEditor, type ToolId } from '../store/editorStore';
 import { Stroke, type TerrainOp } from '../terrain/brushes';
 import { erodeRiver, newWaterCells, waterIn } from '../terrain/riverErosion';
+import { carveUplift } from '../terrain/upliftStroke';
+import { addCrestLine, snapToCrest } from '../editor/ranges';
+import { crestCurve } from '../terrain/ranges';
 import { sampleSpline } from '../render/vectorGeometry';
 import type { TileChange } from '../terrain/TerrainModel';
 import { hitAny, hitPeak, hitVertex, insertionIndex, nearX, objectHandleHit, type HitContext } from './hitTest';
@@ -359,6 +362,7 @@ export class ToolController {
       case 'river':
       case 'road':
       case 'territory':
+      case 'ridge':
         this.drag = { kind: 'freehand', points: [[x, y]], startScreen: [e.clientX, e.clientY], moved: false };
         break;
       case 'label':
@@ -462,6 +466,7 @@ export class ToolController {
     } else {
       if (this.tool === 'select') this.updateHover(x, y);
       if (this.draft) this.showDraft(this.draft.points, [nearX(editor.model.geo, this.draft.points[0][0], x), y]);
+      if (this.crestLines()) this.showCrestSnap(x, y);
       if (this.tool === 'measure' && this.measure.length && !this.measureDone) this.showMeasure([x, y]);
     }
     this.updateBrushCursor();
@@ -641,7 +646,7 @@ export class ToolController {
         op = 'erase';
     }
     const flattenTarget = tool === 'flatten' && st.flattenMode === 'fixed' ? model.seaLevel + st.flattenHeight : undefined;
-    const stroke = new Stroke(model, op, st.brushes[g], {
+    const stroke = new Stroke(model, op, this.strokeParams(op, g), {
       biome: st.biome,
       flattenTarget,
       seed: (useDoc.getState().meta?.seed ?? 1) % 9973,
@@ -658,7 +663,7 @@ export class ToolController {
     const model = editor.model!;
     const st = useEditor.getState();
     const g = brushGroupOf(this.tool) ?? 'terrain';
-    d.stroke.setParams(st.brushes[g]);
+    d.stroke.setParams(this.strokeParams(d.stroke.op, g));
     const geo = model.geo;
     const rCells = st.brushes[g].radiusKm / geo.kmPerCellY;
     // dabs overlap at least by half, so even the finest river brush leaves no gaps
@@ -679,7 +684,23 @@ export class ToolController {
     d.lastDab = performance.now();
   }
 
+  /** Raising by uplift paints its preview as smooth land up to a third of the peak, with no ragged edge. */
+  private strokeParams(op: TerrainOp, g: NonNullable<ReturnType<typeof brushGroupOf>>) {
+    const st = useEditor.getState();
+    const b = st.brushes[g];
+    if (!this.upliftStroke(op)) return b;
+    return { ...b, ceiling: st.upliftPeak * 0.35, ceilingVar: 0, roughness: 0 };
+  }
+
+  private upliftStroke(op: TerrainOp) {
+    return op === 'raise' && this.tool === 'raise' && useEditor.getState().raiseMethod === 'erosion';
+  }
+
   private endStroke(stroke: Stroke, erase?: EraseState) {
+    if (this.upliftStroke(stroke.op)) {
+      void this.endUpliftStroke(stroke);
+      return;
+    }
     const change = stroke.finish();
     const model = editor.model!;
     if (erase?.before) {
@@ -726,6 +747,27 @@ export class ToolController {
       }
     }
     pushTileChange(change, names[stroke.op], model);
+  }
+
+  /** Raise by uplift: rivers carve the stroke's uplift into mountains, in one undo step with it. */
+  private async endUpliftStroke(stroke: Stroke) {
+    const reach = new Map(stroke.reach);
+    const change = stroke.finish();
+    if (!change) return;
+    const model = editor.model!;
+    const st = useEditor.getState();
+    const label = t('Raise mountains');
+    st.set({ busy: t('Rivers are carving the mountains…'), busyCancel: null });
+    try {
+      const carved = await carveUplift(model, change, reach, st.upliftPeak, Math.floor(Math.random() * 1e9));
+      pushTileChange(carved ?? change, label, model);
+    } catch (e) {
+      // the preview stays, as plain raised land
+      console.error(e);
+      pushTileChange(change, label, model);
+    } finally {
+      useEditor.getState().set({ busy: null });
+    }
   }
 
   /** Eraser: remove objects / path points / labels under the brush. */
@@ -1035,11 +1077,40 @@ export class ToolController {
 
   // ------------------------------------------------------------ drawing (paths & territories)
 
+  /** Whether the Mountain range tool is drawing crest lines. */
+  private crestLines() {
+    return this.tool === 'ridge' && useEditor.getState().rangeMode === 'lines';
+  }
+
+  /** Mark the point of a crest a line would branch from, when starting or ending one near it. */
+  private showCrestSnap(x: number, y: number) {
+    const at = snapToCrest([x, y], CREST_SNAP_PX / editor.zoom);
+    this.overlay().set({ snap: at ? at.at : null });
+    editor.requestRender();
+  }
+
+  /** Show the crest lines of mountain ranges while drawing them. */
+  syncCrests() {
+    if (!editor.layers) return;
+    const st = useEditor.getState();
+    const crests = this.crestLines()
+      ? Object.values(useDoc.getState().doc.ranges).map((r) => ({ lines: r.lines.map((l) => crestCurve(l.points)), active: r.id === st.activeRange }))
+      : null;
+    this.overlay().set({ crests, snap: crests ? this.overlay().state.snap : null });
+    editor.requestRender();
+  }
+
   private showDraft(points: Vec2[], cursor: Vec2 | null) {
     const t = this.draft?.tool ?? this.tool;
     const st = useEditor.getState();
     const color =
-      t === 'river' ? hexToNumber(st.pathDefaults.river.color) : t === 'road' ? hexToNumber(st.pathDefaults.road.color) : hexToNumber(st.territoryDefaults.color);
+      t === 'river'
+        ? hexToNumber(st.pathDefaults.river.color)
+        : t === 'road'
+          ? hexToNumber(st.pathDefaults.road.color)
+          : t === 'ridge'
+            ? 0x3b2a1e
+            : hexToNumber(st.territoryDefaults.color);
     this.overlay().set({ draft: { points, closed: t === 'territory', color, cursor } });
     editor.requestRender();
   }
@@ -1138,7 +1209,10 @@ export class ToolController {
     const shift = geo.wrapX(raw[0][0]) - raw[0][0];
     const pts = raw.map(([x, y]) => [x + shift, y] as Vec2);
     const zoom = editor.zoom;
-    if ((tool === 'river' || tool === 'road') && pts.length >= 2) {
+    if (tool === 'ridge' && pts.length >= 2) {
+      addCrestLine(pts, CREST_SNAP_PX / zoom);
+      this.overlay().set({ snap: null });
+    } else if ((tool === 'river' || tool === 'road') && pts.length >= 2) {
       const def = tool === 'river' ? st.pathDefaults.river : st.pathDefaults.road;
       const p: PathFeature = {
         id: uid('path-'),
@@ -1504,6 +1578,13 @@ export function pushTileChange(change: TileChange, label: string, model = editor
   track('first_edit');
 }
 
+useDoc.subscribe((s, prev) => {
+  if (s.doc.ranges !== prev.doc.ranges) tools.syncCrests();
+});
+
+/** How close to a crest (screen px) a new line's end joins it. */
+const CREST_SNAP_PX = 14;
+
 export const tools = new ToolController();
 Object.assign(window as object, { __tools: tools });
 
@@ -1511,7 +1592,8 @@ Object.assign(window as object, { __tools: tools });
 i18n.on('languageChanged', () => tools.refreshMeasure());
 useEditor.subscribe((s, prev) => {
   if (s.units !== prev.units) tools.refreshMeasure();
-  if (s.referenceEdit !== prev.referenceEdit || s.riverMode !== prev.riverMode) tools.refreshCursor();
+  if (s.tool !== prev.tool || s.rangeMode !== prev.rangeMode || s.activeRange !== prev.activeRange) tools.syncCrests();
+  if (s.referenceEdit !== prev.referenceEdit || s.riverMode !== prev.riverMode || s.rangeMode !== prev.rangeMode) tools.refreshCursor();
 });
 
 /** Keep a brush radius within what makes sense for the open map. */

@@ -33,6 +33,10 @@ export interface OverlayState {
   stampPreview: { x: number; y: number; w: number; h: number; rotation: number } | null;
   /** shoreline of the inspected landmass / water body: polylines [x0, y0, x1, y1, …] in world cells */
   region: Float32Array[] | null;
+  /** Crest lines of mountain ranges (smooth curves), shown while drawing them. */
+  crests: { lines: Vec2[][]; active: boolean }[] | null;
+  /** Where a line being drawn will join another one. */
+  snap: Vec2 | null;
 }
 
 const ACCENT = 0xf2b14a;
@@ -53,7 +57,7 @@ export class OverlayLayer implements WorldLayer {
     fill: '#ffffff',
     stroke: { color: '#1b1612', width: 3.5, join: 'round' },
   });
-  state: OverlayState = { brush: null, draft: null, measure: null, marquee: null, hover: null, stampPreview: null, region: null };
+  state: OverlayState = { brush: null, draft: null, measure: null, marquee: null, hover: null, stampPreview: null, region: null, crests: null, snap: null };
   private doc: MapDocument | null = null;
   private selection: SelectionRef[] = [];
   private dirty = true;
@@ -222,6 +226,22 @@ export class OverlayLayer implements WorldLayer {
         [-w / 2, h / 2],
       ].map(([u, v]) => [x + u * Math.cos(a) - v * Math.sin(a), y + u * Math.sin(a) + v * Math.cos(a)]);
       g.poly(pts.flat()).stroke({ width: 1.2 * px, color: 0xffffff, alpha: 0.8 });
+    }
+
+    // crest lines of mountain ranges: a dark line with a light edge, the active range in the accent
+    if (s.crests) {
+      for (const r of s.crests)
+        for (const line of r.lines) {
+          if (line.length < 2) continue;
+          strokePolyline(g, line);
+          g.stroke({ width: 4.2 * px, color: 0xfff6e6, alpha: 0.55, cap: 'round', join: 'round' });
+          strokePolyline(g, line);
+          g.stroke({ width: 2 * px, color: r.active ? ACCENT : 0x3b2a1e, alpha: 0.95, cap: 'round', join: 'round' });
+        }
+    }
+    if (s.snap) {
+      g.circle(s.snap[0], s.snap[1], 7 * px).stroke({ width: 2 * px, color: ACCENT, alpha: 1 });
+      g.circle(s.snap[0], s.snap[1], 2.5 * px).fill({ color: ACCENT, alpha: 1 });
     }
 
     // draft polyline / polygon

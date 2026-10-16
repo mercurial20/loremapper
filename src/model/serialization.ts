@@ -7,7 +7,7 @@ import { t } from '../i18n';
  * Project serialisation version. Bump when the stored shape changes and add a
  * step to `MIGRATIONS` that upgrades records from the previous version.
  */
-export const FORMAT_VERSION = 3;
+export const FORMAT_VERSION = 4;
 
 type Migration = (rec: Record<string, unknown>) => Record<string, unknown>;
 
@@ -24,6 +24,12 @@ const MIGRATIONS: Record<number, Migration> = {
   2: (rec) => {
     const defaults = (rec.rasterDefaults ?? {}) as Record<string, unknown>;
     return { ...rec, formatVersion: 3, rasterDefaults: { ...defaults, water: 0 } };
+  },
+  // 3 → 4 (v1.3): mountain ranges drawn as lines, and the raster of their relief. Older maps have none.
+  3: (rec) => {
+    const defaults = (rec.rasterDefaults ?? {}) as Record<string, unknown>;
+    const doc = (rec.doc ?? {}) as Record<string, unknown>;
+    return { ...rec, formatVersion: 4, rasterDefaults: { ...defaults, relief: 0 }, doc: { ranges: {}, ...doc } };
   },
 };
 
@@ -61,6 +67,7 @@ export function normalizeDoc(d: Partial<MapDocument> | undefined): MapDocument {
   return {
     objects: d.objects ?? {},
     paths: d.paths ?? {},
+    ranges: d.ranges ?? {},
     territories: d.territories ?? {},
     labels: d.labels ?? {},
     peaks: d.peaks ?? {},
