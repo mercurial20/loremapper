@@ -1306,8 +1306,8 @@ export class ToolController {
     // the cells under the river's line, as wide as the river
     const cells = new Map<number, [number, number]>();
     const r = Math.max(0.5, p.width / 2);
-    for (const [x, y] of sampleSpline(p.points, 6)) {
-      const R = Math.ceil(r);
+    const R = Math.ceil(r);
+    const stamp = (x: number, y: number) => {
       for (let dy = -R; dy <= R; dy++)
         for (let dx = -R; dx <= R; dx++) {
           if (dx * dx + dy * dy > r * r + 0.5) continue;
@@ -1316,6 +1316,15 @@ export class ToolController {
           if (cy < 0 || cy >= model.H) continue;
           cells.set(cy * W + (((cx % W) + W) % W), [cx, cy]);
         }
+    };
+    // every half cell along the curve, so the river's cells never break apart
+    const line = sampleSpline(p.points, 6);
+    stamp(line[0][0], line[0][1]);
+    for (let i = 1; i < line.length; i++) {
+      const [ax, ay] = line[i - 1];
+      const [bx, by] = line[i];
+      const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) * 2));
+      for (let s = 1; s <= steps; s++) stamp(ax + ((bx - ax) * s) / steps, ay + ((by - ay) * s) / steps);
     }
     const before = useDoc.getState().doc.paths;
     const after = { ...before, [p.id]: p };

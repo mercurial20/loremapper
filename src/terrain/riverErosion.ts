@@ -44,6 +44,8 @@ const SILL = 25;
 /** Valley-side gradients (m per km of map distance) are kept in this range. */
 const MIN_SIDE = 15;
 const MAX_SIDE = 600;
+/** Branches of a river shorter than this (cells) are part of its width, not tributaries. */
+const MIN_BRANCH = 12;
 /** Rivers larger than this many terrain cells are shaped near the new part only. */
 const MAX_RIVER_CELLS = 400_000;
 const MAX_WINDOW = 8e6;
@@ -178,6 +180,42 @@ export function erodeRiver(model: TerrainModel, input: RiverInput): TileChange |
   }
 
   // ---------- flow paths: distance to the outlet along the river ----------
+  // Water follows the middle of a wide river: steps near its edge cost more, so the edge drains
+  // straight across to the middle instead of running along the bank as streams of its own.
+  const edge = new Float32Array(n).fill(Infinity); // cells to the river's edge
+  const ring: number[] = [];
+  for (let r = 0; r < n; r++) {
+    const k = idx[r];
+    const i = k % w;
+    const j = (k / w) | 0;
+    for (let dy = -1; dy <= 1 && edge[r] > 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const ii = i + dx;
+        const jj = j + dy;
+        if (ii < 0 || jj < 0 || ii >= w || jj >= h || river[jj * w + ii] < 0) {
+          edge[r] = 1;
+          ring.push(r);
+          break;
+        }
+      }
+  }
+  for (let q = 0; q < ring.length; q++) {
+    const r = ring[q];
+    const k = idx[r];
+    const i = k % w;
+    const j = (k / w) | 0;
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const ii = i + dx;
+        const jj = j + dy;
+        if (ii < 0 || jj < 0 || ii >= w || jj >= h) continue;
+        const o = river[jj * w + ii];
+        if (o >= 0 && edge[o] > edge[r] + 1) {
+          edge[o] = edge[r] + 1;
+          ring.push(o);
+        }
+      }
+  }
   const dist = new Float64Array(n).fill(Infinity);
   const down = new Int32Array(n).fill(-1);
   const order: number[] = [];
@@ -188,7 +226,16 @@ export function erodeRiver(model: TerrainModel, input: RiverInput): TileChange |
       heap.push(r, 0);
     }
   const done = new Uint8Array(n);
-  while (heap.size) {
+  for (;;) {
+    if (!heap.size) {
+      // a piece of the river cut off from the rest (by the sea, say) ends at its own lowest point
+      let low = -1;
+      for (let r = 0; r < n; r++) if (!done[r] && (low < 0 || ground[idx[r]] < ground[idx[low]])) low = r;
+      if (low < 0) break;
+      outlet[low] = 2;
+      dist[low] = 0;
+      heap.push(low, 0);
+    }
     const r = heap.pop();
     if (done[r]) continue;
     done[r] = 1;
@@ -203,7 +250,7 @@ export function erodeRiver(model: TerrainModel, input: RiverInput): TileChange |
         if ((!dx && !dy) || ii < 0 || jj < 0 || ii >= w || jj >= h) continue;
         const q = river[jj * w + ii];
         if (q < 0 || done[q]) continue;
-        const nd = dist[r] + stepKm(k, idx[q]);
+        const nd = dist[r] + stepKm(k, idx[q]) * (1 + 2 / edge[q]);
         if (nd < dist[q]) {
           dist[q] = nd;
           down[q] = r;
@@ -239,6 +286,37 @@ export function erodeRiver(model: TerrainModel, input: RiverInput): TileChange |
     const p = down[r];
     if (p >= 0) u[r] = u[p] + stepKm(idx[r], idx[p]) * 1000 * (areaKm2(r) * 1e6) ** -THETA;
   }
+  // A branch that is short, or starts right beside a longer stream, is no tributary but part of
+  // a wide river's width: it runs at the level of the stream it leaves (rising to its own ground,
+  // the river's edge would stand as a sawtooth of ridges along the bank)
+  const minBranch = MIN_BRANCH * kmY;
+  const besideLonger = (s: number) => {
+    const k = idx[s];
+    const i = k % w;
+    const j = (k / w) | 0;
+    const look = (rad: number, f: (q: number) => void) => {
+      for (let jj = Math.max(0, j - rad); jj <= Math.min(h - 1, j + rad); jj++)
+        for (let ii = Math.max(0, i - rad); ii <= Math.min(w - 1, i + rad); ii++) {
+          const q = river[jj * w + ii];
+          if (q >= 0) f(q);
+        }
+    };
+    // the river's half-width here
+    let half = 1;
+    look(4, (q) => (half = Math.max(half, edge[q])));
+    const rad = Math.ceil(2 + 2 * half);
+    let found = false;
+    look(rad, (q) => {
+      if (src[q] !== s && up[q] > 2 * rad * kmY) found = true;
+    });
+    return found;
+  };
+  const joins = new Map<number, number>();
+  const streamOf = (r: number) => {
+    let s = src[r];
+    for (let j = joins.get(s); j !== undefined; j = joins.get(s)) s = j;
+    return s;
+  };
   for (const r of order) {
     const p = down[r];
     const gr = ground[idx[r]];
@@ -246,9 +324,19 @@ export function erodeRiver(model: TerrainModel, input: RiverInput): TileChange |
       z[r] = outlet[r] === 1 ? Math.min(gr, sea + 1) : gr;
       continue;
     }
+    if (joins.has(src[r])) {
+      // part of the river's width: level with the water beside it
+      z[r] = z[p];
+      continue;
+    }
     const s = src[r];
     let k = ks.get(s);
     if (k === undefined) {
+      if (streamOf(p) !== s && (up[r] + stepKm(idx[r], idx[p]) < minBranch || besideLonger(s))) {
+        joins.set(s, streamOf(p));
+        z[r] = z[p];
+        continue;
+      }
       // this stream joins at p; it rises from there to its source's ground
       const span = u[s] - u[p];
       k = span > 0 ? Math.max(0, (ground[idx[s]] - z[p]) / span) : 0;
@@ -256,6 +344,7 @@ export function erodeRiver(model: TerrainModel, input: RiverInput): TileChange |
     }
     z[r] = z[p] + k * (u[r] - u[p]);
   }
+  for (let r = 0; r < n; r++) src[r] = streamOf(r);
 
   // ---------- each river cell: bed, floodplain ----------
   const bed = new Float32Array(n);
@@ -300,48 +389,102 @@ export function erodeRiver(model: TerrainModel, input: RiverInput): TileChange |
   slopes.sort((a, b) => a - b);
   const side = clamp(slopes.length ? slopes[Math.floor(slopes.length * 0.85)] : MIN_SIDE, MIN_SIDE, MAX_SIDE);
 
-  // ---------- distance from the river (two-pass chamfer), carrying the nearest river cell ----------
-  const d = new Float32Array(N).fill(Infinity);
-  const near = new Int32Array(N).fill(-1);
+  // ---------- the new ground: bed, floodplain, then valley sides ----------
+  // The valley is a surface of its own (it depends on the river only, so carving the same river
+  // again changes nothing): the lowest of the slopes rising from every river cell, each from the
+  // cell's floodplain level, flat across the floodplain and then steepening into the valley side.
+  // Between two reaches of a bend the slopes meet in a spur, as they do in real valleys; near a
+  // source no slope starts below the source itself.
+  const period = wrap ? Math.max(1, Math.round(W / 8)) : 0;
+  // valley sides vary a little in steepness over long stretches, as rock and soil do
+  const vary = new Float32Array(N);
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) vary[j * w + i] = side * (0.85 + 0.3 * fbm((lx0 + i) / 40, (ly0 + j) / 40, 911, 2, period));
+  const valley = new Float32Array(N).fill(1e6);
+  const from = new Int32Array(N).fill(-1);
   for (let r = 0; r < n; r++) {
-    d[idx[r]] = 0;
-    near[idx[r]] = r;
+    valley[idx[r]] = bed[r];
+    from[idx[r]] = r;
   }
-  const relax = (k: number, from: number, c: number) => {
-    if (d[from] + c < d[k]) {
-      d[k] = d[from] + c;
-      near[k] = near[from];
+  const rise = (k: number, r: number) => {
+    const j = (k / w) | 0;
+    const t = idx[r];
+    const d = Math.hypot(((k % w) - (t % w)) * kmX[j], (j - ((t / w) | 0)) * kmY);
+    // the floodplain eases into the valley side instead of ending at a step
+    const out = Math.max(0, d - plainKm[r]);
+    const ease = Math.max(kmY, 0.25 * plainKm[r]);
+    return plainLevel[r] + (vary[k] * out * out) / (out + ease);
+  };
+  // two sweeps each way, every cell taking the lowest slope its neighbours know of
+  const relax = (k: number, o: number) => {
+    const r = from[o];
+    if (r < 0 || river[k] >= 0) return;
+    const v = rise(k, r);
+    if (v < valley[k]) {
+      valley[k] = v;
+      from[k] = r;
     }
   };
-  for (let j = 0; j < h; j++) {
-    const cx = kmX[j];
-    const cd = Math.hypot(cx, kmY);
-    for (let i = 0; i < w; i++) {
-      const k = j * w + i;
-      if (i > 0) relax(k, k - 1, cx);
-      if (j > 0) {
-        relax(k, k - w, kmY);
-        if (i > 0) relax(k, k - w - 1, cd);
-        if (i < w - 1) relax(k, k - w + 1, cd);
+  for (let pass = 0; pass < 2; pass++) {
+    for (let j = 0; j < h; j++)
+      for (let i = 0; i < w; i++) {
+        const k = j * w + i;
+        if (i > 0) relax(k, k - 1);
+        if (j > 0) {
+          relax(k, k - w);
+          if (i > 0) relax(k, k - w - 1);
+          if (i < w - 1) relax(k, k - w + 1);
+        }
       }
-    }
-  }
-  for (let j = h - 1; j >= 0; j--) {
-    const cx = kmX[j];
-    const cd = Math.hypot(cx, kmY);
-    for (let i = w - 1; i >= 0; i--) {
-      const k = j * w + i;
-      if (i < w - 1) relax(k, k + 1, cx);
-      if (j < h - 1) {
-        relax(k, k + w, kmY);
-        if (i < w - 1) relax(k, k + w + 1, cd);
-        if (i > 0) relax(k, k + w - 1, cd);
+    for (let j = h - 1; j >= 0; j--)
+      for (let i = w - 1; i >= 0; i--) {
+        const k = j * w + i;
+        if (i < w - 1) relax(k, k + 1);
+        if (j < h - 1) {
+          relax(k, k + w);
+          if (i < w - 1) relax(k, k + w + 1);
+          if (i > 0) relax(k, k + w - 1);
+        }
       }
-    }
   }
-
-  // ---------- the new ground: bed, floodplain, then valley sides ----------
-  const period = wrap ? Math.max(1, Math.round(W / 8)) : 0;
+  // smoothed, so no step of the cells shows
+  const tmp = new Float32Array(N);
+  const wts = [1, 4, 6, 4, 1];
+  for (let pass = 0; pass < 2; pass++) {
+    for (let j = 0; j < h; j++)
+      for (let i = 0; i < w; i++) {
+        let sum = 0;
+        let ws = 0;
+        for (let o = -2; o <= 2; o++) {
+          const ii = i + o;
+          if (ii < 0 || ii >= w) continue;
+          sum += wts[o + 2] * valley[j * w + ii];
+          ws += wts[o + 2];
+        }
+        tmp[j * w + i] = sum / ws;
+      }
+    for (let j = 0; j < h; j++)
+      for (let i = 0; i < w; i++) {
+        let sum = 0;
+        let ws = 0;
+        for (let o = -2; o <= 2; o++) {
+          const jj = j + o;
+          if (jj < 0 || jj >= h) continue;
+          sum += wts[o + 2] * tmp[jj * w + i];
+          ws += wts[o + 2];
+        }
+        valley[j * w + i] = sum / ws;
+      }
+  }
+  // The river's cells follow the smooth valley too (cut exactly to the bed cell by cell, a
+  // slanting river would leave a row of notches along its banks), but never below the bed and
+  // never rising downstream: from the sources down, no cell stays above the one upstream
+  const runLevel = new Float32Array(n);
+  for (let r = 0; r < n; r++) runLevel[r] = Math.max(bed[r], valley[idx[r]]);
+  for (let o = order.length - 1; o >= 0; o--) {
+    const r = order[o];
+    const p = down[r];
+    if (p >= 0) runLevel[p] = Math.min(runLevel[p], Math.min(ground[idx[r]], runLevel[r]));
+  }
   const before = new Map<number, RasterArray | null>();
   const TS = g.TS;
   let rx0 = Infinity;
@@ -351,19 +494,9 @@ export function erodeRiver(model: TerrainModel, input: RiverInput): TileChange |
   for (let j = 0; j < h; j++)
     for (let i = 0; i < w; i++) {
       const k = j * w + i;
-      const r = near[k];
-      if (r < 0) continue;
       const cur = ground[k];
       if (cur < sea) continue;
-      let level: number;
-      if (river[k] >= 0) level = bed[river[k]];
-      else {
-        // valley sides vary a little in steepness, as rock and soil do
-        const x = lx0 + i;
-        const y = ly0 + j;
-        const vary = 0.75 + 0.5 * fbm(x / 8, y / 8, 911, 3, period);
-        level = plainLevel[r] + side * vary * Math.max(0, d[k] - plainKm[r]);
-      }
+      const level = river[k] >= 0 ? runLevel[river[k]] : valley[k];
       // never into the sea
       const nh = Math.max(Math.min(cur, level), Math.min(cur, sea + 0.5));
       if (nh >= cur - 0.01) continue;

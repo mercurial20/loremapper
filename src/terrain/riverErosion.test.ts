@@ -89,6 +89,17 @@ describe('river erosion', () => {
     expect(model.height.get(500, 610)).toBeCloseTo(before[230 * 1000 + 500], 3);
   });
 
+  it('lets a piece of river cut off from the rest end at its own lowest point', () => {
+    const model = slopeWithRidge();
+    const before = snapshot(model);
+    // two pieces with a gap between them: only the lower one reaches the sea
+    const fresh = [...paintRiver(model, 500, 100, 690), ...paintRiver(model, 500, 700, 960)];
+    erodeRiver(model, { fresh, wet: (x, y) => waterIn(model, x, y) });
+    // the upper piece is not cut down to the sea: its source keeps its ground
+    expect(model.height.get(100, 500)).toBeCloseTo(before[120 * 1000 + 100], 0);
+    expect(model.height.get(300, 500)).toBeGreaterThan(300);
+  });
+
   it('changes nothing when run again on the same river', () => {
     const model = slopeWithRidge();
     const fresh = paintRiver(model, 500, 100, 960);
