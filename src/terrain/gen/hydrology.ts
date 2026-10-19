@@ -423,6 +423,9 @@ export interface River {
   points: [number, number][];
   /** upstream area at the mouth / junction, km² (rain-weighted) */
   area: number;
+  /** its cells on the grid, source first, and the cell of the river it joins (or −1) */
+  cells: number[];
+  join: number;
 }
 
 /**
@@ -492,7 +495,7 @@ export function traceRivers(g: Grid, d: Drainage, A: Float32Array, h: Float32Arr
       prev = [x, p[1]];
       pts.push(prev);
     }
-    rivers.push({ points: pts, area });
+    rivers.push({ points: pts, area, cells: join >= 0 ? cells.slice(0, -1) : cells.slice(), join });
   }
   return rivers;
 }

@@ -29,6 +29,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
     });
     const transfer: Transferable[] = [r.height.buffer as ArrayBuffer];
     if (r.biome) transfer.push(r.biome.buffer as ArrayBuffer);
+    if (r.relief) transfer.push(r.relief.buffer as ArrayBuffer);
     post({ kind: 'done', result: r }, transfer);
   } catch (err) {
     post({ kind: 'error', id: req.kind === 'preview' ? req.id : undefined, error: String(err) });

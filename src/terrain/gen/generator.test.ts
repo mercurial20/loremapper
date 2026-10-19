@@ -76,21 +76,39 @@ describe('world generator', { timeout: 60_000 }, () => {
     expect(isles.length).toBeGreaterThan(20);
   });
 
-  it('lets every river run downhill to the sea', () => {
+  it('gives every river a head on land and the water it carries', () => {
     const p = params({ W: 1024, H: 512, realism: 'medium', rivers: 25 });
     const r = generate(p);
     const g = makeGrid(p.W, p.H, 7410, 1);
     expect(r.rivers.length).toBeGreaterThan(5);
     for (const river of r.rivers) {
-      let prev = Infinity;
-      for (const [x, y] of river.points) {
-        const v = sampleAt(r.height, g, x, y);
-        if (v <= p.seaLevel) break;
-        expect(v).toBeLessThanOrEqual(prev + 5);
-        prev = Math.min(prev, v);
-      }
+      // (the water finds its own way down from the head: see waterSim)
+      expect(sampleAt(r.height, g, river.points[0][0], river.points[0][1])).toBeGreaterThan(p.seaLevel);
+      expect(river.q).toBeGreaterThan(0);
     }
   });
+
+  it('keeps plains smooth: the land between the ranges is not cut into ridges', () => {
+    // (big enough for the full grid to be finer than the working one)
+    const p = params({ W: 2048, H: 1024, realism: 'easy', mountains: 0.6, roughness: 0.2, rivers: 0 });
+    const r = generate(p);
+    // the share of lowland cells that stand more than 20 m above or below their neighbours'
+    // average (a cell-sized ridge or gully) stays small
+    let land = 0;
+    let rough = 0;
+    for (let j = 1; j < p.H - 1; j++)
+      for (let i = 1; i < p.W - 1; i++) {
+        const k = j * p.W + i;
+        const v = r.height[k] - p.seaLevel;
+        // lowlands only (ranges are rough, as they should be)
+        if (v <= 0 || v > 500) continue;
+        land++;
+        const avg = (r.height[k - 1] + r.height[k + 1] + r.height[k - p.W] + r.height[k + p.W]) / 4 - p.seaLevel;
+        if (Math.abs(v - avg) > 20) rough++;
+      }
+    // (cut by the full grid's valleys everywhere, about 9 % of them are)
+    expect(rough / land).toBeLessThan(0.07);
+  }, 120_000);
 
   it('cuts a shallow bed into a plain, not a trench', () => {
     const g = makeGrid(256, 128, 7410, 1);

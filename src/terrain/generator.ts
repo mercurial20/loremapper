@@ -4,8 +4,9 @@ import { BIOME_CHANNELS } from '../core/planet';
 import { BIOME_DESERT, BIOME_ROCK, BIOME_SNOW, biomeWeights, climate, type Climate } from './gen/climate';
 import { sketchClimate, sketchShape, type Shape, type Sketch } from './gen/sketch';
 import { blurKm, components, distanceField, dyKm, latOf, lonOf, makeGrid, mercatorPatch, radPerCell, resample, resampleFromSphere, sampleAt, sphereTables, thresholdForFraction, type Grid } from './gen/grid';
-import { accumulate, diffuse, drain, erode, steadyState, steadyStateShared, traceRivers, type Drainage } from './gen/hydrology';
+import { accumulate, diffuse, drain, steadyState, steadyStateShared, traceRivers, type Drainage } from './gen/hydrology';
 import { layoutMismatch, plateBase, tectonics, type Layout, type Tectonics } from './gen/plates';
+import { crestLines } from './gen/crests';
 
 /**
  * World generator, version 3: plate tectonics set where land rises and how
@@ -68,15 +69,30 @@ export type Surface = 'sand' | 'snow';
 
 export interface GenRiver {
   points: [number, number][];
+  /** The water it carries of its own (not its tributaries'), m³/s. */
+  q?: number;
   /** width at the mouth, km (on the virtual planet for flat maps) */
   widthKm: number;
   /** width at the mouth in map cells */
   widthCells: number;
 }
 
+/** A mountain range of the generated world, as the line objects a map maker draws. */
+export interface GenRange {
+  /** Points along its crest, world cells, x unwrapped. */
+  points: [number, number][];
+  /** Its highest summits, metres above sea level. */
+  heightM: number;
+  /** Its width, km. */
+  widthKm: number;
+}
+
 export interface GenResult {
   /** Heights for the region (or world), row-major, region width × height. */
   height: Float32Array;
+  /** The mountain ranges (whole worlds), and their relief over the land beneath (metres, same layout as `height`). */
+  ranges?: GenRange[];
+  relief?: Float32Array;
   /** Biome weights at half resolution over `biomeRegion` (half-res grid cells). */
   biome: Uint8Array | null;
   biomeRegion: { x0: number; y0: number; w: number; h: number };
@@ -95,8 +111,8 @@ function layoutFor(p: GenParams): Layout {
 }
 
 const gauss = (x: number, w: number) => Math.exp(-(x / w) * (x / w));
-/** Erodibility for the stream-power law (per √km² of rain-weighted upstream area, per km). */
-const ERODE_K = 0.02;
+/** Runoff, m³/s for every km² of rain-weighted basin (about 300 mm a year). */
+const RUNOFF_Q = 0.01;
 /**
  * Channel steepness by setting, m/km at 1 km² of upstream area: S = U · A^(−θ).
  * Earth's rivers span roughly 20 (cratons) to 1000+ (Himalaya) on this scale.
@@ -104,6 +120,10 @@ const ERODE_K = 0.02;
 const UPLIFT = { plain: 20, hills: 110, range: 700, old: 180, arc: 300 };
 /** Concavity of river profiles (Flint's law); 0.45 is the usual reference value. */
 const THETA = 0.45;
+/** The steepest land rises from the shore, metres per km. */
+const COAST_RISE = 40;
+/** How much of the full grid's fine valleys (beyond the working grid's) are cut into ranges and uplands. */
+const FINE_VALLEYS = 1;
 /** Above this area (km², rain-weighted) water runs off a hillside as a sheet; channels begin below it. */
 const HILL_AREA = 1.5;
 /** About 35°: steeper hillslopes fail. */
@@ -573,6 +593,8 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   const h = new Float32Array(N);
   const rug = new Float32Array(N);
   const U = new Float32Array(N);
+  // the young ranges' share of the uplift (they become range objects, carved over the land without them)
+  const rangeU = new Float32Array(N);
   const built = new Float32Array(N);
   const nA = new Simplex3(subSeed(p.seed, 40));
   const nB = new Simplex3(subSeed(p.seed, 41));
@@ -623,7 +645,8 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
         h[k] = Math.max(2, base + plateau + (hills + mtn + oldM + volc) * coastSoft);
         // channel steepness (m/km at 1 km² of upstream area): tens on plains, hundreds in young ranges
         const het = 0.65 + 0.7 * (0.5 + 0.5 * nC.fbm(x - 1.7, y, z, 7, 3));
-        U[k] = het * (UPLIFT.plain * basinN[k] + UPLIFT.hills * hillZone * (0.25 + rough) + UPLIFT.range * clamp(p.mountains, 0, 1) * Math.pow(Math.min(1, o), 1.2) + UPLIFT.old * s.old[k] + UPLIFT.arc * s.arc[k]);
+        rangeU[k] = het * UPLIFT.range * clamp(p.mountains, 0, 1) * Math.pow(Math.min(1, o), 1.2);
+        U[k] = het * (UPLIFT.plain * basinN[k] + UPLIFT.hills * hillZone * (0.25 + rough) + UPLIFT.old * s.old[k] + UPLIFT.arc * s.arc[k]) + rangeU[k];
         // what uplift and incision don't make: tablelands and volcanoes
         // (arcs already rise through uplift; their volcanoes add only cones on top)
         built[k] = 6 + plateau + 0.45 * volc * coastSoft;
@@ -641,11 +664,14 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
       }
     }
 
-  // the sea floor smoothed over some tens of km (the distance to the coast it is built from is
-  // worked out on the grid of latitude and longitude, and shows its rows near the poles)
+  // the sea floor, smoothed (its depth grows with the distance to the nearest coast, which creases
+  // where two coasts are equally near); the land counts as the shore's depth, so nothing of its
+  // heights leaks into the sea
   {
-    const sea = blurKm(h, mid, 50, 2);
-    for (let k = 0; k < N; k++) if (!land[k]) h[k] = Math.min(-3, Math.max(h[k] - 400, Math.min(sea[k], -3)));
+    const sea = Float32Array.from(h, (v, k) => (land[k] ? -20 : v));
+    const r = Math.min(40, Math.max(2 * dyKm(mid), 0.04 * Math.max(mid.w, mid.h) * dyKm(mid)));
+    const smooth = blurKm(sea, mid, r, 3);
+    for (let k = 0; k < N; k++) if (!land[k]) h[k] = Math.min(-3, smooth[k]);
   }
 
   // ---- climate: prevailing winds and rain shadows at every realism level, so previews match the result
@@ -665,6 +691,17 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   // dry land still wears down in flash floods: incision never sees less than a modest rainfall
   const erosionRain = clim.rain.map((r) => Math.max(0.4, r));
   const rel = steadyState(mid, h, U, erosionRain, { theta: THETA, maxSlope: MAX_SLOPE_M_PER_KM, passes, hillArea: HILL_AREA }, (i) => progress('Carving valleys', (i + 1) / passes));
+  // the land beneath the young ranges (what is left if one is reshaped or taken away): the same
+  // balance without their uplift, on the working grid
+  // (not for the small previews)
+  const ranged = whole && !p.sketch && !p.surface && Math.max(p.W, p.H) >= 1024;
+  let baseMid: Float32Array | null = null;
+  if (ranged) {
+    const Ub = Float32Array.from(U, (u, k) => u - rangeU[k]);
+    const relB = steadyState(mid, h, Ub, erosionRain, { theta: THETA, maxSlope: MAX_SLOPE_M_PER_KM, passes: 1, hillArea: HILL_AREA });
+    baseMid = new Float32Array(N);
+    for (let k = 0; k < N; k++) baseMid[k] = land[k] ? Math.max(2, built[k] + relB[k]) : h[k];
+  }
   // the highest ranges ease into the chosen summit height instead of piling past it
   const knee = 0.55 * mtnTop;
   const soft = (v: number) => (v <= knee ? v : knee + (mtnTop - knee) * Math.tanh((v - knee) / Math.max(1, mtnTop - knee)));
@@ -689,12 +726,25 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   const flow = accumulate(mid, drained, clim.rain);
   let maxFlow = 1;
   for (let k = 0; k < N; k++) if (h[k] > 0 && flow[k] > maxFlow) maxFlow = flow[k];
-  const trace = (g: Grid, d: Drainage, A: Float32Array, hh: Float32Array, maxA: number): GenRiver[] =>
-    traceRivers(g, d, A, hh, p.rivers, Math.max(minRiverArea, maxA * 0.004)).map((r) => {
+  const trace = (g: Grid, d: Drainage, A: Float32Array, hh: Float32Array, maxA: number): GenRiver[] => {
+    const traced = traceRivers(g, d, A, hh, p.rivers, Math.max(minRiverArea, maxA * 0.004));
+    // each river's own water: its basin less the basins of the rivers traced into it (they bring
+    // theirs where they join; the source stands for the rest of the basin)
+    const owner = new Map<number, number>();
+    traced.forEach((r, i) => r.cells.forEach((c) => owner.set(c, i)));
+    const own = traced.map((r) => r.area);
+    for (const r of traced) {
+      const parent = r.join >= 0 ? owner.get(r.join) : undefined;
+      if (parent !== undefined) own[parent] -= r.area;
+    }
+    return traced.map((r, i) => {
       const widthKm = 2.5 + 16 * Math.sqrt(r.area / maxA);
-      return { points: r.points, widthKm, widthCells: widthKm / dyKm(mid) * midStep };
+      return { points: r.points, widthKm, widthCells: (widthKm / dyKm(mid)) * midStep, q: Math.max(1, RUNOFF_Q * Math.max(own[i], r.area * 0.05)) };
     });
-  let rivers: GenRiver[] = realism === 'ultra' || p.rivers <= 0 ? [] : trace(mid, drained, flow, h, maxFlow);
+  };
+  // where the rivers run (their sources go to the map; the water finds its own way down the
+  // full relief), and where they are for the biomes
+  const rivers: GenRiver[] = p.rivers <= 0 ? [] : trace(mid, drained, flow, h, maxFlow);
 
   // ---- full resolution: the same balance of uplift and river incision, cell by cell (valleys
   // as fine as the grid can hold), on the working grid's land and sea; no noise on top
@@ -704,42 +754,57 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   if (midStep === 1) height = h.slice();
   else {
     const hF = resample(h, mid, full, 'catmull');
+    const hF0 = hF.slice();
     const UF = resample(U, mid, full, 'bspline');
     const rainF0 = resample(erosionRain, mid, full, 'bspline');
     const builtF = resample(built, mid, full, 'bspline');
     const creepF = resample(Float32Array.from(U, (u) => 1 - smoothstep(25, 220, u)), mid, full, 'bspline');
-    // the land as the working grid shaped it (its coasts stay)
+    // the land: the coast drawn from the smooth field it was cut from, at full resolution (the
+    // working grid's own land and sea, scaled up, would draw it in the steps of its cells); the
+    // pockets of sea the working grid filled stay land
     const landF = new Uint8Array(full.w * full.h);
-    for (let j = 0; j < full.h; j++) for (let i = 0; i < full.w; i++) landF[j * full.w + i] = sampleAt(h, mid, full.x0 + i + 0.5, full.y0 + j + 0.5) > 0 ? 1 : 0;
+    const landnessF = resample(s.landness, mid, full, 'bspline');
+    for (let j = 0; j < full.h; j++)
+      for (let i = 0; i < full.w; i++) {
+        const k = j * full.w + i;
+        let mi = Math.floor((i + 0.5) / midStep);
+        const mj = Math.min(mid.h - 1, Math.floor((j + 0.5) / midStep));
+        mi = Math.min(mid.w - 1, mi);
+        const mk = mj * mid.w + mi;
+        landF[k] = landnessF[k] > t || (land[mk] && s.landness[mk] <= t) ? 1 : 0;
+      }
     // the water's first ways follow the land's large forms (the working grid's own small
     // channels, scaled up, would come back as stripes); the fine channels form anew
     const smoothF = blurKm(hF, full, 2 * dyKm(mid), 2);
-    for (let k = 0; k < hF.length; k++) hF[k] = landF[k] ? Math.max(1, smoothF[k]) : Math.min(-2, hF[k]);
+    for (let k = 0; k < hF.length; k++) {
+      hF[k] = landF[k] ? Math.max(1, smoothF[k]) : Math.min(-2, hF[k]);
+      hF0[k] = landF[k] ? Math.max(2, hF0[k]) : Math.min(-2, hF0[k]);
+    }
     const FULL_PASSES: Record<Realism, number> = { easy: 1, medium: 2, high: 2, ultra: 2 };
     const relF = steadyStateShared(full, hF, UF, rainF0, { theta: THETA, maxSlope: MAX_SLOPE_M_PER_KM, passes: FULL_PASSES[realism], hillArea: HILL_AREA }, (i) => progress('Carving valleys', (i + 1) / FULL_PASSES[realism]));
+    // The working grid's relief, scaled up smoothly, is the land's large form; the fine valleys of
+    // the full grid are added only where the land is pushed up hard (ranges, uplands): plains and
+    // gentle hills keep the smooth form, as soil creep keeps them (Perron et al. 2009)
+    const fine = new Float32Array(full.w * full.h);
+    for (let k = 0; k < fine.length; k++) fine[k] = landF[k] ? Math.max(2, soft(builtF[k] + relF[k])) : 0;
+    const fineBroad = blurKm(fine, full, 1.5 * dyKm(mid), 2);
     height = new Float32Array(full.w * full.h);
-    for (let k = 0; k < height.length; k++) height[k] = landF[k] ? Math.max(2, soft(builtF[k] + relF[k])) : hF[k];
-    // plains are shaped more by soil creep than by rivers (as on the working grid)
-    const creepH = blurKm(height, full, 1.5 * dyKm(full), 2);
-    for (let k = 0; k < height.length; k++) if (landF[k]) height[k] = Math.max(2, height[k] + creepF[k] * 0.5 * (creepH[k] - height[k]));
+    for (let k = 0; k < height.length; k++) {
+      if (!landF[k]) {
+        height[k] = hF0[k];
+        continue;
+      }
+      const w = (1 - creepF[k]) * FINE_VALLEYS;
+      height[k] = Math.max(2, hF0[k] + w * (fine[k] - fineBroad[k]));
+    }
     diffuse(full, height, 1);
-  }
-  if (realism === 'ultra') {
-    // fine valleys cut into the full-resolution relief, then rivers that follow them
-    const rainF = resample(clim.rain, mid, full, 'bspline');
-    erode(full, height, rainF, 10, ERODE_K, (i) => progress('Carving fine valleys', (i + 1) / 10));
-    progress('Tracing rivers', 0);
-    if (p.rivers > 0) {
-      const d = drain(full, height, true);
-      const A = accumulate(full, d, rainF);
-      let mA = 1;
-      for (let k = 0; k < A.length; k++) if (height[k] > 0 && A[k] > mA) mA = A[k];
-      rivers = trace(full, d, A, height, mA);
+    // coasts: land rises from the shore over some kilometres, not within a cell
+    const coastF = resample(coastKm, mid, full, 'bspline');
+    for (let k = 0; k < height.length; k++) {
+      const d = Math.max(0, coastF[k]);
+      if (landF[k]) height[k] = Math.min(height[k], 2 + COAST_RISE * d);
     }
   }
-  // every river runs downhill in its own bed
-  carveRivers(full, height, rivers, dyKm(full));
-
   // ---- biomes on the half-resolution biome grid, from climate, terrain and water
   progress('Painting biomes', 0);
   const bx0 = Math.floor(rx0 / 2);
@@ -751,11 +816,48 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
     // no water: lift the whole relief above sea level, ocean basins and all
     const k = dryOut(h, maxE);
     for (let i = 0; i < height.length; i++) height[i] = k(height[i]);
-    rivers = [];
+    rivers.length = 0;
     if (p.biomes) biome = paintSurface(p, mid, h, { x0: bx0, y0: by0, w: bw, h: bh });
   } else if (p.biomes) biome = paintBiomes(p, mid, h, clim, coastKm, flow, maxFlow, rivers, { x0: bx0, y0: by0, w: bw, h: bh });
 
   for (let k = 0; k < height.length; k++) height[k] = clamp(p.seaLevel + height[k], p.minElevation, p.seaLevel + maxE);
+
+  // ---- the young ranges as crest lines, with their relief over the land beneath them
+  let ranges: GenRange[] | undefined;
+  let relief: Float32Array | undefined;
+  if (ranged && baseMid) {
+    progress('Tracing mountain ranges', 0);
+    const crests = crestLines(mid, s.orogen, land);
+    // the ranges' relief: the land as it is, over the land without them, inside their belts
+    const baseF = midStep === 1 ? baseMid : resample(baseMid, mid, full, 'bspline');
+    const beltF = midStep === 1 ? s.orogen : resample(s.orogen, mid, full, 'bspline');
+    relief = new Float32Array(height.length);
+    for (let k = 0; k < height.length; k++) {
+      const top = height[k] - p.seaLevel;
+      if (top <= 0 || beltF[k] < 0.05) continue;
+      // (fading in over the belt's edge, so the land beneath meets the land around)
+      const r = Math.max(0, top - Math.max(2, baseF[k])) * smoothstep(0.05, 0.2, beltF[k]);
+      relief[k] = r;
+    }
+    ranges = crests.map((c) => {
+      // the highest summit near the crest
+      let top = 0;
+      for (const [x, y] of c.points) {
+        const i = Math.floor(x - full.x0);
+        const j = Math.floor(y - full.y0);
+        for (let dj = -3; dj <= 3; dj++)
+          for (let di = -3; di <= 3; di++) {
+            let ii = i + di;
+            const jj = j + dj;
+            if (jj < 0 || jj >= full.h) continue;
+            if (full.wrap) ii = ((ii % full.w) + full.w) % full.w;
+            else if (ii < 0 || ii >= full.w) continue;
+            top = Math.max(top, height[jj * full.w + ii] - p.seaLevel);
+          }
+      }
+      return { points: c.points, heightM: Math.round(Math.max(300, top) / 10) * 10, widthKm: Math.round(2 * c.halfWidthKm) };
+    });
+  }
   progress('Done', 1);
   return {
     height,
@@ -763,6 +865,8 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
     biomeRegion: { x0: bx0, y0: by0, w: bw, h: bh },
     region: { x0: rx0, y0: ry0, w: rw, h: rh },
     rivers,
+    ranges,
+    relief,
   };
 }
 

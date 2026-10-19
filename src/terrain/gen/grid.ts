@@ -294,11 +294,26 @@ export function distanceField(g: Grid, isSource: Uint8Array, maxKm = Infinity): 
     dx[j] = dxKm(g, j);
     dyRow[j] = dyKm(g, j);
   }
-  const relax = (k: number, n: number, cost: number) => {
-    const d = dist[n] + cost;
+  // km from the first row to each row
+  const rowKm = new Float64Array(h);
+  for (let j = 1; j < h; j++) rowKm[j] = rowKm[j - 1] + (dyRow[j - 1] + dyRow[j]) / 2;
+  // the distance straight to the nearest source a neighbour knows of (not a sum of steps, whose
+  // eight directions would draw every line of equal distance as an octagon)
+  const straight = (k: number, s: number) => {
+    const jk = (k / w) | 0;
+    const js = (s / w) | 0;
+    let di = Math.abs((k % w) - (s % w));
+    if (g.wrap && di > w / 2) di = w - di;
+    const ddx = di * (dx[jk] + dx[js]) * 0.5;
+    return Math.hypot(ddx, rowKm[jk] - rowKm[js]);
+  };
+  const relax = (k: number, n: number, _cost: number) => {
+    const s = near[n];
+    if (s < 0) return;
+    const d = straight(k, s);
     if (d < dist[k]) {
       dist[k] = d;
-      near[k] = near[n];
+      near[k] = s;
     }
   };
   const nx = (i: number) => (g.wrap ? (i + w) % w : i);

@@ -1,15 +1,16 @@
-import { chaikin, evenSpacing, mulberry32, simplifyPath, uid } from '../core/math';
+import { evenSpacing, mulberry32, simplifyPath, uid } from '../core/math';
 import { BIOME_CHANNELS } from '../core/planet';
 import { history } from '../model/history';
-import type { MapDocument, MapObject, PathFeature } from '../model/types';
+import type { MapDocument, MapObject } from '../model/types';
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import type { Sketch } from '../terrain/gen/sketch';
 import type { GenParams, GenResult, GenType, Realism, Surface, Template } from '../terrain/generator';
 import type { WorkerReply, WorkerRequest } from '../terrain/generator.worker';
 import type { RasterArray } from '../terrain/TileGrid';
-import type { TileChange } from '../terrain/TerrainModel';
+import { NO_WATER, type TileChange } from '../terrain/TerrainModel';
 import { editor } from './Editor';
+import { placeSources } from './sources';
 import { newObject } from './commands';
 import { track } from '../analytics';
 import { t } from '../i18n';
@@ -217,8 +218,12 @@ export async function generateWorld(o: GenerateOptions, opts: { sample?: boolean
     if (whole && res.region.w === model.W) {
       changes.push(model.replaceLayer('height', res.height));
       changes.push(model.replaceLayer('biome', res.biome ?? null, 0));
-      // a new world: rivers painted on the old one would run across it
+      // a new world: rivers painted on the old one would run across it, and its lakes would stand
+      // on land that is no longer there
       if (model.water.tiles.size) changes.push(model.replaceLayer('water', null, 0));
+      if (model.lake.tiles.size) changes.push(model.replaceLayer('lake', null, NO_WATER));
+      // its mountain ranges come as crest lines over the land beneath them
+      changes.push(model.replaceLayer('relief', res.relief ?? null, 0));
     } else {
       const gen = res.height;
       changes.push(
@@ -244,32 +249,57 @@ export async function generateWorld(o: GenerateOptions, opts: { sample?: boolean
     const before = useDoc.getState().doc;
     const paths = whole ? Object.fromEntries(Object.entries(before.paths).filter(([, f]) => f.kind !== 'river')) : { ...before.paths };
     const objects = { ...before.objects };
-    for (const river of res.rivers) {
-      const simp = evenSpacing(simplifyPath(chaikin(river.points, 2), 0.6), 5);
-      if (simp.length < 2) continue;
-      const shift = model.geo.wrapX(simp[0][0]) - simp[0][0];
-      const f: PathFeature = {
-        id: uid('path-'),
-        kind: 'river',
-        points: simp.map(([x, y]) => [x + shift, y]),
-        width: Math.max(0.6, river.widthCells),
-        color: st.pathDefaults.river.color,
-        style: 'solid',
-        taper: true,
-        name: '',
-        hidden: false,
-        locked: false,
-      };
-      paths[f.id] = f;
+    // a new world's ranges and sources are its own (the old ones belonged to other land)
+    let ranges = before.ranges;
+    let sources = before.sources;
+    if (whole) {
+      sources = {};
+      ranges = {};
+      (res.ranges ?? []).forEach((r, i) => {
+        const id = uid('range-');
+        ranges[id] = {
+          id,
+          name: t('Mountain range {n}', { n: i + 1 }),
+          lines: [{ id: uid('crest-'), points: evenSpacing(simplifyPath(r.points, 1.5), 12) }],
+          heightM: r.heightM,
+          widthKm: r.widthKm,
+          irregularity: 0.6,
+          asymmetry: 0,
+          seed: Math.floor(mulberry32(o.seed + i)() * 1e9),
+          locked: false,
+        };
+      });
     }
-    if (o.settlements) {
-      const placed = scatterSettlements(whole ? 26 : 7, res.region, o.seed, res.rivers);
-      for (const ob of placed) objects[ob.id] = ob;
-    }
-    const after: MapDocument = { ...useDoc.getState().doc, paths, objects };
     const setContent = (d: MapDocument) =>
-      useDoc.setState((s) => ({ doc: { ...s.doc, paths: d.paths, objects: d.objects }, revision: s.revision + 1 }));
-    setContent(after);
+      useDoc.setState((s) => ({ doc: { ...s.doc, paths: d.paths, objects: d.objects, ranges: d.ranges, sources: d.sources }, revision: s.revision + 1 }));
+    setContent({ ...useDoc.getState().doc, paths, objects, ranges, sources });
+    // a flat map remembers the climate it was made with (sources of water evaporate by it)
+    const meta = useDoc.getState().meta;
+    if (whole && model.geo.flat && meta && o.climateLat !== undefined && meta.planet.climateLatDeg !== o.climateLat) useDoc.getState().setMeta({ planet: { ...meta.planet, climateLatDeg: o.climateLat } });
+    // the rivers: a source at the head of each, whose water finds its own way down the land
+    // (lakes, meanders, joins), biggest first so the smaller ones join them
+    const heads = res.rivers.filter((r) => r.points.length >= 2 && (r.q ?? 0) > 0);
+    if (heads.length) {
+      useEditor.getState().set({ busy: t('Rivers are finding their way…') });
+      await new Promise((r) => setTimeout(r, 30));
+      const run = placeSources(
+        model,
+        heads.map((r) => ({ at: [model.geo.wrapX(r.points[0][0]), r.points[0][1]] as [number, number], q: r.q! })),
+      );
+      changes.push(...run.changes);
+    }
+    // settlements by the rivers as they now run
+    if (o.settlements) {
+      const cellKm = model.geo.kmPerCellY;
+      const riv = Object.values(useDoc.getState().doc.paths)
+        .filter((f) => f.kind === 'river' && !f.oxbow && f.points.length >= 2)
+        .map((f) => ({ points: f.points as [number, number][], widthKm: f.width * cellKm, widthCells: f.width }));
+      const placed = scatterSettlements(whole ? 26 : 7, res.region, o.seed, riv);
+      const objs = { ...useDoc.getState().doc.objects };
+      for (const ob of placed) objs[ob.id] = ob;
+      useDoc.setState((s) => ({ doc: { ...s.doc, objects: objs }, revision: s.revision + 1 }));
+    }
+    const after = useDoc.getState().doc;
     history.push({
       label: t('Generate terrain'),
       cost: changes.reduce((s, c) => s + [...c.before.values(), ...c.after.values()].reduce((a, t) => a + (t?.byteLength ?? 0), 0), 0),
@@ -282,9 +312,6 @@ export async function generateWorld(o: GenerateOptions, opts: { sample?: boolean
         setContent(after);
       },
     });
-    // a flat map remembers the climate it was made with (sources of water evaporate by it)
-    const meta = useDoc.getState().meta;
-    if (whole && model.geo.flat && meta && o.climateLat !== undefined && meta.planet.climateLatDeg !== o.climateLat) useDoc.getState().setMeta({ planet: { ...meta.planet, climateLatDeg: o.climateLat } });
     useEditor.getState().notify(whole ? t('World generated') : t('Land generated in view'));
     track('world_generated', { preset: presetOf(o), realism: o.realism });
   } catch (e) {
