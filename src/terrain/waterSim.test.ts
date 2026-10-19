@@ -41,6 +41,9 @@ describe('water from a source', () => {
     expect(r.end).toBe('sea');
     expect(r.rivers.length).toBe(2);
     expect(r.rivers[1].fromLake).toBe(true);
+    // the river out leaves from inside the lake's water, without a gap at the shore
+    const [sx, sy] = r.rivers[1].points[0];
+    expect(r.lakes[0].cells).toContain(Math.floor(sy) * model.W + Math.floor(sx));
     // the river out carries what the lake did not take
     expect(r.rivers[1].flow[0]).toBeLessThan(200);
     expect(r.rivers[1].flow[0]).toBeGreaterThan(150);
@@ -97,6 +100,30 @@ describe('water from a source', () => {
     expect(r.lakes[0].cells).toContain(500 * W + 600);
     expect(r.lakes[0].cells).toContain(500 * W + 700);
     expect(r.lakes[0].level).toBeGreaterThan(100);
+  });
+
+  it('crosses a flat by the shortest way, not back and forth over all of it', () => {
+    // a terrace 300 cells wide across the slope, flat but for centimetres of roughness
+    const rough = (x: number, y: number) => ((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1) * 0.05;
+    const model = land((x, y) => (x < 100 ? -50 : x > 400 && x < 700 ? 90 + rough(x, y) : (x - 100) * 0.3));
+    const r = simulateSource(model, params({ aridity: 0 }));
+    expect(r.end).toBe('sea');
+    const pts = r.rivers.flatMap((x) => x.points);
+    let len = 0;
+    for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    expect(len).toBeLessThan(1.3 * (900 - 100));
+  });
+
+  it('runs down a slope the way it falls, not in steps of 45°', () => {
+    // a plane falling to the west-south-west (about 22° off west)
+    const model = land((x, y) => (x < 100 ? -50 : (x - 100) * 0.3 + (y - 500) * 0.12));
+    const r = simulateSource(model, params());
+    const pts = r.rivers[0].points;
+    // every stretch of 20 points heads the way the land falls
+    for (let i = 20; i < pts.length; i += 20) {
+      const a = Math.atan2(pts[i][1] - pts[i - 20][1], pts[i][0] - pts[i - 20][0]);
+      expect(Math.abs(a - Math.atan2(-0.12, -0.3))).toBeLessThan(0.12);
+    }
   });
 
   it('crosses a dip shallower than the carving depth without a lake', () => {

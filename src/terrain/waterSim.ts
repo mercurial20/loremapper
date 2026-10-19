@@ -69,10 +69,14 @@ export interface SimResult {
 export const EVAPORATION = 1e-3 / 31.557e6 * 1e6;
 /** Below this discharge (m³/s) a river has run dry. */
 const DRY = 0.05;
+/** Differences of height smaller than this (m) do not lead water across a flat. */
+const FLAT_TOLERANCE = 0.5;
 /** Hollows smaller than this many cells never hold a lake (the water passes on). */
 const MIN_LAKE = 6;
 /** The largest hollow followed, cells. */
 const MAX_BASIN = 400_000;
+/** Most times hollows the water filled may join into one (each time the lake grows). */
+const MAX_MERGES = 2000;
 /** Longest course followed, steps (cells). */
 const MAX_STEPS = 40_000;
 /** A stretch this long (steps) falling less than FLAT_SLOPE (m/m) is flat ground. */
@@ -179,12 +183,74 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     if (join) cur.join = join;
     if (cur.points.length >= 2) rivers.push(cur);
   };
-  const add = (k: number) => {
-    cur.points.push(centre(k));
+  const add = (k: number, at: Vec2 = centre(k)) => {
+    cur.points.push(at);
     cur.flow.push(Q);
+  };
+  // the water's position, between cell centres where it follows the slope
+  let pos: Vec2;
+  const geo = model.geo;
+  const sample = (x: number, y: number) => model.heightAt(geo.wrapX(x), Math.min(H - 0.5, Math.max(0.5, y)));
+  /**
+   * A step of about a cell down the slope of the land, in whatever direction it falls (not only
+   * the eight from cell to cell, which would draw rivers as straight runs at 45°). Null where
+   * that does not lead to a lower cell: then the water steps from cell to cell.
+   */
+  const alongSlope = (k: number): { at: Vec2; k: number } | null => {
+    const [x, y] = pos;
+    const kx = Math.max(1e-6, Math.abs(geo.kmPerCellX(y)));
+    const gx = (sample(x + 0.5, y) - sample(x - 0.5, y)) / kx;
+    const gy = (sample(x, y + 0.5) - sample(x, y - 0.5)) / cellKm;
+    // downhill, in cells
+    let dx = -gx / kx;
+    let dy = -gy / cellKm;
+    const l = Math.hypot(dx, dy);
+    if (l < 1e-12) return null;
+    dx /= l;
+    dy /= l;
+    for (let m = 1; m <= 3; m++) {
+      const at: Vec2 = [x + dx * m * 0.7, y + dy * m * 0.7];
+      if (at[1] < 0 || at[1] >= H) return null;
+      const n = Math.floor(at[1]) * W + ((Math.floor(at[0]) % W) + W) % W;
+      if (n === k) continue;
+      if (!wrap && (at[0] < 0 || at[0] >= W)) return null;
+      return h(n) < h(k) ? { at: [((at[0] % W) + W) % W, at[1]], k: n } : null;
+    }
+    return null;
   };
   const nb: number[] = [];
   let c = Math.floor(p.at[1]) * W + ((Math.floor(p.at[0]) % W) + W) % W;
+  pos = centre(c);
+  let walked = 0;
+  /**
+   * What happens to the water in a cell on its way: some soaks into the ground, and on flat ground
+   * the river spreads into marsh and loses water to the air. True when it has all gone.
+   */
+  const onTheWay = (k: number): boolean => {
+    walked++;
+    const g = h(k);
+    if (p.seepage > 0) Q *= Math.pow(1 - Math.min(0.99, p.seepage), cellKm / 100);
+    recent.push(g);
+    if (recent.length > FLAT_STEPS) recent.shift();
+    if (evap > 0 && flat(g)) {
+      // the marsh is the wider the more water spreads into it (the Okavango's, of some
+      // 300 m³/s, is about 50 km across; the Sudd's, of 1,000, about 100 km)
+      const wideKm = 3 * Math.sqrt(Q);
+      const r = Math.max(1, (0.5 * wideKm) / cellKm);
+      Q -= evap * wideKm * Math.sqrt(area(k));
+      // discs along the way, close enough to read as one marsh
+      if (walked - lastMarsh >= Math.max(1, Math.min(12, r * 0.7))) {
+        marshes.push({ x: (k % W) + 0.5, y: ((k / W) | 0) + 0.5, r });
+        lastMarsh = walked;
+      }
+    }
+    return Q <= DRY;
+  };
+  /** Go on from a cell (its centre). */
+  const goTo = (k: number) => {
+    c = k;
+    pos = centre(k);
+  };
   const recent: number[] = [];
   let lastMarsh = -1e9;
   let end: SimEnd = 'pit';
@@ -193,8 +259,9 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
   // the level of the saddle between them), and what happened in between is undone.
   const hollows: { rivers: number; cur: SimRiver; points: number; lakes: number; marshes: number; Q: number }[] = [];
   const hollowOf = new Map<number, number>();
+  let merges = 0;
   for (let step = 0; step < MAX_STEPS; step++) {
-    add(c);
+    add(c, pos);
     const g = h(c);
     if (g < sea) {
       end = 'sea';
@@ -218,29 +285,18 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       finish('land');
       break;
     }
-    // water lost into the ground on the way
-    if (p.seepage > 0) Q *= Math.pow(1 - Math.min(0.99, p.seepage), cellKm / 100);
-    // flat ground: the river spreads into marsh and loses water to the air
-    recent.push(g);
-    if (recent.length > FLAT_STEPS) recent.shift();
-    if (evap > 0 && flat(g)) {
-      // the marsh is the wider the more water spreads into it (the Okavango's, of some
-      // 300 m³/s, is about 50 km across; the Sudd's, of 1,000, about 100 km)
-      const wideKm = 3 * Math.sqrt(Q);
-      const r = Math.max(1, (0.5 * wideKm) / cellKm);
-      Q -= evap * wideKm * Math.sqrt(area(c));
-      // discs along the way, close enough to read as one marsh
-      if (step - lastMarsh >= Math.max(1, Math.min(12, r * 0.7))) {
-        marshes.push({ x: (c % W) + 0.5, y: ((c / W) | 0) + 0.5, r });
-        lastMarsh = step;
-      }
-    }
-    if (Q <= DRY) {
+    if (onTheWay(c)) {
       end = flat(g) ? 'marsh' : 'dry';
       finish('land');
       break;
     }
-    // downhill: the steepest way down
+    // downhill: along the slope, or else the steepest way down from cell to cell
+    const slope = alongSlope(c);
+    if (slope) {
+      c = slope.k;
+      pos = slope.at;
+      continue;
+    }
     neighbours(c, nb);
     let best = -1;
     let bestSlope = 0;
@@ -253,13 +309,30 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       }
     }
     if (best >= 0) {
-      c = best;
+      goTo(best);
+      continue;
+    }
+    // a dip shallower than the carving depth: the river cuts through its rim to lower ground
+    const way = breach(c);
+    if (way) {
+      let dried = false;
+      for (const k of way.slice(0, -1)) {
+        add(k);
+        if ((dried = onTheWay(k))) break;
+      }
+      if (dried) {
+        end = 'marsh';
+        finish('land');
+        break;
+      }
+      goTo(way[way.length - 1]);
       continue;
     }
     // a hollow: the water rises in it until it spills or evaporates as fast as it flows in
     hollows.push({ rivers: rivers.length, cur, points: cur.points.length, lakes: lakes.length, marshes: marshes.length, Q });
     const basin = fillHollow(c);
     if (basin && basin.joined >= 0) {
+      if (++merges > MAX_MERGES) break;
       // it rose into hollows the water came through before: one lake now, filled from there
       const was = hollows[basin.joined];
       rivers.length = was.rivers;
@@ -271,6 +344,8 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       Q = was.Q;
       hollows.length = basin.joined + 1;
       hollows[basin.joined] = { ...was };
+      // the hollows after it are undone: their cells belong to none (the new one takes its own)
+      for (const [k, i] of hollowOf) if (i > basin.joined) hollowOf.delete(k);
     }
     if (basin) for (const k of basin.cells) hollowOf.set(k, hollows.length - 1);
     if (!basin) {
@@ -297,7 +372,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     if (depth < p.carve || basin.cells.length < MIN_LAKE) {
       // a shallow dip or a flat: the river finds its way across
       for (const k of basin.path) add(k);
-      c = basin.out;
+      goTo(basin.out);
       continue;
     }
     lakes.push({ cells: basin.cells, level: basin.level, kind: 'open' });
@@ -305,9 +380,10 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     Q -= evap * basin.km2;
     finish('water');
     cur = { points: [], flow: [], to: 'land', fromLake: true };
-    // the river goes on from the spill point
+    // the river goes on from the spill point; it starts out in the lake, so that it leaves the
+    // water without a gap
     for (const k of basin.exit) add(k);
-    c = basin.out;
+    goTo(basin.out);
   }
   return { rivers, lakes, marshes, end };
 
@@ -359,18 +435,79 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
         if (hn < level || hn < sea || isEdge(n)) {
           // the way out: lower land (or the sea) beyond the rim
           const cells = popped.filter((x) => h(x) < level);
-          const path: number[] = [];
-          for (let q = k; q >= 0; q = parent.get(q)!) path.push(q);
-          path.reverse();
-          const exit: number[] = [];
-          for (const q of path) if (h(q) >= level) exit.push(q);
-          exit.push(n);
+          const path = across(popped, pit, k);
+          // out of the lake: from its deepest point (under the water), over the rim; where the
+          // lake is drawn narrower than its cells (a lake in a narrow valley), the river still
+          // meets its water
+          const exit = [...path, n];
           return { cells, level, km2: cells.reduce((s, x) => s + area(x), 0), closed: false, out: n, path: path.slice(1), exit, joined };
         }
         heap.push(n, hn);
       }
     }
     return null;
+  }
+
+  /**
+   * The way out of a dip whose rim is less than the carving depth above its bottom: across it to
+   * the first ground clearly lower than the bottom (so each step leads lower, and the water never
+   * goes back and forth between dips; on a flat, roughness of a few centimetres does not lead it
+   * astray from pit to pit, it crosses to where the land falls away), or null for a deeper hollow.
+   */
+  function breach(pit: number): number[] | null {
+    const base = h(pit);
+    const tol = Math.max(1e-3, Math.min(FLAT_TOLERANCE, p.carve / 2));
+    const lower = base - tol;
+    // lowest first, by bands of the tolerance; within a band, nearest first (so on a flat the
+    // water makes for the nearest edge where the land falls away)
+    const steps = new Map<number, number>([[pit, 0]]);
+    const key = (n: number, d: number) => Math.floor(Math.max(0, h(n) - base) / tol) * 1e7 + d;
+    const heap = new Heap();
+    const region: number[] = [];
+    const local: number[] = [];
+    heap.push(pit, 0);
+    while (heap.size) {
+      const [k] = heap.pop();
+      if (h(k) - base >= p.carve) return null;
+      region.push(k);
+      if (region.length > MAX_BASIN) return null;
+      neighbours(k, local);
+      for (const n of local) {
+        if (steps.has(n)) continue;
+        const d = steps.get(k)! + 1;
+        steps.set(n, d);
+        const hn = h(n);
+        // not back into a hollow the water came through (it would only come back out the same way)
+        if ((hn < lower && !hollowOf.has(n)) || hn < sea || isEdge(n)) return [...across(region, pit, k).slice(1), n];
+        heap.push(n, key(n, d));
+      }
+    }
+    return null;
+  }
+
+  /**
+   * The shortest way across a hollow from `from` to `to` through its cells (not the order the
+   * water filled them in, which on a flat winds back and forth across all of it).
+   */
+  function across(region: number[], from: number, to: number): number[] {
+    const inside = new Set(region);
+    const prev = new Map<number, number>([[from, -1]]);
+    const queue = [from];
+    const local: number[] = [];
+    for (let qi = 0; qi < queue.length && !prev.has(to); qi++) {
+      const k = queue[qi];
+      neighbours(k, local);
+      // straight steps first, so the way runs straight rather than in a staircase of diagonals
+      local.sort((a, b) => Number((a % W !== k % W) && ((a / W) | 0) !== ((k / W) | 0)) - Number((b % W !== k % W) && ((b / W) | 0) !== ((k / W) | 0)));
+      for (const n of local)
+        if (inside.has(n) && !prev.has(n)) {
+          prev.set(n, k);
+          queue.push(n);
+        }
+    }
+    const path: number[] = [];
+    for (let q = prev.has(to) ? to : from; q >= 0; q = prev.get(q)!) path.push(q);
+    return path.reverse();
   }
 }
 
