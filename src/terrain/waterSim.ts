@@ -75,6 +75,8 @@ export const EVAPORATION = 1e-3 / 31.557e6 * 1e6;
 const RUNOFF_MM = 300;
 /** What a sandy river bed soaks up in a dry climate, m³/s per km² of bed (0.1 m a day). */
 const SOAK = 1.16;
+/** A marsh's width (km) for every √(m³/s) of the water spreading into it. */
+const MARSH_KM = 0.8;
 /** Below this discharge (m³/s) a river has run dry. */
 const DRY = 0.05;
 /**
@@ -312,9 +314,10 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     recent.push(g);
     if (recent.length > FLAT_STEPS) recent.shift();
     if (evap > 0 && flat(g)) {
-      // the marsh is the wider the more water spreads into it (the Okavango's, of some
-      // 300 m³/s, is about 50 km across; the Sudd's, of 1,000, about 100 km)
-      const wideKm = 3 * Math.sqrt(Q);
+      // the marsh is the wider the more water spreads into it: a few km for a small river, some
+      // tens of km for a great one (the Ob's wetlands, of 12,000 m³/s, are 20 … 90 km across;
+      // the flood marshes of the Okavango and the Sudd, wider still, are rarer)
+      const wideKm = MARSH_KM * Math.sqrt(Q);
       const r = Math.max(1, (0.5 * wideKm) / cellKm);
       Q -= evap * wideKm * Math.sqrt(area(k));
       // discs along the way, close enough to read as one marsh
