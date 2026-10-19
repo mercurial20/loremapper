@@ -1,9 +1,9 @@
-import { Trash2 } from 'lucide-react';
+import { RefreshCw, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatFlow, formatLength } from '../../core/units';
 import { editor } from '../../editor/Editor';
-import { deleteSource, detachSource, sourceAridity, updateSource } from '../../editor/sources';
+import { deleteAllSources, deleteSource, detachSource, rerunAllSources, sourceAridity, updateSource } from '../../editor/sources';
 import { formatNumber, t } from '../../i18n';
 import { N_ } from '../../i18n/mark';
 import type { PathFeature, SourceEnd, WaterSource } from '../../model/types';
@@ -59,12 +59,22 @@ export function SourceControls() {
   const list = Object.values(sources);
   return (
     <>
-      <Hint>{t('Click on land to place a source: its water runs downhill, fills hollows into lakes, spreads into marshes on flats and goes on until it reaches the sea or the climate takes it all. Click a source to edit it, drag it to move it.')}</Hint>
+      <Hint>{t('Click on land to place a source: its water runs downhill, fills hollows into lakes, spreads into marshes on flats and goes on until it reaches the sea or the climate takes it all. Click a source to edit it, drag it to move it; Alt-click or Delete removes it.')}</Hint>
       {!src && <Slider label={t('Water of a new source')} value={q} min={Q_MIN} max={Q_MAX} log onChange={(v) => set({ sourceQ: roundQ(v) })} format={(v) => formatFlow(v, units)} hint={t('A brook gives about 1 m³/s, the Thames 65, the Rhine 2,300, the Amazon 200,000')} />}
       {list.length > 0 && (
         <Select label={t('Source')} value={src ? src.id : ''} onChange={(id) => set({ activeSource: id || null })} options={[{ value: '', label: t('None (place a new one)') }, ...list.map((x) => ({ value: x.id, label: x.name }))]} />
       )}
       {src && <SourceCard key={src.id} src={src} paths={paths} />}
+      {list.length > 1 && (
+        <div className="btn-row">
+          <button className="btn" onClick={rerunAllSources} title={t('Work out again where the water of every source goes, on the ground as it is now')}>
+            <RefreshCw size={14} /> {t('Run all again')}
+          </button>
+          <button className="btn danger" onClick={deleteAllSources} title={t('Remove every source with its rivers and lakes')}>
+            <Trash2 size={14} /> {t('Delete all ({n})', { n: list.length })}
+          </button>
+        </div>
+      )}
     </>
   );
 }

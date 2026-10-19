@@ -3,7 +3,7 @@ import { evenSpacing, simplifyPath, uid } from '../core/math';
 import { t } from '../i18n';
 import { history } from '../model/history';
 import { curveLengths, nearestOnCurve, riverCurve, widthForFlow } from '../model/rivers';
-import type { PathFeature, Vec2, WaterSource } from '../model/types';
+import type { MapDocument, PathFeature, Vec2, WaterSource } from '../model/types';
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import { clearLake, isOpenWater, lakeAt, setLake } from '../terrain/lakes';
@@ -351,15 +351,60 @@ export function updateSource(id: string, patch: Partial<Pick<WaterSource, 'at' |
   changeSources(patch.at ? t('Move a water source') : t('Change a water source'), next, [id]);
 }
 
+type Removable = Pick<MapDocument, 'objects' | 'paths' | 'territories' | 'labels' | 'sources'>;
+const removable = (d: MapDocument): Removable => ({ objects: d.objects, paths: d.paths, territories: d.territories, labels: d.labels, sources: d.sources });
+
+/**
+ * Remove sources with the rivers and lakes they made, as one undo step; `also` removes other
+ * things in the same step (the rest of a selection being deleted).
+ */
+export function removeSources(ids: string[], label: string, also?: (d: MapDocument) => Partial<Removable>) {
+  const model = editor.model;
+  if (!model || useEditor.getState().readOnly) return;
+  const set = (c: Removable) => useDoc.setState((s) => ({ doc: { ...s.doc, ...c }, revision: s.revision + 1 }));
+  const before = removable(useDoc.getState().doc);
+  if (also) useDoc.setState((s) => ({ doc: { ...s.doc, ...also(s.doc) }, revision: s.revision + 1 }));
+  const sources = useDoc.getState().doc.sources;
+  const gone = ids.map((id) => sources[id]).filter((s): s is WaterSource => !!s);
+  const next = { ...sources };
+  for (const s of gone) delete next[s.id];
+  const { changes } = runSources(model, next, [], gone);
+  const after = removable(useDoc.getState().doc);
+  let bytes = 4096;
+  for (const c of changes) for (const v of [...c.before.values(), ...c.after.values()]) bytes += v?.byteLength ?? 0;
+  history.push({
+    label,
+    cost: bytes,
+    undo: () => {
+      for (const c of changes.slice().reverse()) model.applyTiles(c, 'before');
+      set(before);
+    },
+    redo: () => {
+      for (const c of changes) model.applyTiles(c, 'after');
+      set(after);
+    },
+  });
+  const active = useEditor.getState().activeSource;
+  if (active && ids.includes(active)) useEditor.getState().set({ activeSource: null });
+  track('first_edit');
+}
+
 /** Remove a source with the rivers and lakes it made. */
 export function deleteSource(id: string) {
+  removeSources([id], t('Delete a water source'));
+}
+
+/** Remove every source with its rivers and lakes. */
+export function deleteAllSources() {
+  const ids = Object.keys(useDoc.getState().doc.sources);
+  if (ids.length) removeSources(ids, t('Delete all water sources'));
+}
+
+/** Run every source again (after the ground changed in ways no edit told them, say). */
+export function rerunAllSources() {
   const sources = useDoc.getState().doc.sources;
-  const s = sources[id];
-  if (!s) return;
-  const next = { ...sources };
-  delete next[id];
-  if (useEditor.getState().activeSource === id) useEditor.getState().set({ activeSource: null });
-  changeSources(t('Delete a water source'), next, [], [s]);
+  const ids = Object.keys(sources);
+  if (ids.length) changeSources(t('Run the water sources again'), sources, ids);
 }
 
 /** Keep what a source made as ordinary rivers and lakes; the source itself goes. */

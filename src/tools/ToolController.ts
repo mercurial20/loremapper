@@ -35,7 +35,7 @@ import { clearLake, fillBasin, lakeAt, lakeDepthAt, lakesFollowGround, paintLake
 import { pickLake, selectLake } from '../editor/lakes';
 import { riverSnapAt, snapRiver, type SnappedRiver } from '../editor/riverSnap';
 import { addCrestLine, snapToCrest } from '../editor/ranges';
-import { addSource, setWater, sourceAt, sourcesFollowGround, updateSource } from '../editor/sources';
+import { addSource, deleteSource, setWater, sourceAt, sourcesFollowGround, updateSource } from '../editor/sources';
 import { crestCurve } from '../terrain/ranges';
 import { sampleSpline } from '../render/vectorGeometry';
 import type { TerrainModel, TileChange } from '../terrain/TerrainModel';
@@ -370,7 +370,13 @@ export class ToolController {
       case 'territory':
       case 'ridge':
         if (tool === 'river' && st.riverMode === 'source') {
-          this.drag = { kind: 'source', id: sourceAt([x, y], SOURCE_HIT_PX / editor.zoom), at: [x, y], startScreen: [e.clientX, e.clientY], moved: false };
+          const id = sourceAt([x, y], SOURCE_HIT_PX / editor.zoom);
+          // Alt-click: away with it
+          if (id && e.altKey) {
+            deleteSource(id);
+            break;
+          }
+          this.drag = { kind: 'source', id, at: [x, y], startScreen: [e.clientX, e.clientY], moved: false };
           break;
         }
         this.drag = { kind: 'freehand', points: [[x, y]], startScreen: [e.clientX, e.clientY], moved: false };
@@ -1667,6 +1673,8 @@ export class ToolController {
         if (!this.draft.points.length) this.cancelDraft();
         else this.showDraft(this.draft.points, null);
       } else if (st.selection.length) deleteRefs(st.selection);
+      // placing sources: the source being edited goes, with its rivers and lakes
+      else if (st.tool === 'river' && st.riverMode === 'source' && st.activeSource) deleteSource(st.activeSource);
       e.preventDefault();
       return;
     }

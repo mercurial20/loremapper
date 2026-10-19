@@ -13,6 +13,7 @@ import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import type { ResolvedPeak } from '../terrain/peaks';
 import { t } from '../i18n';
+import { removeSources } from './sources';
 
 const commit = (...a: Parameters<ReturnType<typeof useDoc.getState>['commit']>) => useDoc.getState().commit(...a);
 const doc = () => useDoc.getState().doc;
@@ -99,20 +100,25 @@ export function updateFeature<K extends keyof KindMap>(kind: K, id: string, patc
 
 export function deleteRefs(refs: SelectionRef[]) {
   if (!refs.length) return;
-  commit(refs.length > 1 ? t('Delete {n} items', { n: refs.length }) : t('Delete'), (d) => {
+  const label = refs.length > 1 ? t('Delete {n} items', { n: refs.length }) : t('Delete');
+  const remove = (d: MapDocument) => {
     const objects = { ...d.objects };
     const paths = { ...d.paths };
     const territories = { ...d.territories };
     const labels = { ...d.labels };
-    const peaks = { ...d.peaks };
     for (const r of refs) {
       if (r.kind === 'object' && !objects[r.id]?.locked) delete objects[r.id];
       if (r.kind === 'path' && !paths[r.id]?.locked) delete paths[r.id];
       if (r.kind === 'territory' && !territories[r.id]?.locked) delete territories[r.id];
       if (r.kind === 'label' && !labels[r.id]?.locked) delete labels[r.id];
     }
-    return { objects, paths, territories, labels, peaks };
-  });
+    return { objects, paths, territories, labels };
+  };
+  // a river from a source goes with its source (and the rest of what the source made)
+  const d = doc();
+  const sources = [...new Set(refs.map((r) => (r.kind === 'path' && !d.paths[r.id]?.locked ? d.paths[r.id]?.source : undefined)).filter((x): x is string => !!x))];
+  if (sources.length) removeSources(sources, label, remove);
+  else commit(label, remove);
   for (const r of refs) if (r.kind === 'peak') removePeak(r.id);
   useEditor.getState().select([]);
 }
