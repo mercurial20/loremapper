@@ -29,7 +29,7 @@ import { hexToNumber, STYLE_PRESETS } from '../render/styles';
 import { useDoc } from '../store/docStore';
 import { brushGroupOf, togglePanel, useEditor, type ToolId } from '../store/editorStore';
 import { Stroke, type TerrainOp } from '../terrain/brushes';
-import { erodeRiver, newWaterCells, waterIn } from '../terrain/riverErosion';
+import { cellsAlong, erodeRiver, newWaterCells, waterIn } from '../terrain/riverErosion';
 import { carveUplift } from '../terrain/upliftStroke';
 import { clearLake, fillBasin, lakeAt, lakeDepthAt, lakesFollowGround, paintLake, setLake, touchingLakes } from '../terrain/lakes';
 import { pickLake, selectLake } from '../editor/lakes';
@@ -1401,28 +1401,7 @@ export class ToolController {
     const model = editor.model!;
     const W = model.W;
     // the cells under the river's line, as wide as the river
-    const cells = new Map<number, [number, number]>();
-    const r = Math.max(0.5, p.width / 2);
-    const R = Math.ceil(r);
-    const stamp = (x: number, y: number) => {
-      for (let dy = -R; dy <= R; dy++)
-        for (let dx = -R; dx <= R; dx++) {
-          if (dx * dx + dy * dy > r * r + 0.5) continue;
-          const cx = Math.floor(x + dx);
-          const cy = Math.floor(y + dy);
-          if (cy < 0 || cy >= model.H) continue;
-          cells.set(cy * W + (((cx % W) + W) % W), [cx, cy]);
-        }
-    };
-    // every half cell along the curve, so the river's cells never break apart
-    const line = sampleSpline(p.points, 6);
-    stamp(line[0][0], line[0][1]);
-    for (let i = 1; i < line.length; i++) {
-      const [ax, ay] = line[i - 1];
-      const [bx, by] = line[i];
-      const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) * 2));
-      for (let s = 1; s <= steps; s++) stamp(ax + ((bx - ax) * s) / steps, ay + ((by - ay) * s) / steps);
-    }
+    const cells = cellsAlong(model, sampleSpline(p.points, 6), p.width);
     const before = useDoc.getState().doc.paths;
     const after = { ...before, [p.id]: p };
     const setPaths = (paths: typeof before) => useDoc.setState((s) => ({ doc: { ...s.doc, paths }, revision: s.revision + 1 }));

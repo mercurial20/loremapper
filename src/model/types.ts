@@ -75,6 +75,11 @@ export interface WaterSource {
   q: number;
   /** Net evaporation (evaporation minus rain on open water), mm a year; null: from the latitude. */
   aridity: number | null;
+  /**
+   * Its rivers keep their course through ground raised across them, cutting a gorge (as rivers
+   * older than the hills they cross do), instead of being dammed into a lake and finding another way.
+   */
+  cuts?: boolean;
   /** What it made the last time it ran (its rivers are the paths with this `source`). */
   made: {
     /** A cell of each lake it filled. */

@@ -119,6 +119,12 @@ export function SourceCard({ src, paths }: { src: WaterSource; paths: Record<str
       ) : (
         <Slider label={t('Evaporation')} value={v.aridity} min={-1500} max={3000} step={10} onChange={(x) => change({ aridity: Math.round(x / 10) * 10 })} format={netEvaporation} hint={t('Net evaporation from open water (what the air takes, less the rain that falls on it). Lakes grow until they lose to it all that flows in; where it rains more, they overflow.')} />
       )}
+      <Toggle
+        label={t('Cuts through what rises across it')}
+        checked={!!src.cuts}
+        onChange={(cuts) => updateSource(src.id, { cuts })}
+        hint={t('Ground raised across its rivers later: on, they keep their course and cut a gorge through it, as rivers older than the hills they cross do; off, the water is dammed into a lake and finds another way. Turning it on cuts their beds and valleys into the ground now.')}
+      />
       <Hint>{t(ENDS[src.made.end])}</Hint>
       <div className="kv">
         <span>{t('Length')}</span>

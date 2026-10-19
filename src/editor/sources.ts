@@ -7,7 +7,8 @@ import { curveLengths, nearestOnCurve, riverCurve, widthForFlow } from '../model
 import type { MapDocument, PathFeature, Vec2, WaterSource } from '../model/types';
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
-import { clearLake, isOpenWater, lakeAt, setLake } from '../terrain/lakes';
+import { clearLake, isOpenWater, lakeAt, lakesFollowGround, setLake } from '../terrain/lakes';
+import { cellsAlong, erodeRiver } from '../terrain/riverErosion';
 import { isLake, type TerrainModel, type TileChange } from '../terrain/TerrainModel';
 import { aridityAt, climateLatAt, simulateSource, type SimRiver } from '../terrain/waterSim';
 import { editor } from './Editor';
@@ -332,10 +333,10 @@ function make(model: TerrainModel, s: WaterSource, paths: Record<string, PathFea
  * Change the sources and run the ones affected (and those whose water joins what they made), as
  * one undo step. `removed` are sources taken away (with what they made).
  */
-function changeSources(label: string, next: Record<string, WaterSource>, run: string[], removed: WaterSource[] = []) {
+function changeSources(label: string, next: Record<string, WaterSource>, run: string[], removed: WaterSource[] = [], cut: string[] = []) {
   const model = editor.model;
   if (!model) return;
-  const { before, after, changes } = runSources(model, next, run, removed);
+  const { before, after, changes } = runSources(model, next, run, removed, cut);
   let bytes = 4096;
   for (const c of changes) for (const v of [...c.before.values(), ...c.after.values()]) bytes += v?.byteLength ?? 0;
   history.push({
@@ -353,12 +354,34 @@ function changeSources(label: string, next: Record<string, WaterSource>, run: st
   track('first_edit');
 }
 
-/** Run sources (and those whose water joins theirs) with the document's sources set to `next`. */
-function runSources(model: TerrainModel, next: Record<string, WaterSource>, run: string[], removed: WaterSource[] = []): WaterRun {
+/**
+ * Cut a source's rivers into the ground along the course they run now (their beds, and valleys
+ * as steep as the hills around): through ground raised across them since, a gorge.
+ */
+function cutCourses(model: TerrainModel, id: string, paths: Record<string, PathFeature>, changes: TileChange[]) {
+  const W = model.W;
+  for (const p of Object.values(paths)) {
+    if (p.source !== id || p.oxbow || p.points.length < 2) continue;
+    const cells = cellsAlong(model, riverCurve(p.points), p.width);
+    const end = p.points[p.points.length - 1];
+    const c = erodeRiver(model, { fresh: cells.values(), wet: (x, y) => cells.has(y * W + x), mouth: [end[0], end[1]] });
+    if (!c) continue;
+    changes.push(c);
+    const lc = lakesFollowGround(model, c);
+    if (lc) changes.push(lc);
+  }
+}
+
+/**
+ * Run sources (and those whose water joins theirs) with the document's sources set to `next`.
+ * The rivers of the sources in `cut` are first cut into the ground along their present course.
+ */
+function runSources(model: TerrainModel, next: Record<string, WaterSource>, run: string[], removed: WaterSource[] = [], cut: string[] = []): WaterRun {
   const before: Water = { paths: useDoc.getState().doc.paths, sources: useDoc.getState().doc.sources };
   const paths = { ...before.paths };
   const sources = { ...next };
   const changes: TileChange[] = [];
+  for (const id of cut) cutCourses(model, id, paths, changes);
   // sources whose rivers join the rivers of those that run again: their joins move, so they run too
   const todo = new Set(run.filter((id) => sources[id]));
   const gone = new Set([...todo, ...removed.map((s) => s.id)]);
@@ -426,9 +449,10 @@ export function sourcesFollowGround(model: TerrainModel, changes: TileChange[]):
       for (const s of model.geo.wraps ? [-W, 0, W] : [0]) if (box[0] - FOLLOW <= x1 + s && box[2] + FOLLOW >= x0 + s) return true;
       return false;
     });
-  const hit = list.filter((s) => touched(s.made.box ?? [s.at[0], s.at[1], s.at[0], s.at[1]])).map((s) => s.id);
+  const hit = list.filter((s) => touched(s.made.box ?? [s.at[0], s.at[1], s.at[0], s.at[1]]));
   if (!hit.length) return null;
-  return runSources(model, sources, hit);
+  // those that cut their way keep their course through what was raised across it
+  return runSources(model, sources, hit.map((s) => s.id), [], hit.filter((s) => s.cuts).map((s) => s.id));
 }
 
 /** Whether water can come out at a point (on land, not in the sea or a lake). */
@@ -453,7 +477,7 @@ export function addSource(at: Vec2, q: number): string | null {
 }
 
 /** Change a source's settings (or move it) and run it again. */
-export function updateSource(id: string, patch: Partial<Pick<WaterSource, 'at' | 'q' | 'aridity' | 'name'>>) {
+export function updateSource(id: string, patch: Partial<Pick<WaterSource, 'at' | 'q' | 'aridity' | 'name' | 'cuts'>>) {
   const sources = useDoc.getState().doc.sources;
   const s = sources[id];
   if (!s) return;
@@ -465,6 +489,11 @@ export function updateSource(id: string, patch: Partial<Pick<WaterSource, 'at' |
   // a new name changes nothing on the map
   if (Object.keys(patch).every((k) => k === 'name')) {
     useDoc.getState().commit(t('Rename a water source'), () => ({ sources: next }), 'source-name-' + id);
+    return;
+  }
+  // set to cut its way: its rivers cut into the ground along their course now
+  if (patch.cuts && !s.cuts) {
+    changeSources(t('Rivers cut their way'), next, [id], [], [id]);
     return;
   }
   changeSources(patch.at ? t('Move a water source') : t('Change a water source'), next, [id]);

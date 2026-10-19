@@ -526,6 +526,36 @@ export function erodeRiver(model: TerrainModel, input: RiverInput): TileChange |
   return { layer: 'height', before, after };
 }
 
+/**
+ * The cells under a river's line (`curve`, its centre about every cell or closer), as wide as
+ * `width` cells: stamped every half cell along it, so they never break apart.
+ */
+export function cellsAlong(model: TerrainModel, curve: [number, number][], width: number): Map<number, [number, number]> {
+  const W = model.W;
+  const cells = new Map<number, [number, number]>();
+  const r = Math.max(0.5, width / 2);
+  const R = Math.ceil(r);
+  const stamp = (x: number, y: number) => {
+    for (let dy = -R; dy <= R; dy++)
+      for (let dx = -R; dx <= R; dx++) {
+        if (dx * dx + dy * dy > r * r + 0.5) continue;
+        const cx = Math.floor(x + dx);
+        const cy = Math.floor(y + dy);
+        if (cy < 0 || cy >= model.H) continue;
+        cells.set(cy * W + (((cx % W) + W) % W), [cx, cy]);
+      }
+  };
+  if (!curve.length) return cells;
+  stamp(curve[0][0], curve[0][1]);
+  for (let i = 1; i < curve.length; i++) {
+    const [ax, ay] = curve[i - 1];
+    const [bx, by] = curve[i];
+    const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) * 2));
+    for (let s = 1; s <= steps; s++) stamp(ax + ((bx - ax) * s) / steps, ay + ((by - ay) * s) / steps);
+  }
+  return cells;
+}
+
 /** Whether any water is painted inside a terrain cell. */
 export function waterIn(model: TerrainModel, x: number, y: number): boolean {
   const g = model.water;
