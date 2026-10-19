@@ -555,24 +555,6 @@ export function deleteAllSources() {
   if (ids.length) removeSources(ids, t('Delete all water sources'));
 }
 
-/**
- * Place many sources at once and run them, biggest first (a generated world's rivers), without an
- * undo step of their own: the caller folds the run into its own.
- */
-export function placeSources(model: TerrainModel, items: { at: Vec2; q: number }[]): WaterRun {
-  const sources = { ...useDoc.getState().doc.sources };
-  const n = Object.keys(sources).length;
-  const ids: string[] = [];
-  [...items]
-    .sort((a, b) => b.q - a.q)
-    .forEach((it, i) => {
-      const s: WaterSource = { id: uid('source-'), name: t('Source {n}', { n: n + i + 1 }), at: it.at, q: Math.round(it.q * 10) / 10, aridity: null, made: { lakes: [], end: 'dry' }, locked: false };
-      sources[s.id] = s;
-      ids.push(s.id);
-    });
-  return runSources(model, sources, ids);
-}
-
 /** Run every source again (after the ground changed in ways no edit told them, say). */
 export function rerunAllSources() {
   const sources = useDoc.getState().doc.sources;

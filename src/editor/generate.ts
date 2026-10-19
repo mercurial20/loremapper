@@ -1,7 +1,7 @@
-import { evenSpacing, mulberry32, simplifyPath, uid } from '../core/math';
+import { chaikin, evenSpacing, mulberry32, simplifyPath, uid } from '../core/math';
 import { BIOME_CHANNELS } from '../core/planet';
 import { history } from '../model/history';
-import type { MapDocument, MapObject } from '../model/types';
+import type { MapDocument, MapObject, PathFeature } from '../model/types';
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import type { Sketch } from '../terrain/gen/sketch';
@@ -10,7 +10,6 @@ import type { WorkerReply, WorkerRequest } from '../terrain/generator.worker';
 import type { RasterArray } from '../terrain/TileGrid';
 import { NO_WATER, type TileChange } from '../terrain/TerrainModel';
 import { editor } from './Editor';
-import { placeSources } from './sources';
 import { newObject } from './commands';
 import { track } from '../analytics';
 import { t } from '../i18n';
@@ -276,28 +275,31 @@ export async function generateWorld(o: GenerateOptions, opts: { sample?: boolean
     // a flat map remembers the climate it was made with (sources of water evaporate by it)
     const meta = useDoc.getState().meta;
     if (whole && model.geo.flat && meta && o.climateLat !== undefined && meta.planet.climateLatDeg !== o.climateLat) useDoc.getState().setMeta({ planet: { ...meta.planet, climateLatDeg: o.climateLat } });
-    // the rivers: a source at the head of each, whose water finds its own way down the land
-    // (lakes, meanders, joins), biggest first so the smaller ones join them
-    const heads = res.rivers.filter((r) => r.points.length >= 2 && (r.q ?? 0) > 0);
-    if (heads.length) {
-      useEditor.getState().set({ busy: t('Rivers are finding their way…') });
-      await new Promise((r) => setTimeout(r, 30));
-      const run = placeSources(
-        model,
-        heads.map((r) => ({ at: [model.geo.wrapX(r.points[0][0]), r.points[0][1]] as [number, number], q: r.q! })),
-      );
-      changes.push(...run.changes);
-    }
-    // settlements by the rivers as they now run
-    if (o.settlements) {
-      const cellKm = model.geo.kmPerCellY;
-      const riv = Object.values(useDoc.getState().doc.paths)
-        .filter((f) => f.kind === 'river' && !f.oxbow && f.points.length >= 2)
-        .map((f) => ({ points: f.points as [number, number][], widthKm: f.width * cellKm, widthCells: f.width }));
-      const placed = scatterSettlements(whole ? 26 : 7, res.region, o.seed, riv);
-      const objs = { ...useDoc.getState().doc.objects };
-      for (const ob of placed) objs[ob.id] = ob;
-      useDoc.setState((s) => ({ doc: { ...s.doc, objects: objs }, revision: s.revision + 1 }));
+    // rivers and settlements, as the generator traced them
+    {
+      const d = useDoc.getState().doc;
+      const p2 = { ...d.paths };
+      const objs = { ...d.objects };
+      for (const river of res.rivers) {
+        const simp = evenSpacing(simplifyPath(chaikin(river.points, 2), 0.6), 5);
+        if (simp.length < 2) continue;
+        const shift = model.geo.wrapX(simp[0][0]) - simp[0][0];
+        const f: PathFeature = {
+          id: uid('path-'),
+          kind: 'river',
+          points: simp.map(([x, y]) => [x + shift, y]),
+          width: Math.max(0.6, river.widthCells),
+          color: st.pathDefaults.river.color,
+          style: 'solid',
+          taper: true,
+          name: '',
+          hidden: false,
+          locked: false,
+        };
+        p2[f.id] = f;
+      }
+      if (o.settlements) for (const ob of scatterSettlements(whole ? 26 : 7, res.region, o.seed, res.rivers)) objs[ob.id] = ob;
+      useDoc.setState((s0) => ({ doc: { ...s0.doc, paths: p2, objects: objs }, revision: s0.revision + 1 }));
     }
     const after = useDoc.getState().doc;
     history.push({
