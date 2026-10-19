@@ -71,6 +71,10 @@ export interface SimResult {
 
 /** m³/s lost per km² of water surface, per mm a year of net evaporation. */
 export const EVAPORATION = 1e-3 / 31.557e6 * 1e6;
+/** Runoff (mm a year) where open water loses as much to the air as rain brings. */
+const RUNOFF_MM = 300;
+/** What a sandy river bed soaks up in a dry climate, m³/s per km² of bed (0.1 m a day). */
+const SOAK = 1.16;
 /** Below this discharge (m³/s) a river has run dry. */
 const DRY = 0.05;
 /**
@@ -191,6 +195,17 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
   const marshes: SimMarsh[] = [];
   const ours = new Set<number>();
   let Q = Math.max(0, p.q);
+  // the land's runoff (m³/s per km²): what rain leaves once the land has given back its share
+  // to the air, from the climate's net evaporation of open water (the wet tropics give some
+  // 700 mm a year, cool middle latitudes about 250, the dry belts nothing)
+  const runoff = Math.max(0, RUNOFF_MM - 0.5 * p.aridity) * EVAPORATION;
+  // what a dry river's bed soaks up, m³/s per km² of bed (about 0.1 m a day in a sandy bed)
+  const soak = SOAK * smoothstep(200, 1500, p.aridity);
+  /** The area a river this long drains (Hack's law), km². */
+  const hackArea = (km: number) => Math.pow(Math.max(0, km) / 1.4, 1 / 0.6);
+  // the source stands for the upper basin that gathers its water: the river is as long as that
+  // basin makes it
+  let riverKm = runoff > 0 ? 1.4 * Math.pow(Q / runoff, 0.6) : 0;
   let cur: SimRiver = { points: [], flow: [], to: 'land', fromLake: false };
   const finish = (to: SimRiver['to'], join?: SimRiver['join']) => {
     cur.to = to;
@@ -285,6 +300,15 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     walked++;
     const g = h(k);
     if (p.seepage > 0) Q *= Math.pow(1 - Math.min(0.99, p.seepage), cellKm / 100);
+    // Where it rains more than the land gives back to the air, the river gathers the runoff of
+    // the land it drains, which grows as it runs on (Hack's law: L = 1.4·A^0.6, km and km²).
+    // Where it is dry, it loses water into its bed (sand and gravel take it in, as in the
+    // ephemeral rivers of deserts), the more the wider its bed, and to the air above it.
+    const before = riverKm;
+    riverKm += cellKm;
+    if (runoff > 0) Q += runoff * (hackArea(riverKm) - hackArea(before));
+    const bedKm = (4.5 * Math.sqrt(Math.max(0, Q))) / 1000;
+    Q -= (soak + evap) * bedKm * cellKm;
     recent.push(g);
     if (recent.length > FLAT_STEPS) recent.shift();
     if (evap > 0 && flat(g)) {
@@ -312,7 +336,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
   // Every hollow the water has been through, and how things stood when it got there: a hollow
   // filling further down may rise to the rim of one above and join it (two lakes become one at
   // the level of the saddle between them), and what happened in between is undone.
-  const hollows: { rivers: number; cur: SimRiver; points: number; lakes: number; marshes: number; Q: number }[] = [];
+  const hollows: { rivers: number; cur: SimRiver; points: number; lakes: number; marshes: number; Q: number; km: number }[] = [];
   const hollowOf = new Map<number, number>();
   let merges = 0;
   for (let step = 0; step < MAX_STEPS; step++) {
@@ -384,7 +408,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       continue;
     }
     // a hollow: the water rises in it until it spills or evaporates as fast as it flows in
-    hollows.push({ rivers: rivers.length, cur, points: cur.points.length, lakes: lakes.length, marshes: marshes.length, Q });
+    hollows.push({ rivers: rivers.length, cur, points: cur.points.length, lakes: lakes.length, marshes: marshes.length, Q, km: riverKm });
     const basin = fillHollow(c);
     if (basin && basin.joined >= 0) {
       if (++merges > MAX_MERGES) break;
@@ -398,6 +422,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       lakes.length = was.lakes;
       marshes.length = was.marshes;
       Q = was.Q;
+      riverKm = was.km;
       hollows.length = basin.joined + 1;
       hollows[basin.joined] = { ...was };
       // the hollows after it are undone: their cells belong to none (the new one takes its own)

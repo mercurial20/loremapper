@@ -77,7 +77,8 @@ describe('water from a source', () => {
         const r = Math.hypot(x - 600, y - 500);
         model.height.ensureTile((x / 256) | 0, (y / 256) | 0)[(y % 256) * 256 + (x % 256)] = r < 1.2 ? plain - 20 : plain;
       }
-    const r = simulateSource(model, params({ q: 1, aridity: 2000, at: [700, 500] }));
+    // (close by: a stream this small soaks away into a desert's sands within a few hundred km)
+    const r = simulateSource(model, params({ q: 1, aridity: 2000, at: [606, 500] }));
     expect(r.end).toBe('closed-lake');
     expect(r.lakes[0].cells.length).toBeLessThan(6);
   });
@@ -197,5 +198,25 @@ describe('water from a source', () => {
       expect(r.end).not.toBe('pit');
     }
   }, 60_000);
+
+  it('lets a weak river fade away in a desert and a strong one cross it, and grows rivers in a wet climate', () => {
+    // a long plain sloping gently to the sea (cells of about 5 km: 900 cells are 4,400 km)
+    const model = new TerrainModel({ ...flatMap(10000, 10000, 'standard'), seaLevel: 0 });
+    for (let y = 0; y < 1024; y++) for (let x = 0; x < 1024; x++) model.height.ensureTile((x / 256) | 0, (y / 256) | 0)[(y % 256) * 256 + (x % 256)] = x < 100 ? -50 : (x - 100) * 3;
+    const desert = (q: number) => simulateSource(model, params({ q, aridity: 2000, at: [1000, 500] }));
+    const weak = desert(5);
+    expect(weak.end).toBe('dry');
+    const strong = desert(3000);
+    expect(strong.end).toBe('sea');
+    const f = strong.rivers[0].flow;
+    // it arrives weaker than it set out (the Nile loses about a third across the Sahara)
+    expect(f[f.length - 1]).toBeLessThan(0.9 * f[0]);
+    expect(f[f.length - 1]).toBeGreaterThan(0.3 * f[0]);
+    // where it rains, the river gathers the runoff of the land it drains on the way
+    const wet = simulateSource(model, params({ q: 100, aridity: -800, at: [1000, 500] }));
+    expect(wet.end).toBe('sea');
+    const g = wet.rivers[0].flow;
+    expect(g[g.length - 1]).toBeGreaterThan(5 * g[0]);
+  });
 });
 
