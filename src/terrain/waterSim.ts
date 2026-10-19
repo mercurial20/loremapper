@@ -392,8 +392,9 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       const was = hollows[basin.joined];
       rivers.length = was.rivers;
       cur = was.cur;
-      cur.points.length = was.points;
-      cur.flow.length = was.points;
+      // (cut back to where it was then; it may have been cut shorter since, at a lake's shore)
+      cur.points.length = Math.min(cur.points.length, was.points);
+      cur.flow.length = cur.points.length;
       lakes.length = was.lakes;
       marshes.length = was.marshes;
       Q = was.Q;
@@ -417,6 +418,22 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       finish('land');
       break;
     }
+    const lake = basin.closed || !(depth < p.carve || basin.cells.length < MIN_LAKE);
+    // A lake: the river ends where it meets the water, at the shore (its mouth opens there, not
+    // somewhere out in the lake, or on through a small one to the far bank)
+    let entry = c;
+    if (lake) {
+      const inLake = new Set(basin.cells);
+      for (let i = 0; i < cur.points.length; i++) {
+        const [x, y] = cur.points[i];
+        const k = Math.floor(y) * W + ((Math.floor(x) % W) + W) % W;
+        if (!inLake.has(k)) continue;
+        cur.points.length = i + 1;
+        cur.flow.length = i + 1;
+        entry = k;
+        break;
+      }
+    }
     if (basin.closed) {
       lakes.push({ cells: basin.cells, level: basin.level, kind: 'closed' });
       for (const k of basin.cells) ours.add(k);
@@ -424,7 +441,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       finish('water');
       break;
     }
-    if (depth < p.carve || basin.cells.length < MIN_LAKE) {
+    if (!lake) {
       // a shallow dip or a flat: the river finds its way across
       for (const k of basin.path) add(k);
       goTo(basin.out);
@@ -435,9 +452,10 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     Q -= evap * basin.km2;
     finish('water');
     cur = { points: [], flow: [], to: 'land', fromLake: true };
-    // the river goes on from the spill point; it starts out in the lake, so that it leaves the
-    // water without a gap
-    for (const k of basin.exit) add(k);
+    // The river goes on from where the water came in, across the lake along its lowest ground
+    // to the spill point: under deep water it is not seen, and where the lake is too shallow to
+    // show (a lake of two hollows joined over a low saddle) the water still runs on unbroken.
+    for (const k of across(basin.region, entry, basin.rim)) add(k);
     goTo(basin.out);
   }
   return { rivers, lakes, marshes, end };
@@ -448,7 +466,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
    * spills at the rim's lowest point, into `out`. `path` runs from the pit to `out` across the
    * hollow (for a river passing through a shallow dip), `exit` from the shore to `out`.
    */
-  function fillHollow(pit: number): { cells: number[]; level: number; km2: number; closed: boolean; out: number; path: number[]; exit: number[]; joined: number } | null {
+  function fillHollow(pit: number): { cells: number[]; level: number; km2: number; closed: boolean; out: number; path: number[]; region: number[]; rim: number; joined: number } | null {
     const heap = new Heap();
     // the earliest hollow (of those the water came through) this one rises into, or -1
     let joined = -1;
@@ -468,7 +486,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
           // short of the next one it would reach.
           const top = level + 0.5 * (z - level);
           const cells = popped.filter((x) => h(x) < top);
-          return { cells, level: top, km2, closed: true, out: -1, path: [], exit: [], joined };
+          return { cells, level: top, km2, closed: true, out: -1, path: [], region: popped, rim: -1, joined };
         }
         level = z;
       }
@@ -491,11 +509,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
           // the way out: lower land (or the sea) beyond the rim (not back the way the water came)
           const cells = popped.filter((x) => h(x) < level);
           const path = across(popped, pit, k);
-          // out of the lake: from its deepest point (under the water), over the rim; where the
-          // lake is drawn narrower than its cells (a lake in a narrow valley), the river still
-          // meets its water
-          const exit = [...path, n];
-          return { cells, level, km2: cells.reduce((s, x) => s + area(x), 0), closed: false, out: n, path: path.slice(1), exit, joined };
+          return { cells, level, km2: cells.reduce((s, x) => s + area(x), 0), closed: false, out: n, path: path.slice(1), region: popped, rim: k, joined };
         }
         heap.push(n, hn);
       }

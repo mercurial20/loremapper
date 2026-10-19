@@ -3,6 +3,7 @@ import { flatMap } from '../core/planet';
 import { setLake } from './lakes';
 import { TerrainModel } from './TerrainModel';
 import { Geo } from '../core/geo';
+import { Simplex3 } from '../core/noise3';
 import { aridityAt, climateLatAt, EVAPORATION, simulateSource } from './waterSim';
 
 /** A model whose ground is `f(x, y)` over a 1024-cell square (the sea around it). */
@@ -41,9 +42,12 @@ describe('water from a source', () => {
     expect(r.end).toBe('sea');
     expect(r.rivers.length).toBe(2);
     expect(r.rivers[1].fromLake).toBe(true);
-    // the river out leaves from inside the lake's water, without a gap at the shore
-    const [sx, sy] = r.rivers[1].points[0];
-    expect(r.lakes[0].cells).toContain(Math.floor(sy) * model.W + Math.floor(sx));
+    // the river in ends where it meets the water, at the shore; the river out goes on from there
+    const cell = ([x, y]: [number, number]) => Math.floor(y) * model.W + Math.floor(x);
+    const into = r.rivers[0].points;
+    expect(r.lakes[0].cells).toContain(cell(into[into.length - 1]));
+    expect(r.lakes[0].cells).not.toContain(cell(into[into.length - 2]));
+    expect(cell(r.rivers[1].points[0])).toBe(cell(into[into.length - 1]));
     // the river out carries what the lake did not take
     expect(r.rivers[1].flow[0]).toBeLessThan(200);
     expect(r.rivers[1].flow[0]).toBeGreaterThan(150);
@@ -100,6 +104,10 @@ describe('water from a source', () => {
     expect(r.lakes[0].cells).toContain(500 * W + 600);
     expect(r.lakes[0].cells).toContain(500 * W + 700);
     expect(r.lakes[0].level).toBeGreaterThan(100);
+    // the water runs on unbroken: the river out starts where the river in met the lake
+    const end = r.rivers[0].points[r.rivers[0].points.length - 1];
+    const start = r.rivers[1].points[0];
+    expect(Math.hypot(end[0] - start[0], end[1] - start[1])).toBeLessThan(1.5);
   });
 
   it('crosses a flat by the shortest way, not back and forth over all of it', () => {
@@ -171,5 +179,23 @@ describe('water from a source', () => {
     expect(climateLatAt(planet, geo, 0)).toBeCloseTo(30 + 9, 0);
     expect(climateLatAt({}, geo, geo.H / 2)).toBe(45);
   });
+
+  it('finds a way from anywhere on rough land, with every point of every river in place', () => {
+    // hills and hollows of many sizes falling to a sea in the west
+    const noise = new Simplex3(7);
+    const model = land((x, y) => (x < 100 ? -50 : (x - 100) * 0.08 + 40 * noise.fbm(x, y, 0.5, 1 / 90, 5)));
+    let seed = 11;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 40; i++) {
+      const at: [number, number] = [150 + rnd() * 850, 20 + rnd() * 980];
+      if (model.heightAt(at[0], at[1]) < 0) continue;
+      const r = simulateSource(model, params({ at, q: 1 + rnd() * 500, aridity: -500 + rnd() * 2500 }));
+      for (const river of r.rivers) {
+        expect(river.points.length).toBe(river.flow.length);
+        for (const pt of river.points) expect(Number.isFinite(pt[0]) && Number.isFinite(pt[1])).toBe(true);
+      }
+      expect(r.end).not.toBe('pit');
+    }
+  }, 60_000);
 });
 
