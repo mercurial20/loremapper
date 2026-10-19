@@ -67,6 +67,17 @@ export function PlanetDialog() {
         <MeasureField label={t('Sea level')} kind="height" value={p.seaLevel} min={-5000} max={5000} step={{ metric: 10, imperial: 50 }} onChange={(v) => upd({ seaLevel: v })} />
         <MeasureField label={t('Max elevation (a.s.l.)')} kind="height" value={p.maxElevation} min={500} max={30000} step={{ metric: 100, imperial: 500 }} onChange={(v) => upd({ maxElevation: v })} />
         <MeasureField label={flat ? t('Deepest water') : t('Deepest ocean')} kind="height" value={p.minElevation} min={-30000} max={-100} step={{ metric: 100, imperial: 500 }} onChange={(v) => upd({ minElevation: v })} />
+        {flat && (
+          <NumberField
+            label={t('Climate latitude of the middle')}
+            value={p.climateLatDeg ?? 45}
+            min={-85}
+            max={85}
+            step={1}
+            suffix="°"
+            onChange={(v) => upd({ climateLatDeg: v })}
+          />
+        )}
         <NumberField label={t('Generator land share')} value={Math.round(p.landFraction * 100)} min={5} max={70} step={1} suffix="%" onChange={(v) => upd({ landFraction: v / 100 })} />
       </div>
       {!flat && (

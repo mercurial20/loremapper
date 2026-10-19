@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { flatMap } from '../core/planet';
 import { setLake } from './lakes';
 import { TerrainModel } from './TerrainModel';
-import { aridityAt, EVAPORATION, simulateSource } from './waterSim';
+import { Geo } from '../core/geo';
+import { aridityAt, climateLatAt, EVAPORATION, simulateSource } from './waterSim';
 
 /** A model whose ground is `f(x, y)` over a 1024-cell square (the sea around it). */
 function land(f: (x: number, y: number) => number) {
@@ -60,6 +61,44 @@ describe('water from a source', () => {
     expect(km2 * aridity * EVAPORATION).toBeLessThan(q * 1.3);
   });
 
+  it('ends in a lake of a cell or two on a coarse map, where that is hundreds of km²', () => {
+    // cells of about 5 km: one cell of water loses some 1.5 m³/s to the air in a dry climate
+    const model = new TerrainModel({ ...flatMap(10000, 10000, 'standard'), seaLevel: 0 });
+    for (let y = 0; y < 1024; y++)
+      for (let x = 0; x < 1024; x++) {
+        const plain = x < 100 ? -50 : (x - 100) * 3;
+        const r = Math.hypot(x - 600, y - 500);
+        model.height.ensureTile((x / 256) | 0, (y / 256) | 0)[(y % 256) * 256 + (x % 256)] = r < 1.2 ? plain - 20 : plain;
+      }
+    const r = simulateSource(model, params({ q: 1, aridity: 2000, at: [700, 500] }));
+    expect(r.end).toBe('closed-lake');
+    expect(r.lakes[0].cells.length).toBeLessThan(6);
+  });
+
+  it('makes one lake of two hollows that fill into each other', () => {
+    // a trough below the plain with two hollows in it, a saddle between them
+    const lerp = (pts: [number, number][], x: number) => {
+      for (let i = 1; i < pts.length; i++)
+        if (x <= pts[i][0]) return pts[i - 1][1] + ((pts[i][1] - pts[i - 1][1]) * (x - pts[i - 1][0])) / (pts[i][0] - pts[i - 1][0]);
+      return pts[pts.length - 1][1];
+    };
+    const model = land((x, y) => {
+      if (x < 100) return -50;
+      const plain = (x - 100) * 0.3;
+      if (x < 560 || x > 740 || Math.abs(y - 500) >= 40) return plain;
+      const floor = lerp([[560, 138], [600, 40], [650, 100], [700, 60], [740, 192]], x);
+      return floor + (plain - floor) * ((y - 500) / 40) ** 2;
+    });
+    const r = simulateSource(model, params({ q: 200 }));
+    expect(r.lakes.length).toBe(1);
+    expect(r.end).toBe('sea');
+    // the lake covers both hollows, up to the trough's rim
+    const W = model.W;
+    expect(r.lakes[0].cells).toContain(500 * W + 600);
+    expect(r.lakes[0].cells).toContain(500 * W + 700);
+    expect(r.lakes[0].level).toBeGreaterThan(100);
+  });
+
   it('crosses a dip shallower than the carving depth without a lake', () => {
     const model = land((x, y) => {
       if (x < 100) return -50;
@@ -96,4 +135,14 @@ describe('water from a source', () => {
     expect(aridityAt(-25)).toBe(aridityAt(25));
     expect(aridityAt(45)).toBeLessThan(aridityAt(25));
   });
+
+  it('gives a flat map the climate of its chosen latitude, a band as tall as the map', () => {
+    const planet = { ...flatMap(2000, 2000, 'standard'), climateLatDeg: 30 };
+    const geo = new Geo(planet);
+    expect(climateLatAt(planet, geo, geo.H / 2)).toBeCloseTo(30, 5);
+    // 2,000 km is about 18° of latitude: the top is further from the equator
+    expect(climateLatAt(planet, geo, 0)).toBeCloseTo(30 + 9, 0);
+    expect(climateLatAt({}, geo, geo.H / 2)).toBe(45);
+  });
 });
+

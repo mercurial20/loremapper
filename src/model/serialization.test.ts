@@ -29,4 +29,11 @@ describe('project serialisation', () => {
     const bare = migrateProject({ ...old, meta: { name: 'Bare' } });
     expect(bare.meta.planet.radiusKm).toBe(7410);
   });
+
+  it('opens maps from before water sources with none', () => {
+    const v4 = { id: 'x', formatVersion: 4, meta: { name: 'Four' }, doc: { ranges: {} }, rasterDefaults: { height: -3800, biome: 0, fog: 0, water: 0, relief: 0, lake: -32768 }, updatedAt: 0 };
+    const m = migrateProject(v4);
+    expect(m.formatVersion).toBe(FORMAT_VERSION);
+    expect(m.doc.sources).toEqual({});
+  });
 });

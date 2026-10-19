@@ -65,8 +65,45 @@ export function nearestOnCurve(curve: Vec2[], p: Vec2): { t: number; d: number; 
   return best;
 }
 
+/** Where each control point lies along a line, 0 … 1 of its length. */
+const spans = new WeakMap<Vec2[], number[]>();
+function controlSpan(points: Vec2[]): number[] {
+  const known = spans.get(points);
+  if (known) return known;
+  const cum = curveLengths(points);
+  const total = cum[cum.length - 1] || 1;
+  const out = cum.map((c) => c / total);
+  spans.set(points, out);
+  return out;
+}
+
+/** The discharge of a river from a source `t` of the way along it, m³/s. */
+export function flowAt(p: PathFeature, t: number): number {
+  const f = p.flow!;
+  const at = controlSpan(p.points);
+  const tt = clamp(t, 0, 1);
+  let i = 1;
+  while (i < at.length - 1 && at[i] < tt) i++;
+  const u = clamp((tt - at[i - 1]) / Math.max(1e-9, at[i] - at[i - 1]), 0, 1);
+  return f[i - 1] + (f[i] - f[i - 1]) * u;
+}
+
+/** The widest a river from a source gets: where it carries the most. */
+const peakFlow = (p: PathFeature) => Math.max(1e-6, ...p.flow!);
+
+/**
+ * How wide a river carrying `q` m³/s is drawn, cells of `cellKm`: as wide as it is (hydraulic
+ * geometry, about 4.5·√Q metres), but never thinner than a map would draw it, wider as it
+ * carries more.
+ */
+export function widthForFlow(q: number, cellKm: number): number {
+  return Math.max((0.0045 * Math.sqrt(Math.max(0, q))) / cellKm, 0.3 + 0.4 * Math.pow(Math.max(0, q) / 100, 0.35));
+}
+
 /** A river's own width `t` of the way from its source (0) to its mouth (1), world units. */
 export function ownWidth(p: PathFeature, t: number): number {
+  // a river from a source: as wide as the water it carries there (width ∝ Q^0.4 below its widest)
+  if (p.flow && p.flow.length === p.points.length) return Math.max(0.25, p.width * Math.pow(Math.max(0, flowAt(p, t)) / peakFlow(p), 0.4));
   const wMin = p.taper ? p.width * 0.22 : p.width;
   return wMin + (p.width - wMin) * Math.pow(clamp(t, 0, 1), 0.8);
 }

@@ -47,8 +47,40 @@ export interface PathFeature {
    * the river grows wider below the join). None: it ends on land.
    */
   outlet?: PathOutlet;
+  /** Rivers: the water source it flows from (its course is worked out from the land, not drawn). */
+  source?: string;
+  /** Rivers from a source: the discharge at each point, m³/s (its width follows it). */
+  flow?: number[];
   name: string;
   hidden: boolean;
+  locked: boolean;
+}
+
+/** How a source's water ended: in the sea, a lake, a lake of its own with no outflow, … */
+export type SourceEnd = 'sea' | 'lake' | 'closed-lake' | 'marsh' | 'river' | 'edge' | 'pit' | 'dry';
+
+/**
+ * A water source (a spring, the outflow of a glacier, the head of a river): where the water
+ * comes out and how much. Where it goes is worked out from the land: rivers downhill, lakes in
+ * hollows, marshes on flats, until the water reaches the sea or the climate takes it all.
+ */
+export interface WaterSource {
+  id: string;
+  name: string;
+  /** Where the water comes out, continuous (unwrapped) world coords. */
+  at: Vec2;
+  /** Discharge, m³/s. */
+  q: number;
+  /** Net evaporation (evaporation minus rain on open water), mm a year; null: from the latitude. */
+  aridity: number | null;
+  /** What it made the last time it ran (its rivers are the paths with this `source`). */
+  made: {
+    /** A cell of each lake it filled. */
+    lakes: number[];
+    /** Marshes on the way (world cells, radius in cells). */
+    marshes: { x: number; y: number; r: number }[];
+    end: SourceEnd;
+  };
   locked: boolean;
 }
 
@@ -217,6 +249,7 @@ export interface MapDocument {
   objects: Record<string, MapObject>;
   paths: Record<string, PathFeature>;
   ranges: Record<string, MountainRange>;
+  sources: Record<string, WaterSource>;
   territories: Record<string, Territory>;
   labels: Record<string, MapLabel>;
   peaks: Record<string, PeakAnnotation>;
@@ -266,6 +299,7 @@ export function emptyDocument(): MapDocument {
     objects: {},
     paths: {},
     ranges: {},
+    sources: {},
     territories: {},
     labels: {},
     peaks: {},

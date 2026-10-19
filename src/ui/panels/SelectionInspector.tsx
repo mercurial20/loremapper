@@ -34,6 +34,7 @@ import { ColorField, Hint, MeasureField, NumberField, Select, Slider, TextField,
 import { useTranslation } from 'react-i18next';
 import { t } from '../../i18n';
 import { riverEnd, tributaries } from '../../editor/waterLinks';
+import { RiverSource } from './SourceControls';
 import { nameAt } from '../../editor/geography';
 
 const SWATCHES = ['#b5452f', '#2f5d9a', '#3f8f5a', '#c79a2e', '#7a4aa0', '#2a8a8a', '#8f3a5c', '#5a5a5a'];
@@ -235,6 +236,7 @@ function PathInspector({ p }: { p: PathFeature }) {
       {p.kind === 'river' ? (
         // a river is the map's water, so it has no colour of its own
         <>
+          {p.source && <RiverSource id={p.source} />}
           <div className="kv">
             <span>{t('Flows into')}</span>
             <b>{flowsInto(p)}</b>
@@ -262,11 +264,14 @@ function PathInspector({ p }: { p: PathFeature }) {
           onChange={(v) => upd({ style: v }, 'style')}
         />
       ) : (
-        <Toggle label={t('Taper from source to mouth')} checked={p.taper} onChange={(v) => upd({ taper: v }, 'taper')} />
+        // a river from a source is as wide as the water it carries, and runs the way the water does
+        !p.flow && <Toggle label={t('Taper from source to mouth')} checked={p.taper} onChange={(v) => upd({ taper: v }, 'taper')} />
       )}
-      <button className="btn" onClick={() => updateFeature('path', p.id, { points: p.points.slice().reverse() }, t('Reverse path'))}>
-        {t('Reverse direction')}
-      </button>
+      {!p.source && (
+        <button className="btn" onClick={() => updateFeature('path', p.id, { points: p.points.slice().reverse() }, t('Reverse path'))}>
+          {t('Reverse direction')}
+        </button>
+      )}
       <Hint>{t('Drag the control points to reshape. Double-click the line to add a point; Alt-click a point to delete it.')}</Hint>
       <Actions locked={p.locked} hidden={p.hidden} onLock={() => upd({ locked: !p.locked }, 'lock')} onHide={() => upd({ hidden: !p.hidden }, 'hide')} />
     </>

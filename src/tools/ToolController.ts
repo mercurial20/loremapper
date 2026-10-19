@@ -35,6 +35,7 @@ import { clearLake, fillBasin, lakeAt, lakeDepthAt, lakesFollowGround, paintLake
 import { pickLake, selectLake } from '../editor/lakes';
 import { riverSnapAt, snapRiver, type SnappedRiver } from '../editor/riverSnap';
 import { addCrestLine, snapToCrest } from '../editor/ranges';
+import { addSource, sourceAt, updateSource } from '../editor/sources';
 import { crestCurve } from '../terrain/ranges';
 import { sampleSpline } from '../render/vectorGeometry';
 import type { TerrainModel, TileChange } from '../terrain/TerrainModel';
@@ -53,6 +54,8 @@ type Drag =
   | { kind: 'vertex'; ref: SelectionRef; index: number; key: string }
   | { kind: 'labelAnchor'; id: string; key: string }
   | { kind: 'freehand'; points: Vec2[]; startScreen: Vec2; moved: boolean }
+  // River tool, sources: a press on a source (`id`) drags it; elsewhere a click places one
+  | { kind: 'source'; id: string | null; at: Vec2; startScreen: Vec2; moved: boolean }
   | { kind: 'stamp'; last: Vec2 | null; key: string };
 
 /** Vector content removed by one eraser stroke (applied live, undone together with the biome erase). */
@@ -366,6 +369,10 @@ export class ToolController {
       case 'road':
       case 'territory':
       case 'ridge':
+        if (tool === 'river' && st.riverMode === 'source') {
+          this.drag = { kind: 'source', id: sourceAt([x, y], SOURCE_HIT_PX / editor.zoom), at: [x, y], startScreen: [e.clientX, e.clientY], moved: false };
+          break;
+        }
         this.drag = { kind: 'freehand', points: [[x, y]], startScreen: [e.clientX, e.clientY], moved: false };
         break;
       case 'lake':
@@ -461,6 +468,12 @@ export class ToolController {
         case 'stamp':
           this.stampAt(x, y, d.key);
           break;
+        case 'source':
+          if (Math.hypot(e.clientX - d.startScreen[0], e.clientY - d.startScreen[1]) > 4) d.moved = true;
+          d.at = [x, y];
+          // a source being dragged shows where it goes
+          if (d.id && d.moved) this.syncSources({ id: d.id, at: d.at });
+          break;
         case 'reference':
           this.referenceDrag(d, x, y);
           break;
@@ -469,7 +482,7 @@ export class ToolController {
       if (this.tool === 'select') this.updateHover(x, y);
       if (this.draft) this.showDraft(this.draft.points, [nearX(editor.model.geo, this.draft.points[0][0], x), y]);
       if (this.crestLines()) this.showCrestSnap(x, y);
-      if (this.tool === 'river') this.showRiverSnap(x, y);
+      if (this.tool === 'river' && useEditor.getState().riverMode !== 'source') this.showRiverSnap(x, y);
       if (this.tool === 'measure' && this.measure.length && !this.measureDone) this.showMeasure([x, y]);
     }
     this.updateBrushCursor();
@@ -533,9 +546,44 @@ export class ToolController {
       case 'vertex':
         this.endVertex(d);
         break;
+      case 'source':
+        this.endSource(d);
+        break;
     }
     this.updateCursorStyle();
   };
+
+  /** A source placed (a click), picked (a click on it) or moved (dragged). */
+  private endSource(d: Extract<Drag, { kind: 'source' }>) {
+    const st = useEditor.getState();
+    if (d.id) {
+      if (d.moved) updateSource(d.id, { at: d.at });
+      st.set({ activeSource: d.id });
+      this.syncSources();
+      return;
+    }
+    if (d.moved || this.layerLocked('river')) return;
+    const id = addSource(d.at, st.sourceQ);
+    if (id) st.set({ activeSource: id });
+  }
+
+  /**
+   * Show the water sources: all of them while placing sources, or the source of the selected
+   * river. `drag` is a source being moved.
+   */
+  syncSources(drag?: { id: string; at: Vec2 }) {
+    if (!editor.layers) return;
+    const st = useEditor.getState();
+    const doc = useDoc.getState().doc;
+    let list = Object.values(doc.sources);
+    if (!(st.tool === 'river' && st.riverMode === 'source')) {
+      const from = new Set(st.selection.map((r) => (r.kind === 'path' ? doc.paths[r.id]?.source : undefined)).filter(Boolean));
+      list = list.filter((s) => from.has(s.id));
+    }
+    const sources = list.length ? list.map((s) => ({ at: drag?.id === s.id ? drag.at : s.at, active: s.id === st.activeSource || s.id === drag?.id })) : null;
+    this.overlay().set({ sources });
+    editor.requestRender();
+  }
 
   /** A river's mouth dragged to a new place snaps to the water or river there (or lets go of it). */
   private endVertex(d: Extract<Drag, { kind: 'vertex' }>) {
@@ -1764,7 +1812,11 @@ export function pushTileChange(change: TileChange, label: string, model = editor
 
 useDoc.subscribe((s, prev) => {
   if (s.doc.ranges !== prev.doc.ranges) tools.syncCrests();
+  if (s.doc.sources !== prev.doc.sources) tools.syncSources();
 });
+
+/** How close to a source (screen px) a press picks it. */
+const SOURCE_HIT_PX = 12;
 
 /** How close to a crest (screen px) a new line's end joins it. */
 const CREST_SNAP_PX = 14;
@@ -1781,6 +1833,7 @@ i18n.on('languageChanged', () => tools.refreshMeasure());
 useEditor.subscribe((s, prev) => {
   if (s.units !== prev.units) tools.refreshMeasure();
   if (s.tool !== prev.tool || s.rangeMode !== prev.rangeMode || s.activeRange !== prev.activeRange) tools.syncCrests();
+  if (s.tool !== prev.tool || s.riverMode !== prev.riverMode || s.activeSource !== prev.activeSource || s.selection !== prev.selection) tools.syncSources();
   if (s.referenceEdit !== prev.referenceEdit || s.riverMode !== prev.riverMode || s.rangeMode !== prev.rangeMode) tools.refreshCursor();
 });
 

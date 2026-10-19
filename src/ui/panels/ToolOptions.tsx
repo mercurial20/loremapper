@@ -15,6 +15,7 @@ import { brushGroupOf, TERRAIN_PRESETS, useEditor, type BrushGroup, type Terrain
 import { raiseRate, type BrushParams } from '../../terrain/brushes';
 import { pushTileChange } from '../../tools/ToolController';
 import { ALL_TOOLS } from '../toolDefs';
+import { SourceControls } from './SourceControls';
 import { AlphaBadge, ColorField, Hint, MeasureField, Segmented, Select, Slider, Toggle } from '../controls/controls';
 import { useTranslation } from 'react-i18next';
 
@@ -384,6 +385,27 @@ export function ToolOptions() {
         </>
       )}
       {tool === 'river' && (
+        <Segmented
+          label={t('Make a river')}
+          value={st.riverMode === 'source' ? 'source' : 'path'}
+          onChange={(v) => st.set({ riverMode: v })}
+          options={[
+            { value: 'path', label: t('Draw'), title: t('Draw the river where you want it') },
+            {
+              value: 'source',
+              label: (
+                <>
+                  {t('From a source')}
+                  <AlphaBadge tip={t('A new tool that is still being tested: it may work unstably or not quite right.')} />
+                </>
+              ),
+              title: t('Place a source and let its water find the way: rivers, lakes and marshes follow the land'),
+            },
+          ]}
+        />
+      )}
+      {tool === 'river' && st.riverMode === 'source' && <SourceControls />}
+      {tool === 'river' && st.riverMode !== 'source' && (
         <>
           <Hint>{t('End a river at the sea, a lake or another river and it joins it: the mouth opens into the water, and a river grows wider below each river that flows into it. Drawn from the mouth upstream, it is turned around.')}</Hint>
           <Toggle

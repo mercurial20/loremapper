@@ -3,7 +3,7 @@ import { flatMap } from '../core/planet';
 import { riverSnapAt, snapRiver } from '../editor/riverSnap';
 import { setLake } from '../terrain/lakes';
 import { TerrainModel } from '../terrain/TerrainModel';
-import { alongCurve, riverCurve, riverNet, widthAt } from './rivers';
+import { alongCurve, ownWidth, riverCurve, riverNet, widthAt, widthForFlow } from './rivers';
 import type { PathFeature, Vec2 } from './types';
 
 const river = (id: string, points: Vec2[], width: number, outlet?: PathFeature['outlet']): PathFeature => ({
@@ -173,3 +173,20 @@ describe('river snapping', () => {
     expect(out.points[out.points.length - 1]).toEqual([690, 700]);
   });
 });
+
+describe('rivers from a source', () => {
+  it('are as wide as the water they carry', () => {
+    const p = { ...river('s', [[0, 0], [10, 0], [20, 0]], widthForFlow(400, 1)), taper: false, flow: [25, 100, 400] };
+    // widest where it carries the most, narrower upstream by Q^0.4
+    expect(ownWidth(p, 1)).toBeCloseTo(p.width, 5);
+    expect(ownWidth(p, 0.5)).toBeCloseTo(p.width * 0.25 ** 0.4, 5);
+    expect(ownWidth(p, 0)).toBeLessThan(ownWidth(p, 0.5));
+  });
+
+  it('are drawn wider for more water, and never thinner than they are', () => {
+    expect(widthForFlow(1000, 1)).toBeGreaterThan(widthForFlow(100, 1));
+    // on a map of 10 m cells a river of 10,000 m³/s (about 450 m wide) is drawn as wide as it is
+    expect(widthForFlow(10000, 0.01)).toBeCloseTo(45, 0);
+  });
+});
+

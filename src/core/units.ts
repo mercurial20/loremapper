@@ -41,6 +41,13 @@ export function formatHeight(m: number, u: Units): string {
   return u === 'imperial' ? `${num(m * FT_PER_M)} ${t('ft')}` : `${num(m)} ${t('m')}`;
 }
 
+/** A discharge (water flowing by): m³/s, or ft³/s. */
+export function formatFlow(m3s: number, u: Units): string {
+  const v = u === 'imperial' ? m3s * FT_PER_M ** 3 : m3s;
+  const unit = u === 'imperial' ? t('ft³/s') : t('m³/s');
+  return `${num(v, v < 10 ? 1 : 0)} ${unit}`;
+}
+
 // ---- numeric inputs: show converted values, store canonical ones
 
 export const lengthUnit = (u: Units) => (u === 'imperial' ? t('mi') : t('km'));

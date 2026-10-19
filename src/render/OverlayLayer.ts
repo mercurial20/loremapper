@@ -37,6 +37,8 @@ export interface OverlayState {
   crests: { lines: Vec2[][]; active: boolean }[] | null;
   /** Where a line being drawn will join another one. */
   snap: Vec2 | null;
+  /** Water sources (the one being edited is active). */
+  sources: { at: Vec2; active: boolean }[] | null;
 }
 
 const ACCENT = 0xf2b14a;
@@ -57,7 +59,7 @@ export class OverlayLayer implements WorldLayer {
     fill: '#ffffff',
     stroke: { color: '#1b1612', width: 3.5, join: 'round' },
   });
-  state: OverlayState = { brush: null, draft: null, measure: null, marquee: null, hover: null, stampPreview: null, region: null, crests: null, snap: null };
+  state: OverlayState = { brush: null, draft: null, measure: null, marquee: null, hover: null, stampPreview: null, region: null, crests: null, snap: null, sources: null };
   private doc: MapDocument | null = null;
   private selection: SelectionRef[] = [];
   private dirty = true;
@@ -238,6 +240,15 @@ export class OverlayLayer implements WorldLayer {
           strokePolyline(g, line);
           g.stroke({ width: 2 * px, color: r.active ? ACCENT : 0x3b2a1e, alpha: 0.95, cap: 'round', join: 'round' });
         }
+    }
+    // water sources: a drop of water ringed in white, the one being edited in the accent
+    if (s.sources) {
+      for (const src of s.sources) {
+        const [x, y] = src.at;
+        if (src.active) g.circle(x, y, 10 * px).stroke({ width: 2.5 * px, color: ACCENT, alpha: 1 });
+        g.circle(x, y, 6 * px).fill({ color: 0x2f6f9f, alpha: 1 }).stroke({ width: 2 * px, color: 0xffffff, alpha: 0.95 });
+        g.circle(x - 1.6 * px, y - 1.6 * px, 1.6 * px).fill({ color: 0xffffff, alpha: 0.8 });
+      }
     }
     if (s.snap) {
       g.circle(s.snap[0], s.snap[1], 7 * px).stroke({ width: 2 * px, color: ACCENT, alpha: 1 });

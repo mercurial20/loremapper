@@ -11,6 +11,8 @@ export interface PlanetSettings {
   mapType?: MapType;
   /** Flat maps: ground size of one cell, km. */
   cellKm?: number;
+  /** Flat maps: the latitude whose climate the middle of the map has, degrees (45 if unset). */
+  climateLatDeg?: number;
   /** Planetary radius in km (planets only). */
   radiusKm: number;
   /** Surface gravity in g. Informational only. */

@@ -131,8 +131,12 @@ interface EditorState {
   viewProjection: ProjectionParams | null;
   /** Placing the tracing picture: drag to move, corners to resize. */
   referenceEdit: boolean;
-  /** River tool: paint water with a brush, or draw a river as a path. */
-  riverMode: 'brush' | 'path';
+  /** River tool: paint water with a brush, draw a river as a path, or place a source and let the water find its way. */
+  riverMode: 'brush' | 'path' | 'source';
+  /** River tool, sources: how much water a new source gives, m³/s. */
+  sourceQ: number;
+  /** The water source being edited. */
+  activeSource: string | null;
   /** Rivers cut a bed and a soft valley into the terrain as they are drawn. */
   riverCarve: boolean;
   /** Lake tool: fill a hollow up to where it spills (a click), or paint a lake's shape. */
@@ -270,6 +274,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   viewProjection: null,
   referenceEdit: false,
   riverMode: 'path',
+  sourceQ: 100,
+  activeSource: null,
   riverCarve: true,
   lakeMode: 'fill',
   lakeDepth: 40,

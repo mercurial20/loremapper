@@ -236,3 +236,31 @@ export function polygonCentroid(poly: [number, number][]): [number, number] {
   }
   return [cx / (3 * a), cy / (3 * a)];
 }
+
+/** Corner-cutting smoothing: takes the staircase out of grid-traced lines, keeps the ends. */
+export function chaikin(pts: [number, number][], passes: number): [number, number][] {
+  let p = pts;
+  for (let k = 0; k < passes && p.length > 2; k++) {
+    const out: [number, number][] = [p[0]];
+    for (let i = 0; i < p.length - 1; i++) {
+      const [ax, ay] = p[i];
+      const [bx, by] = p[i + 1];
+      out.push([ax * 0.75 + bx * 0.25, ay * 0.75 + by * 0.25], [ax * 0.25 + bx * 0.75, ay * 0.25 + by * 0.75]);
+    }
+    out.push(p[p.length - 1]);
+    p = out;
+  }
+  return p;
+}
+
+/** Split long segments so spline control points are evenly spaced (no overshooting loops). */
+export function evenSpacing(pts: [number, number][], maxLen: number): [number, number][] {
+  const out: [number, number][] = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, ay] = pts[i - 1];
+    const [bx, by] = pts[i];
+    const n = Math.ceil(Math.hypot(bx - ax, by - ay) / maxLen);
+    for (let s = 1; s <= n; s++) out.push([ax + ((bx - ax) * s) / n, ay + ((by - ay) * s) / n]);
+  }
+  return out;
+}

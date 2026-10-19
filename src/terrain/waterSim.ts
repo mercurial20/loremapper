@@ -1,3 +1,5 @@
+import type { Geo } from '../core/geo';
+import type { PlanetSettings } from '../core/planet';
 import type { Vec2 } from '../model/types';
 import { isLake, type TerrainModel } from './TerrainModel';
 
@@ -73,9 +75,9 @@ const MIN_LAKE = 6;
 const MAX_BASIN = 400_000;
 /** Longest course followed, steps (cells). */
 const MAX_STEPS = 40_000;
-/** A stretch this long (steps) falling less than FLAT_DROP metres is flat ground. */
+/** A stretch this long (steps) falling less than FLAT_SLOPE (m/m) is flat ground. */
 const FLAT_STEPS = 20;
-const FLAT_DROP = 1.5;
+const FLAT_SLOPE = 5e-5;
 
 /** Binary min-heap of cells by height. */
 class Heap {
@@ -137,6 +139,9 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
   const wrap = hg.wrap;
   const h = (k: number) => hg.get(k % W, (k / W) | 0);
   const cellKm = model.geo.kmPerCellY;
+  // a stretch of FLAT_STEPS cells is flat when it falls less than this (m)
+  const flatDrop = FLAT_SLOPE * FLAT_STEPS * cellKm * 1000;
+  const flat = (g: number) => recent.length === FLAT_STEPS && recent[0] - g < flatDrop;
   const area = (k: number) => model.geo.cellAreaKm2((k / W) | 0);
   const evap = Math.max(0, p.aridity) * EVAPORATION;
   const neighbours = (k: number, out: number[]) => {
@@ -183,6 +188,11 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
   const recent: number[] = [];
   let lastMarsh = -1e9;
   let end: SimEnd = 'pit';
+  // Every hollow the water has been through, and how things stood when it got there: a hollow
+  // filling further down may rise to the rim of one above and join it (two lakes become one at
+  // the level of the saddle between them), and what happened in between is undone.
+  const hollows: { rivers: number; cur: SimRiver; points: number; lakes: number; marshes: number; Q: number }[] = [];
+  const hollowOf = new Map<number, number>();
   for (let step = 0; step < MAX_STEPS; step++) {
     add(c);
     const g = h(c);
@@ -213,16 +223,20 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     // flat ground: the river spreads into marsh and loses water to the air
     recent.push(g);
     if (recent.length > FLAT_STEPS) recent.shift();
-    if (evap > 0 && recent.length === FLAT_STEPS && recent[0] - g < FLAT_DROP) {
-      const r = Math.min(25, 1.5 + 0.4 * Math.sqrt(Q));
-      Q -= evap * 2 * r * area(c);
-      if (step - lastMarsh >= Math.max(1, r * 0.7)) {
+    if (evap > 0 && flat(g)) {
+      // the marsh is the wider the more water spreads into it (the Okavango's, of some
+      // 300 m³/s, is about 50 km across; the Sudd's, of 1,000, about 100 km)
+      const wideKm = 3 * Math.sqrt(Q);
+      const r = Math.max(1, (0.5 * wideKm) / cellKm);
+      Q -= evap * wideKm * Math.sqrt(area(c));
+      // discs along the way, close enough to read as one marsh
+      if (step - lastMarsh >= Math.max(1, Math.min(12, r * 0.7))) {
         marshes.push({ x: (c % W) + 0.5, y: ((c / W) | 0) + 0.5, r });
         lastMarsh = step;
       }
     }
     if (Q <= DRY) {
-      end = recent.length === FLAT_STEPS && recent[0] - g < FLAT_DROP ? 'marsh' : 'dry';
+      end = flat(g) ? 'marsh' : 'dry';
       finish('land');
       break;
     }
@@ -243,13 +257,36 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       continue;
     }
     // a hollow: the water rises in it until it spills or evaporates as fast as it flows in
+    hollows.push({ rivers: rivers.length, cur, points: cur.points.length, lakes: lakes.length, marshes: marshes.length, Q });
     const basin = fillHollow(c);
+    if (basin && basin.joined >= 0) {
+      // it rose into hollows the water came through before: one lake now, filled from there
+      const was = hollows[basin.joined];
+      rivers.length = was.rivers;
+      cur = was.cur;
+      cur.points.length = was.points;
+      cur.flow.length = was.points;
+      lakes.length = was.lakes;
+      marshes.length = was.marshes;
+      Q = was.Q;
+      hollows.length = basin.joined + 1;
+      hollows[basin.joined] = { ...was };
+    }
+    if (basin) for (const k of basin.cells) hollowOf.set(k, hollows.length - 1);
     if (!basin) {
       end = 'pit';
       finish('land');
       break;
     }
     const depth = basin.level - g;
+    if (basin.closed && !basin.cells.length) {
+      // a flat with nowhere to go: the water spreads and the air takes it
+      const r = Math.max(1, Math.sqrt(basin.km2 / Math.PI) / cellKm);
+      marshes.push({ x: (c % W) + 0.5, y: ((c / W) | 0) + 0.5, r });
+      end = 'marsh';
+      finish('land');
+      break;
+    }
     if (basin.closed) {
       lakes.push({ cells: basin.cells, level: basin.level, kind: 'closed' });
       for (const k of basin.cells) ours.add(k);
@@ -280,8 +317,10 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
    * spills at the rim's lowest point, into `out`. `path` runs from the pit to `out` across the
    * hollow (for a river passing through a shallow dip), `exit` from the shore to `out`.
    */
-  function fillHollow(pit: number): { cells: number[]; level: number; km2: number; closed: boolean; out: number; path: number[]; exit: number[] } | null {
+  function fillHollow(pit: number): { cells: number[]; level: number; km2: number; closed: boolean; out: number; path: number[]; exit: number[]; joined: number } | null {
     const heap = new Heap();
+    // the earliest hollow (of those the water came through) this one rises into, or -1
+    let joined = -1;
     const parent = new Map<number, number>([[pit, -1]]);
     const popped: number[] = [];
     heap.push(pit, h(pit));
@@ -293,9 +332,12 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       if (z > level) {
         // the water rises to this cell: does it now evaporate all that flows in?
         if (evap > 0 && evap * km2 >= Q) {
-          const cells = popped.filter((x) => h(x) < level);
-          if (cells.length < MIN_LAKE) return null;
-          return { cells, level, km2, closed: true, out: -1, path: [], exit: [] };
+          // a closed lake, however small (a lake of a cell or two on a coarse map is still
+          // hundreds of km²); none at all on a flat. Its water stands above the cells it covers,
+          // short of the next one it would reach.
+          const top = level + 0.5 * (z - level);
+          const cells = popped.filter((x) => h(x) < top);
+          return { cells, level: top, km2, closed: true, out: -1, path: [], exit: [], joined };
         }
         level = z;
       }
@@ -307,6 +349,13 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
         if (parent.has(n)) continue;
         parent.set(n, k);
         const hn = h(n);
+        const before = hollowOf.get(n);
+        if (before !== undefined && before < hollows.length - 1) {
+          // a hollow the water came through before: it is part of this one now
+          joined = joined < 0 ? before : Math.min(joined, before);
+          heap.push(n, hn);
+          continue;
+        }
         if (hn < level || hn < sea || isEdge(n)) {
           // the way out: lower land (or the sea) beyond the rim
           const cells = popped.filter((x) => h(x) < level);
@@ -316,7 +365,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
           const exit: number[] = [];
           for (const q of path) if (h(q) >= level) exit.push(q);
           exit.push(n);
-          return { cells, level, km2: cells.reduce((s, x) => s + area(x), 0), closed: false, out: n, path: path.slice(1), exit };
+          return { cells, level, km2: cells.reduce((s, x) => s + area(x), 0), closed: false, out: n, path: path.slice(1), exit, joined };
         }
         heap.push(n, hn);
       }
@@ -326,21 +375,22 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
 }
 
 /**
- * Net evaporation at a latitude, mm a year: wet tropics, the dry belts around 25°, moderate
- * middle latitudes, little at the poles (a rough zonal climate).
+ * Net evaporation at a latitude, mm a year: what open water loses to the air less the rain on it.
+ * Below zero where it rains more than evaporates (the wet tropics, the cool middle latitudes):
+ * there lakes overflow and rivers do not dry up. Most in the dry belts around 25°.
  */
 export function aridityAt(latDeg: number): number {
   const a = Math.abs(latDeg);
   const table: [number, number][] = [
-    [0, 250],
-    [10, 400],
-    [20, 1500],
-    [27, 1900],
-    [35, 1200],
-    [45, 600],
-    [55, 350],
-    [70, 150],
-    [90, 80],
+    [0, -800],
+    [10, -300],
+    [18, 600],
+    [27, 1700],
+    [35, 900],
+    [45, 100],
+    [55, -100],
+    [70, -50],
+    [90, 0],
   ];
   for (let i = 1; i < table.length; i++)
     if (a <= table[i][0]) {
@@ -349,5 +399,16 @@ export function aridityAt(latDeg: number): number {
       const f = (a - x0) / (x1 - x0);
       return y0 + (y1 - y0) * f * f * (3 - 2 * f);
     }
-  return 80;
+  return 0;
+}
+
+/**
+ * The latitude whose climate a row of the map has, degrees. A planet's own latitude; a flat map
+ * spans a band of latitudes as tall as it is on the ground (111 km a degree, at most 60°),
+ * centred on the latitude chosen for its middle.
+ */
+export function climateLatAt(planet: Pick<PlanetSettings, 'climateLatDeg'>, geo: Geo, y: number): number {
+  if (!geo.flat) return geo.lat(y);
+  const span = Math.min(60, Math.max(2, (geo.H * geo.cellKm) / 111.2));
+  return Math.max(-90, Math.min(90, (planet.climateLatDeg ?? 45) + (0.5 - y / geo.H) * span));
 }
