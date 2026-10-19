@@ -542,6 +542,47 @@ export function detachSource(id: string) {
   useDoc.getState().commit(t('Keep the rivers, remove their source'), () => ({ sources: nextSources, paths: nextPaths }));
 }
 
+/** Where the water of a source would go, roughly and quickly: for a preview while placing or moving one. */
+export interface SourcePreview {
+  /** Its rivers' courses, smoothed a little. */
+  lines: Vec2[][];
+  /** The cells of the lakes it would fill. */
+  lakes: number[];
+  /** Out of time: it goes on beyond these. */
+  partial: boolean;
+}
+
+/**
+ * Where water given out at `at` would go, within `budgetMs` (what is found by then). `self` is a
+ * source being moved: its own rivers and lakes are not in the water's way.
+ */
+export function previewSource(at: Vec2, q: number, aridity: number | null, self?: string, budgetMs = 50): SourcePreview | null {
+  const model = editor.model;
+  if (!model || !canPlaceSource(at)) return null;
+  const { paths, sources } = useDoc.getState().doc;
+  const W = model.W;
+  const others: Record<string, PathFeature> = {};
+  for (const p of Object.values(paths)) if (!self || p.source !== self) others[p.id] = p;
+  const cells = riverCells(model, others);
+  const notLake = new Set<number>();
+  if (self && sources[self]) for (const k of sources[self].made.lakes) for (const c of lakeAt(model, (k % W) + 0.5, Math.floor(k / W) + 0.5)) notLake.add(c);
+  const res = simulateSource(
+    model,
+    { at, q, aridity: sourceAridity(model, { at, aridity }), seepage: 0, carve: CARVE, seed: useDoc.getState().meta?.seed ?? 0, deadline: performance.now() + budgetMs, notLake },
+    (p) => (cells.has(Math.floor(p[1]) * W + ((Math.floor(p[0]) % W) + W) % W) ? { id: '', t: 0 } : null),
+  );
+  let x0 = at[0];
+  const lines = res.rivers.map((r) => {
+    const pts: Vec2[] = [];
+    for (const [x, y] of r.points) {
+      x0 = x0 + model.geo.deltaX(x0, x);
+      pts.push([x0, y]);
+    }
+    return smoothCourse(pts, 1.5);
+  });
+  return { lines, lakes: res.lakes.flatMap((l) => l.cells), partial: !!res.partial };
+}
+
 /** The source nearest to a point within `maxDist` cells. */
 export function sourceAt(p: Vec2, maxDist: number): string | null {
   const model = editor.model;

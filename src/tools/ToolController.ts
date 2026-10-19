@@ -35,7 +35,7 @@ import { clearLake, fillBasin, lakeAt, lakeDepthAt, lakesFollowGround, paintLake
 import { pickLake, selectLake } from '../editor/lakes';
 import { riverSnapAt, snapRiver, type SnappedRiver } from '../editor/riverSnap';
 import { addCrestLine, snapToCrest } from '../editor/ranges';
-import { addSource, deleteSource, setWater, sourceAt, sourcesFollowGround, updateSource } from '../editor/sources';
+import { addSource, deleteSource, previewSource, setWater, sourceAt, sourcesFollowGround, updateSource } from '../editor/sources';
 import { crestCurve } from '../terrain/ranges';
 import { sampleSpline } from '../render/vectorGeometry';
 import type { TerrainModel, TileChange } from '../terrain/TerrainModel';
@@ -306,6 +306,7 @@ export class ToolController {
   };
 
   private onLeave = () => {
+    this.clearPreview();
     this.pointer.inside = false;
     this.overlay()?.set({ brush: null, stampPreview: null, hover: null });
     useEditor.getState().set({ cursor: null });
@@ -477,8 +478,11 @@ export class ToolController {
         case 'source':
           if (Math.hypot(e.clientX - d.startScreen[0], e.clientY - d.startScreen[1]) > 4) d.moved = true;
           d.at = [x, y];
-          // a source being dragged shows where it goes
-          if (d.id && d.moved) this.syncSources({ id: d.id, at: d.at });
+          // a source being dragged shows where it goes, and where its water would go from there
+          if (d.id && d.moved) {
+            this.syncSources({ id: d.id, at: d.at });
+            this.schedulePreview(x, y, d.id);
+          }
           break;
         case 'reference':
           this.referenceDrag(d, x, y);
@@ -489,6 +493,8 @@ export class ToolController {
       if (this.draft) this.showDraft(this.draft.points, [nearX(editor.model.geo, this.draft.points[0][0], x), y]);
       if (this.crestLines()) this.showCrestSnap(x, y);
       if (this.tool === 'river' && useEditor.getState().riverMode !== 'source') this.showRiverSnap(x, y);
+      // placing sources: where the water of one here would go
+      if (this.tool === 'river' && useEditor.getState().riverMode === 'source') this.schedulePreview(x, y);
       if (this.tool === 'measure' && this.measure.length && !this.measureDone) this.showMeasure([x, y]);
     }
     this.updateBrushCursor();
@@ -559,8 +565,45 @@ export class ToolController {
     this.updateCursorStyle();
   };
 
+  private previewTimer = 0;
+  private previewAt = 0;
+
+  /**
+   * Show where the water of a source at (x, y) would go: soon after the pointer rests (or, for a
+   * source being moved, every few frames). `self`: the source being moved.
+   */
+  private schedulePreview(x: number, y: number, self?: string) {
+    clearTimeout(this.previewTimer);
+    const run = () => {
+      this.previewAt = performance.now();
+      const st = useEditor.getState();
+      if (st.tool !== 'river' || st.riverMode !== 'source' || !editor.model) return;
+      const s = self ? useDoc.getState().doc.sources[self] : undefined;
+      // over a source already there: it shows its own water
+      if (!self && sourceAt([x, y], SOURCE_HIT_PX / editor.zoom)) return this.clearPreview();
+      const p = previewSource([x, y], s?.q ?? st.sourceQ, s?.aridity ?? null, self);
+      if (!p) return this.clearPreview();
+      const geo = editor.model.geo;
+      const W = editor.model.W;
+      this.overlay().set({ waterPreview: { lines: p.lines, lakes: p.lakes.map((k) => [x + geo.deltaX(x, k % W), Math.floor(k / W)] as Vec2) } });
+      editor.requestRender();
+    };
+    // while dragging, as often as it keeps up; at rest, once the pointer stops
+    if (self && performance.now() - this.previewAt > 70) run();
+    else this.previewTimer = window.setTimeout(run, self ? 70 : 110);
+  }
+
+  clearPreview() {
+    clearTimeout(this.previewTimer);
+    const o = editor.layers?.overlay;
+    if (!o?.state.waterPreview) return;
+    o.set({ waterPreview: null });
+    editor.requestRender();
+  }
+
   /** A source placed (a click), picked (a click on it) or moved (dragged). */
   private endSource(d: Extract<Drag, { kind: 'source' }>) {
+    this.clearPreview();
     const st = useEditor.getState();
     if (d.id) {
       if (d.moved) updateSource(d.id, { at: d.at });
@@ -1845,6 +1888,7 @@ useEditor.subscribe((s, prev) => {
   if (s.units !== prev.units) tools.refreshMeasure();
   if (s.tool !== prev.tool || s.rangeMode !== prev.rangeMode || s.activeRange !== prev.activeRange) tools.syncCrests();
   if (s.tool !== prev.tool || s.riverMode !== prev.riverMode || s.activeSource !== prev.activeSource || s.selection !== prev.selection) tools.syncSources();
+  if (s.tool !== prev.tool || s.riverMode !== prev.riverMode) tools.clearPreview();
   if (s.referenceEdit !== prev.referenceEdit || s.riverMode !== prev.riverMode || s.rangeMode !== prev.rangeMode) tools.refreshCursor();
 });
 

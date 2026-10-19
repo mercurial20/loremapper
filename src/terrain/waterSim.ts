@@ -31,6 +31,10 @@ export interface SourceParams {
   carve: number;
   /** The map's seed: the unseen roughness of its flat ground (the same for every source). */
   seed?: number;
+  /** Stop when the clock (performance.now) passes this, with what is found so far (for a preview). */
+  deadline?: number;
+  /** Lake cells to take as dry ground (a source's own lakes, while it is moved). */
+  notLake?: Set<number>;
 }
 
 export type SimEnd = 'sea' | 'lake' | 'closed-lake' | 'marsh' | 'river' | 'edge' | 'pit' | 'dry';
@@ -67,6 +71,8 @@ export interface SimResult {
   lakes: SimLake[];
   marshes: SimMarsh[];
   end: SimEnd;
+  /** It ran out of time (see `deadline`): the course goes on beyond what was found. */
+  partial?: boolean;
 }
 
 /** m³/s lost per km² of water surface, per mm a year of net evaporation. */
@@ -342,7 +348,14 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
   const hollows: { rivers: number; cur: SimRiver; points: number; lakes: number; marshes: number; Q: number; km: number }[] = [];
   const hollowOf = new Map<number, number>();
   let merges = 0;
+  let partial = false;
+  const late = () => p.deadline !== undefined && performance.now() > p.deadline;
   for (let step = 0; step < MAX_STEPS; step++) {
+    if ((step & 31) === 0 && late()) {
+      partial = true;
+      finish('land');
+      break;
+    }
     add(c, pos);
     const g = h(c);
     if (g < sea) {
@@ -351,7 +364,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       break;
     }
     const lv = model.lake.get(c % W, (c / W) | 0);
-    if (isLake(lv) && g < lv && !ours.has(c)) {
+    if (isLake(lv) && g < lv && !ours.has(c) && !p.notLake?.has(c)) {
       end = 'lake';
       finish('water');
       break;
@@ -434,6 +447,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     if (basin) for (const k of basin.cells) hollowOf.set(k, hollows.length - 1);
     if (!basin) {
       end = 'pit';
+      if (late()) partial = true;
       finish('land');
       break;
     }
@@ -486,7 +500,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     for (const k of across(basin.region, entry, basin.rim)) add(k);
     goTo(basin.out);
   }
-  return { rivers, lakes, marshes, end };
+  return partial ? { rivers, lakes, marshes, end, partial } : { rivers, lakes, marshes, end };
 
   /**
    * Fill the hollow whose bottom is `pit`: cells join lowest first, the water level rising with
@@ -520,7 +534,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       }
       popped.push(k);
       km2 += area(k);
-      if (popped.length > MAX_BASIN) return null;
+      if (popped.length > MAX_BASIN || ((popped.length & 1023) === 0 && late())) return null;
       neighbours(k, local);
       for (const n of local) {
         if (parent.has(n)) continue;
@@ -571,7 +585,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       const [k] = heap.pop();
       if (r(k) - base >= limit) return null;
       region.push(k);
-      if (region.length > MAX_BASIN) return null;
+      if (region.length > MAX_BASIN || ((region.length & 1023) === 0 && late())) return null;
       neighbours(k, local);
       for (const n of local) {
         if (steps.has(n)) continue;

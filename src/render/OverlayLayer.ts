@@ -39,6 +39,8 @@ export interface OverlayState {
   snap: Vec2 | null;
   /** Water sources (the one being edited is active). */
   sources: { at: Vec2; active: boolean }[] | null;
+  /** Where the water of a source being placed or moved would go: its courses, and its lakes' cells (corners). */
+  waterPreview: { lines: Vec2[][]; lakes: Vec2[] } | null;
 }
 
 const ACCENT = 0xf2b14a;
@@ -59,7 +61,7 @@ export class OverlayLayer implements WorldLayer {
     fill: '#ffffff',
     stroke: { color: '#1b1612', width: 3.5, join: 'round' },
   });
-  state: OverlayState = { brush: null, draft: null, measure: null, marquee: null, hover: null, stampPreview: null, region: null, crests: null, snap: null, sources: null };
+  state: OverlayState = { brush: null, draft: null, measure: null, marquee: null, hover: null, stampPreview: null, region: null, crests: null, snap: null, sources: null, waterPreview: null };
   private doc: MapDocument | null = null;
   private selection: SelectionRef[] = [];
   private dirty = true;
@@ -240,6 +242,18 @@ export class OverlayLayer implements WorldLayer {
           strokePolyline(g, line);
           g.stroke({ width: 2 * px, color: r.active ? ACCENT : 0x3b2a1e, alpha: 0.95, cap: 'round', join: 'round' });
         }
+    }
+    // where the water would go: lakes as a wash of blue, rivers as blue lines with a light edge
+    if (s.waterPreview) {
+      for (const [x, y] of s.waterPreview.lakes) g.rect(x, y, 1, 1);
+      if (s.waterPreview.lakes.length) g.fill({ color: 0x4f86ad, alpha: 0.4 });
+      for (const line of s.waterPreview.lines) {
+        if (line.length < 2) continue;
+        strokePolyline(g, line);
+        g.stroke({ width: 4.5 * px, color: 0xffffff, alpha: 0.6, cap: 'round', join: 'round' });
+        strokePolyline(g, line);
+        g.stroke({ width: 2.2 * px, color: 0x3f7fae, alpha: 0.95, cap: 'round', join: 'round' });
+      }
     }
     // water sources: a drop of water ringed in white, the one being edited in the accent
     if (s.sources) {
