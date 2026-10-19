@@ -221,7 +221,7 @@ export function steadyState(
   h: Float32Array,
   uplift: Float32Array,
   rain: Float32Array | null,
-  o: { theta: number; maxSlope: number; passes: number },
+  o: { theta: number; maxSlope: number; passes: number; hillArea?: number; jitter?: number },
   onPass?: (i: number) => void,
 ): Float32Array {
   const N = g.w * g.h;
@@ -231,7 +231,10 @@ export function steadyState(
   // instead of running in the grid's eight straight directions
   const route = new Float32Array(N);
   const jitter = (src: Float32Array, seed: number) => {
-    for (let k = 0; k < N; k++) route[k] = src[k] > 0 ? src[k] * (1 + 0.04 * (cellJitter(k * 7 + seed) - 0.5)) + 6 * cellJitter(k + seed * 977) + 1e-3 : h[k];
+    // (`jitter` scales it: on a fine grid over an already carved relief only ties need breaking;
+    // more would send neighbours down different ways, straight and diagonal, of unequal lengths)
+    const j = o.jitter ?? 1;
+    for (let k = 0; k < N; k++) route[k] = src[k] > 0 ? src[k] * (1 + 0.04 * j * (cellJitter(k * 7 + seed) - 0.5)) + 6 * j * cellJitter(k + seed * 977) + 1e-3 : h[k];
   };
   jitter(h, 0);
   for (let pass = 0; pass < o.passes; pass++) {
@@ -243,8 +246,10 @@ export function steadyState(
       if (h[k] <= 0) continue;
       const r = d.rcv[k];
       const base = r >= 0 && h[r] > 0 ? out[r] : 0;
-      // hillslopes steeper than about 35° fail in landslides, whatever the uplift
-      const slope = Math.min(o.maxSlope, uplift[k] * Math.pow(Math.max(A[k], 1e-3), -o.theta));
+      // hillslopes steeper than about 35° fail in landslides, whatever the uplift; above a small
+      // area (`hillArea`) water runs off a slope as a sheet, not in channels, so the slope there
+      // is the same down every line of flow (a smooth hillside, not a channel in every cell)
+      const slope = Math.min(o.maxSlope, uplift[k] * Math.pow(Math.max(A[k], o.hillArea ?? 1e-3), -o.theta));
       out[k] = base + slope * (r >= 0 ? stepKm(g, k, r) : dyKm(g, (k / g.w) | 0));
     }
     onPass?.(pass);
@@ -253,6 +258,142 @@ export function steadyState(
   }
   return out;
 }
+
+/**
+ * The same steady state with water shared among all lower neighbours (multiple flow directions,
+ * Holmgren 1994: in proportion to slope^MFD_P), not sent down the one steepest way. On a fine
+ * grid the one-way rule sends a hillside's water down parallel lines of cells, and the relief
+ * built along them comes out striped and faceted; shared, water runs off a hillside as a sheet
+ * and gathers only where the land makes it converge, as real channels do. Heights build up from
+ * the coast, each cell from all the cells its water goes to (weighted alike).
+ */
+export function steadyStateShared(
+  g: Grid,
+  h: Float32Array,
+  uplift: Float32Array,
+  rain: Float32Array | null,
+  o: { theta: number; maxSlope: number; passes: number; hillArea: number },
+  onPass?: (i: number) => void,
+): Float32Array {
+  const N = g.w * g.h;
+  const { w } = g;
+  const out = new Float32Array(N);
+  const route = new Float64Array(N);
+  const filled = new Float64Array(N);
+  const order = new Int32Array(N);
+  const done = new Uint8Array(N);
+  const A = new Float32Array(N);
+  const heap = new Heap(N);
+  const dyk = dyKm(g);
+  // on a fine grid shared widely (a hillside's sheet of water), on a coarse one nearly one way
+  // (a cell of kilometres already holds a hillside; shared, its valleys would blur into facets)
+  const P = MFD_P + (MFD_COARSE - MFD_P) * Math.min(1, Math.max(0, (dyk - 1) / 4));
+  for (let k = 0; k < N; k++) route[k] = h[k] > 0 ? h[k] + 1e-3 * cellJitter(k) : h[k];
+  const nb = new Int32Array(8);
+  const nd = new Float64Array(8);
+  const wt = new Float64Array(8);
+  /** The lower neighbours of k on the filled surface, with their weights; returns how many. */
+  const lower = (k: number): number => {
+    const i = k % w;
+    const j = (k / w) | 0;
+    const dxk = dxKm(g, j);
+    let n = 0;
+    let sum = 0;
+    for (let dj = -1; dj <= 1; dj++) {
+      const jj = j + dj;
+      if (jj < 0 || jj >= g.h) continue;
+      for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        let ii = i + di;
+        if (ii < 0 || ii >= w) {
+          if (!g.wrap) continue;
+          ii = (ii + w) % w;
+        }
+        const q = jj * w + ii;
+        if (filled[q] >= filled[k]) continue;
+        const d = Math.hypot(di * dxk, dj * dyk);
+        const sl = (filled[k] - filled[q]) / d;
+        const v = Math.pow(sl, P);
+        nb[n] = q;
+        nd[n] = d;
+        wt[n] = v;
+        sum += v;
+        n++;
+      }
+    }
+    for (let m = 0; m < n; m++) wt[m] = sum > 0 ? wt[m] / sum : 1 / n;
+    return n;
+  };
+  for (let pass = 0; pass < o.passes; pass++) {
+    // a priority flood from the sea (and a flat map's edges): every cell is reached after all its
+    // lower neighbours, and pits fill a hair above their outlet
+    done.fill(0);
+    let count = 0;
+    for (let k = 0; k < N; k++) {
+      const i = k % w;
+      const j = (k / w) | 0;
+      const edge = j === 0 || j === g.h - 1 || (!g.wrap && (i === 0 || i === w - 1));
+      if (h[k] <= 0 || edge) {
+        filled[k] = h[k] <= 0 ? Math.min(0, route[k]) : route[k];
+        done[k] = 1;
+        heap.push(k, filled[k]);
+      }
+    }
+    while (heap.size) {
+      const c = heap.pop();
+      order[count++] = c;
+      const i = c % w;
+      const j = (c / w) | 0;
+      for (let dj = -1; dj <= 1; dj++) {
+        const jj = j + dj;
+        if (jj < 0 || jj >= g.h) continue;
+        for (let di = -1; di <= 1; di++) {
+          let ii = i + di;
+          if (ii < 0 || ii >= w) {
+            if (!g.wrap) continue;
+            ii = (ii + w) % w;
+          }
+          const q = jj * w + ii;
+          if (done[q]) continue;
+          done[q] = 1;
+          filled[q] = Math.max(route[q], filled[c] + 1e-6);
+          heap.push(q, filled[q]);
+        }
+      }
+    }
+    // drainage area, from the highest cells down, shared among the lower neighbours
+    for (let k = 0; k < N; k++) A[k] = h[k] > 0 ? cellAreaKm2(g, (k / w) | 0) * (rain ? rain[k] : 1) : 0;
+    for (let o2 = count - 1; o2 >= 0; o2--) {
+      const k = order[o2];
+      if (h[k] <= 0) continue;
+      const n = lower(k);
+      for (let m = 0; m < n; m++) A[nb[m]] += A[k] * wt[m];
+    }
+    // heights, from the coast up: each cell a slope above the cells its water goes to
+    out.fill(0);
+    for (let o2 = 0; o2 < count; o2++) {
+      const k = order[o2];
+      if (h[k] <= 0) continue;
+      const slope = Math.min(o.maxSlope, uplift[k] * Math.pow(Math.max(A[k], o.hillArea), -o.theta));
+      const n = lower(k);
+      if (!n) {
+        out[k] = slope * dyk;
+        continue;
+      }
+      let v = 0;
+      for (let m = 0; m < n; m++) v += wt[m] * ((h[nb[m]] > 0 ? out[nb[m]] : 0) + slope * nd[m]);
+      out[k] = v;
+    }
+    onPass?.(pass);
+    if (pass + 1 < o.passes) for (let k = 0; k < N; k++) route[k] = h[k] > 0 ? out[k] + 1e-3 * cellJitter(k + pass * 977) : h[k];
+  }
+  return out;
+}
+
+/** How strongly shared water follows the steepest way (Holmgren's exponent: 1 spreads, 8 is nearly one way). */
+const MFD_P = 6;
+/** The same on grids of 5 km cells and coarser. */
+const MFD_COARSE = 12;
 
 /** Gentle hillslope diffusion on land (softens knife-edge noise between valleys). */
 export function diffuse(g: Grid, h: Float32Array, passes: number, rate = 0.18) {

@@ -4,7 +4,7 @@ import { BIOME_CHANNELS } from '../core/planet';
 import { BIOME_DESERT, BIOME_ROCK, BIOME_SNOW, biomeWeights, climate, type Climate } from './gen/climate';
 import { sketchClimate, sketchShape, type Shape, type Sketch } from './gen/sketch';
 import { blurKm, components, distanceField, dyKm, latOf, lonOf, makeGrid, mercatorPatch, radPerCell, resample, resampleFromSphere, sampleAt, sphereTables, thresholdForFraction, type Grid } from './gen/grid';
-import { accumulate, diffuse, drain, erode, steadyState, traceRivers, type Drainage } from './gen/hydrology';
+import { accumulate, diffuse, drain, erode, steadyState, steadyStateShared, traceRivers, type Drainage } from './gen/hydrology';
 import { layoutMismatch, plateBase, tectonics, type Layout, type Tectonics } from './gen/plates';
 
 /**
@@ -104,6 +104,8 @@ const ERODE_K = 0.02;
 const UPLIFT = { plain: 20, hills: 110, range: 700, old: 180, arc: 300 };
 /** Concavity of river profiles (Flint's law); 0.45 is the usual reference value. */
 const THETA = 0.45;
+/** Above this area (km², rain-weighted) water runs off a hillside as a sheet; channels begin below it. */
+const HILL_AREA = 1.5;
 /** About 35°: steeper hillslopes fail. */
 const MAX_SLOPE_M_PER_KM = 700;
 
@@ -584,6 +586,11 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   // broad sinking lowlands (sedimentary basins) between rising shields
   const basinN = up((x, y, z) => 0.3 + 1.1 * smoothstep(-0.35, 0.35, nA.fbm(x - 4.2, y + 1.3, z, 1.8, 3)));
   const seaN = up((x, y, z) => 1.05 + 0.12 * nA.fbm(x, y, z, 2.2, 3) + 0.03 * nB.fbm(x, y, z, 9, 2));
+  // the sea floor's great forms, as broad and smooth as on Earth (the plates are worked out on a
+  // coarse grid: unsmoothed, their ridges and trenches show its cells, and smear near the poles)
+  const ridgeB = blurKm(s.ridge, mid, 220, 3);
+  const trenchB = blurKm(s.trench, mid, 45, 3);
+  const arcSea = blurKm(Float32Array.from(s.arc, (v) => Math.max(0, v)), mid, 60, 3);
   const maxE = p.maxElevation;
   const rough = clamp(p.roughness, 0, 1);
   const mtnTop = maxE * clamp(p.mountains, 0, 1);
@@ -626,13 +633,20 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
         const shelf = 20 + 130 * smoothstep(0, shelfW, d);
         const abyss = abyssBase * seaN[k];
         let depth = shelf + (abyss - shelf) * smoothstep(shelfW, shelfW + 420, d);
-        depth -= 2300 * s.ridge[k] + 2400 * s.hot[k] + 1800 * Math.max(0, s.arc[k]);
-        depth += (deepest - abyss) * 0.92 * s.trench[k];
+        depth -= 2300 * ridgeB[k] + 2400 * s.hot[k] + 1800 * arcSea[k];
+        depth += (deepest - abyss) * 0.92 * trenchB[k];
         // seamounts and ridges stay submerged away from the coast (no almost-islands awash at the surface)
         h[k] = -clamp(depth, 3 + Math.min(60, 0.45 * d), deepest);
         rug[k] = 0.15;
       }
     }
+
+  // the sea floor smoothed over some tens of km (the distance to the coast it is built from is
+  // worked out on the grid of latitude and longitude, and shows its rows near the poles)
+  {
+    const sea = blurKm(h, mid, 50, 2);
+    for (let k = 0; k < N; k++) if (!land[k]) h[k] = Math.min(-3, Math.max(h[k] - 400, Math.min(sea[k], -3)));
+  }
 
   // ---- climate: prevailing winds and rain shadows at every realism level, so previews match the result
   progress('Simulating climate', 0);
@@ -650,7 +664,7 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   const passes = PASSES[realism];
   // dry land still wears down in flash floods: incision never sees less than a modest rainfall
   const erosionRain = clim.rain.map((r) => Math.max(0.4, r));
-  const rel = steadyState(mid, h, U, erosionRain, { theta: THETA, maxSlope: MAX_SLOPE_M_PER_KM, passes }, (i) => progress('Carving valleys', (i + 1) / passes));
+  const rel = steadyState(mid, h, U, erosionRain, { theta: THETA, maxSlope: MAX_SLOPE_M_PER_KM, passes, hillArea: HILL_AREA }, (i) => progress('Carving valleys', (i + 1) / passes));
   // the highest ranges ease into the chosen summit height instead of piling past it
   const knee = 0.55 * mtnTop;
   const soft = (v: number) => (v <= knee ? v : knee + (mtnTop - knee) * Math.tanh((v - knee) / Math.max(1, mtnTop - knee)));
@@ -682,33 +696,34 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
     });
   let rivers: GenRiver[] = realism === 'ultra' || p.rivers <= 0 ? [] : trace(mid, drained, flow, h, maxFlow);
 
-  // ---- full resolution: smooth interpolation plus fine detail where the land is rough
-  progress('Adding detail', 0);
+  // ---- full resolution: the same balance of uplift and river incision, cell by cell (valleys
+  // as fine as the grid can hold), on the working grid's land and sea; no noise on top
+  progress('Carving valleys', 0);
   const full = G(1);
-  const height = midStep === 1 ? h.slice() : resample(h, mid, full, 'catmull');
-  const rugF = midStep === 1 ? rug : resample(rug, mid, full, 'bspline');
-  const coarseH = midStep === 1 ? null : h;
-  const nD = new Simplex3(subSeed(p.seed, 60));
-  const FT = sphereTables(full);
-  // about one full-resolution cell per feature
-  const fineF = (2 * Math.PI) / (7 * radPerCell(full));
-  // the bumps are about seven cells across, so their height scales with the cell: the same
-  // slopes on a planet's ~10 km cells and a regional map's 250 m ones, as in real terrain
-  // (300 m bumps every 1.7 km would make a regional map's every plain look like badlands)
-  const amp = (40 + 260 * rough) * Math.min(1, dyKm(full) / 9);
-  for (let j = 0; j < full.h; j++)
-    for (let i = 0; i < full.w; i++) {
-      const k = j * full.w + i;
-      let v = height[k];
-      const x = FT.cosLat[j] * FT.cosLon[i];
-      const y = FT.cosLat[j] * FT.sinLon[i];
-      const z = FT.sinLat[j];
-      // keep the coastline where the working grid put it
-      const wasLand = coarseH ? sampleAt(coarseH, mid, full.x0 + i + 0.5, full.y0 + j + 0.5) > 0 : v > 0;
-      const r = rugF[k];
-      if (wasLand && r > 0.06) v += r * r * amp * nD.fbm(x, y, z, fineF, 2);
-      height[k] = wasLand ? Math.max(1, v) : Math.min(-2, v);
-    }
+  let height: Float32Array;
+  if (midStep === 1) height = h.slice();
+  else {
+    const hF = resample(h, mid, full, 'catmull');
+    const UF = resample(U, mid, full, 'bspline');
+    const rainF0 = resample(erosionRain, mid, full, 'bspline');
+    const builtF = resample(built, mid, full, 'bspline');
+    const creepF = resample(Float32Array.from(U, (u) => 1 - smoothstep(25, 220, u)), mid, full, 'bspline');
+    // the land as the working grid shaped it (its coasts stay)
+    const landF = new Uint8Array(full.w * full.h);
+    for (let j = 0; j < full.h; j++) for (let i = 0; i < full.w; i++) landF[j * full.w + i] = sampleAt(h, mid, full.x0 + i + 0.5, full.y0 + j + 0.5) > 0 ? 1 : 0;
+    // the water's first ways follow the land's large forms (the working grid's own small
+    // channels, scaled up, would come back as stripes); the fine channels form anew
+    const smoothF = blurKm(hF, full, 2 * dyKm(mid), 2);
+    for (let k = 0; k < hF.length; k++) hF[k] = landF[k] ? Math.max(1, smoothF[k]) : Math.min(-2, hF[k]);
+    const FULL_PASSES: Record<Realism, number> = { easy: 1, medium: 2, high: 2, ultra: 2 };
+    const relF = steadyStateShared(full, hF, UF, rainF0, { theta: THETA, maxSlope: MAX_SLOPE_M_PER_KM, passes: FULL_PASSES[realism], hillArea: HILL_AREA }, (i) => progress('Carving valleys', (i + 1) / FULL_PASSES[realism]));
+    height = new Float32Array(full.w * full.h);
+    for (let k = 0; k < height.length; k++) height[k] = landF[k] ? Math.max(2, soft(builtF[k] + relF[k])) : hF[k];
+    // plains are shaped more by soil creep than by rivers (as on the working grid)
+    const creepH = blurKm(height, full, 1.5 * dyKm(full), 2);
+    for (let k = 0; k < height.length; k++) if (landF[k]) height[k] = Math.max(2, height[k] + creepF[k] * 0.5 * (creepH[k] - height[k]));
+    diffuse(full, height, 1);
+  }
   if (realism === 'ultra') {
     // fine valleys cut into the full-resolution relief, then rivers that follow them
     const rainF = resample(clim.rain, mid, full, 'bspline');
