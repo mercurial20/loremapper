@@ -5,6 +5,8 @@ import { formatArea, formatHeight } from '../../core/units';
 import { editor } from '../../editor/Editor';
 import { deleteSelectedLake, selectedLake, setLakeLevel } from '../../editor/lakes';
 import { useEditor } from '../../store/editorStore';
+import { useDoc } from '../../store/docStore';
+import { lakeLinks } from '../../editor/waterLinks';
 import type { LakeInfo } from '../../terrain/lakes';
 import { Slider } from '../controls/controls';
 
@@ -18,8 +20,10 @@ export function LakeControls({ measured }: { measured: boolean }) {
   // the level being dragged to, until the lake is set to it (and its figures change)
   const [draft, setDraft] = useState<{ of: LakeInfo; v: number } | null>(null);
   const timer = useRef(0);
+  const paths = useDoc((s) => s.doc.paths);
   const info = at ? selectedLake() : null;
   if (!info || readOnly) return null;
+  const links = editor.model ? lakeLinks(editor.model, paths, info.cells) : null;
   const sea = editor.model?.seaLevel ?? 0;
   const level = draft?.of === info ? draft.v : info.level;
   const change = (v: number) => {
@@ -46,6 +50,26 @@ export function LakeControls({ measured }: { measured: boolean }) {
           <span>{t('Area')}</span>
           <b>{formatArea(info.areaKm2, units)}</b>
         </div>
+      )}
+      {links && (
+        <>
+          <div className="kv">
+            <span>{t('Kind')}</span>
+            <b>{links.kind === 'open' ? t('Open: water flows on out of it') : links.kind === 'closed' ? t('Closed: rivers end in it') : t('Still: no river in or out')}</b>
+          </div>
+          {links.inflows.length > 0 && (
+            <div className="kv">
+              <span>{t('Rivers in')}</span>
+              <b>{links.inflows.map((x) => x.name || t('unnamed')).join(', ')}</b>
+            </div>
+          )}
+          {links.outflows.length > 0 && (
+            <div className="kv">
+              <span>{t('River out')}</span>
+              <b>{links.outflows.map((x) => x.name || t('unnamed')).join(', ')}</b>
+            </div>
+          )}
+        </>
       )}
       <div className="kv">
         <span>{t('Room to rise')}</span>

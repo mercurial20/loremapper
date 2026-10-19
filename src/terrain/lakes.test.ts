@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { flatMap } from '../core/planet';
-import { fillBasin, lakeDepthAt, lakeInfo, paintLake, relevelLake, setLake, spillLevel, touchingLakes } from './lakes';
-import { NO_WATER, TerrainModel } from './TerrainModel';
+import { fillBasin, lakeDepthAt, lakeInfo, lakesFollowGround, paintLake, relevelLake, setLake, spillLevel, touchingLakes } from './lakes';
+import { NO_WATER, TerrainModel, type TileChange } from './TerrainModel';
 
 const setH = (model: TerrainModel, x: number, y: number, v: number) => {
   model.height.ensureTile((x / 256) | 0, (y / 256) | 0)[(y % 256) * 256 + (x % 256)] = v;
@@ -232,5 +232,64 @@ describe('lakes', () => {
     // no slivers or specks of water: every piece is a real lake, larger than a few cells
     expect(pieces.length).toBeGreaterThan(0);
     expect(pieces[pieces.length - 1]).toBeGreaterThan(4);
+  });
+
+  describe('lakes follow edits of the ground', () => {
+    /** Change the ground with `fn(x, y, h) → new h` over a box, as a brush does: the change records the tiles before. */
+    const edit = (model: TerrainModel, x0: number, y0: number, x1: number, y1: number, fn: (x: number, y: number, h: number) => number): TileChange => {
+      const g = model.height;
+      const before = new Map<number, Float32Array | null>();
+      for (let y = y0; y <= y1; y++)
+        for (let x = x0; x <= x1; x++) {
+          const tk = g.key((x / 256) | 0, (y / 256) | 0);
+          if (!before.has(tk)) before.set(tk, g.tiles.get(tk)?.slice() ?? null);
+          setH(model, x, y, fn(x, y, g.get(x, y)));
+        }
+      return { layer: 'height', before, after: new Map() } as TileChange;
+    };
+    const filled = () => {
+      const model = hollow();
+      const b = fillBasin(model, 510, 495);
+      if ('reason' in b) throw new Error(b.reason);
+      setLake(model, b.cells, b.level);
+      return { model, level: b.level, cells: b.cells.length };
+    };
+
+    it('leaves an island where the ground is raised above the water', () => {
+      const { model, level, cells } = filled();
+      lakesFollowGround(model, edit(model, 495, 495, 505, 505, () => level + 20));
+      expect(model.lake.get(500, 500)).toBe(NO_WATER);
+      expect(model.lake.get(480, 500)).toBe(level);
+      expect(wetCount(model)).toBe(cells - 121);
+    });
+
+    it('fills a hollow dug beside the lake from it', () => {
+      const { model, level, cells } = filled();
+      // a pit just west of the shore, cut through it
+      lakesFollowGround(model, edit(model, 430, 497, 452, 503, () => level - 15));
+      expect(model.lake.get(435, 500)).toBe(level);
+      expect(wetCount(model)).toBeGreaterThan(cells);
+    });
+
+    it('drops to the new spill point where a cut through the rim lets the water out', () => {
+      const { model, level } = filled();
+      // a trench through the west rim, 20 m below the old spill, falling away outside
+      lakesFollowGround(model, edit(model, 380, 498, 455, 502, (x) => Math.min(model.height.get(x, 500), 160 - (455 - x) * 0.5)));
+      const now = model.lake.get(500, 500);
+      expect(now).toBeLessThan(level - 15);
+      expect(now).toBeGreaterThan(140);
+    });
+
+    it('leaves a lake painted above the land alone when an edit nearby opens nothing', () => {
+      const model = new TerrainModel({ ...flatMap(100, 100, 'standard'), seaLevel: 0 });
+      for (let y = 300; y < 700; y++) for (let x = 300; x < 700; x++) setH(model, x, y, 100 + x * 0.4);
+      paintLake(model, disc(model, 500, 500, 10), 20);
+      const level = model.lake.get(500, 500);
+      const count = wetCount(model);
+      // a hill raised a little way off, in the same tile
+      lakesFollowGround(model, edit(model, 540, 470, 550, 480, (_x, _y, g) => g + 30));
+      expect(model.lake.get(500, 500)).toBe(level);
+      expect(wetCount(model)).toBe(count);
+    });
   });
 });

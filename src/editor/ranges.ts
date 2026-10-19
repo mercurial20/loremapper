@@ -7,6 +7,7 @@ import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import type { TileChange } from '../terrain/TerrainModel';
 import { bakeRanges, crestCurve, nearestOnCurve, rebuildRanges } from '../terrain/ranges';
+import { lakesFollowGround } from '../terrain/lakes';
 import { editor } from './Editor';
 
 /*
@@ -23,6 +24,11 @@ export const isCarving = () => carving;
 
 function pushChange(label: string, before: Record<string, MountainRange>, after: Record<string, MountainRange>, changes: TileChange[]) {
   const model = editor.model!;
+  // lakes follow the new mountains, in the same undo step
+  for (const c of [...changes]) {
+    const lc = c.layer === 'height' ? lakesFollowGround(model, c) : null;
+    if (lc) changes.push(lc);
+  }
   let bytes = 4096;
   for (const c of changes) for (const v of [...c.before.values(), ...c.after.values()]) bytes += v?.byteLength ?? 0;
   history.push({

@@ -30,7 +30,7 @@ import { brushGroupOf, togglePanel, useEditor, type ToolId } from '../store/edit
 import { Stroke, type TerrainOp } from '../terrain/brushes';
 import { erodeRiver, newWaterCells, waterIn } from '../terrain/riverErosion';
 import { carveUplift } from '../terrain/upliftStroke';
-import { clearLake, fillBasin, lakeAt, lakeDepthAt, paintLake, setLake, touchingLakes } from '../terrain/lakes';
+import { clearLake, fillBasin, lakeAt, lakeDepthAt, lakesFollowGround, paintLake, setLake, touchingLakes } from '../terrain/lakes';
 import { pickLake, selectLake } from '../editor/lakes';
 import { riverSnapAt, snapRiver } from '../editor/riverSnap';
 import { addCrestLine, snapToCrest } from '../editor/ranges';
@@ -1674,8 +1674,23 @@ function lakeLevelAt(m: TerrainModel, x: number, y: number): number | null {
   return depth > 0 ? level : null;
 }
 
+/**
+ * Lakes follow edits of the ground, in the same undo step: an edit's height changes, plus how
+ * the lakes near it changed (none for the Lake tool's own edits, which shape lakes themselves).
+ */
+function withLakes(changes: TileChange[], model: TerrainModel): TileChange[] {
+  if (changes.some((c) => c.layer === 'lake')) return changes;
+  const out = [...changes];
+  for (const c of changes) {
+    const lc = c.layer === 'height' ? lakesFollowGround(model, c) : null;
+    if (lc) out.push(lc);
+  }
+  return out;
+}
+
 /** Push several raster changes (e.g. water and the valley it cut) as one undo step. */
 export function pushTileChanges(changes: TileChange[], label: string, model = editor.model!) {
+  changes = withLakes(changes, model);
   let bytes = 0;
   for (const c of changes) for (const v of [...c.before.values(), ...c.after.values()]) bytes += v?.byteLength ?? 0;
   history.push({
@@ -1693,6 +1708,13 @@ export function pushTileChanges(changes: TileChange[], label: string, model = ed
 
 /** Push a raster change onto the undo stack. */
 export function pushTileChange(change: TileChange, label: string, model = editor.model!) {
+  if (change.layer === 'height') {
+    const changes = withLakes([change], model);
+    if (changes.length > 1) {
+      pushTileChanges(changes, label, model);
+      return;
+    }
+  }
   let bytes = 0;
   for (const v of change.before.values()) bytes += v?.byteLength ?? 0;
   for (const v of change.after.values()) bytes += v?.byteLength ?? 0;

@@ -149,10 +149,10 @@ export interface RiverShape {
 /**
  * The river as it is drawn: its centre line (a tributary's mouth held on the river it joins),
  * its width along it (the water of tributaries above, a tributary never wider than its river),
- * a mouth that opens like a trumpet where it meets the sea or a lake, and a short run on into
- * that water (or into the river it joins), so the waters meet without a gap.
+ * a mouth that opens like a trumpet where it meets the sea or a lake (`mouthOpen`: it still
+ * does), and a short run on into that water, so the waters meet without a gap.
  */
-export function riverShape(p: PathFeature, paths: Record<string, PathFeature>, net: RiverNet, step: number): RiverShape | null {
+export function riverShape(p: PathFeature, paths: Record<string, PathFeature>, net: RiverNet, step: number, mouthOpen = p.outlet?.kind === 'water'): RiverShape | null {
   if (p.points.length < 2) return null;
   const o = p.outlet;
   const main = o?.kind === 'path' ? paths[o.id] : undefined;
@@ -167,7 +167,8 @@ export function riverShape(p: PathFeature, paths: Record<string, PathFeature>, n
   const cum = curveLengths(curve);
   const len = cum[cum.length - 1];
   if (len <= 0) return null;
-  const toWater = o?.kind === 'water';
+  // a mouth opens only while it still meets water (a lake may have been removed since)
+  const toWater = o?.kind === 'water' && mouthOpen;
   const hwEnd = widthAt(p, 1, net, len) / 2;
   // the trumpet of a mouth: over the last few widths the banks open out
   const flare = toWater ? Math.max(6 * hwEnd, 3) : 0;

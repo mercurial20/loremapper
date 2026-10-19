@@ -1,5 +1,5 @@
 import type { RasterArray } from './TileGrid';
-import { isLake, NO_WATER, type TerrainModel, type TileChange } from './TerrainModel';
+import { isLake, NO_WATER, type CellRect, type TerrainModel, type TileChange } from './TerrainModel';
 
 /*
  * Lakes: water with a level of its own. A lake fills a hollow up to the lowest point
@@ -752,4 +752,142 @@ export function lakeDepthAt(model: TerrainModel, x: number, y: number): { depth:
       s += wx[i] * wy[j] * c;
     }
   return { depth: s, level };
+}
+
+/** World cells covered by a raster change (the bounds of the tiles it touched). */
+export function changeBounds(model: TerrainModel, change: TileChange): CellRect | null {
+  const g = model.grid(change.layer);
+  const span = g.TS * g.scale;
+  let r: CellRect | null = null;
+  for (const k of change.before.keys()) {
+    const tx = k % g.NX;
+    const ty = Math.floor(k / g.NX);
+    const x0 = tx * span;
+    const y0 = ty * span;
+    r = r ? { x0: Math.min(r.x0, x0), y0: Math.min(r.y0, y0), x1: Math.max(r.x1, x0 + span - 1), y1: Math.max(r.y1, y0 + span - 1) } : { x0, y0, x1: x0 + span - 1, y1: y0 + span - 1 };
+  }
+  return r;
+}
+
+/**
+ * Lakes after an edit of the ground (`change`, a height change already applied): water keeps
+ * its level and follows the new ground, only where the edit changed it. Ground raised above the
+ * water becomes shore or an island; ground lowered beside a lake fills from it; and where the
+ * lowered ground opens a way out to land lower than the water, the lake drops to its new spill
+ * point. Leaks the lake had before the edit (a lake painted to stand above the land) are left be.
+ */
+export function lakesFollowGround(model: TerrainModel, change: TileChange): TileChange | null {
+  if (change.layer !== 'height') return null;
+  const rect = changeBounds(model, change);
+  if (!rect) return null;
+  const W = model.W;
+  const hg = model.height;
+  const TS = hg.TS;
+  const h = (k: number) => hg.get(k % W, (k / W) | 0);
+  /** Whether the edit changed the ground at a cell. */
+  const changed = (k: number) => {
+    const x = k % W;
+    const y = (k / W) | 0;
+    const tk = hg.key((x / TS) | 0, (y / TS) | 0);
+    if (!change.before.has(tk)) return false;
+    const before = change.before.get(tk);
+    const i = (y % TS) * TS + (x % TS);
+    return (before ? before[i] : hg.defaultValue) !== h(k);
+  };
+  const x0 = rect.x0 - 2;
+  const x1 = rect.x1 + 2;
+  const y0 = Math.max(0, rect.y0 - 2);
+  const y1 = Math.min(model.H - 1, rect.y1 + 2);
+  // the lakes reaching into the edit
+  const seen = new Set<number>();
+  const lakes: { level: number; cells: number[] }[] = [];
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++) {
+      const wx = model.height.wrap ? ((x % W) + W) % W : x;
+      if (wx < 0 || wx >= W) continue;
+      const k = y * W + wx;
+      if (seen.has(k)) continue;
+      const v = lakeValue(model, k);
+      if (v === NO_WATER) continue;
+      const cells = lakeAt(model, wx, y);
+      for (const c of cells) seen.add(c);
+      lakes.push({ level: v, cells });
+    }
+  if (!lakes.length) return null;
+  const rec = new Recorder(model, 'lake');
+  const nb: number[] = [];
+  for (const lake of lakes) {
+    let level = lake.level;
+    const own = new Set(lake.cells);
+    // water spreading from the lake into ground the edit lowered under it
+    const add = new Set<number>();
+    const stack = lake.cells.filter((k) => h(k) < level);
+    const reached = new Set(stack);
+    let escapes = false;
+    while (stack.length) {
+      const k = stack.pop()!;
+      const fresh = add.has(k) || changed(k);
+      neighbours(model, k, nb);
+      for (const n of nb) {
+        if (reached.has(n) || own.has(n) || h(n) >= level) continue;
+        const other = lakeValue(model, n);
+        if (other !== NO_WATER && other !== level) continue;
+        if (changed(n)) {
+          if (h(n) < model.seaLevel || isEdge(model, n)) escapes = true;
+          else {
+            reached.add(n);
+            add.add(n);
+            stack.push(n);
+          }
+        } else if (fresh) {
+          // lowered ground led the water to land lower than its level: a new way out
+          escapes = true;
+        }
+      }
+    }
+    let wet: number[];
+    if (escapes) {
+      // the lake drains to its new spill point
+      const seeds = lake.cells.filter((k) => h(k) < level);
+      if (!seeds.length) wet = [];
+      else {
+        let floor = Infinity;
+        for (const k of seeds) floor = Math.min(floor, h(k));
+        level = Math.min(level, spillLevel(model, seeds, floor));
+        wet = floodUnder(model, seeds, level) ?? [];
+      }
+    } else {
+      // the same water: what the edit raised above it is dry now, what it lowered beside it is wet
+      wet = [...lake.cells.filter((k) => !changed(k) || h(k) < level), ...add];
+    }
+    const keep = new Set(wet);
+    for (const k of lake.cells)
+      if (!keep.has(k)) {
+        const { t, i } = rec.tile(k);
+        t[i] = NO_WATER;
+      }
+    for (const k of wet)
+      if (!own.has(k) || level !== lake.level) {
+        const { t, i } = rec.tile(k);
+        t[i] = level;
+      }
+  }
+  return rec.finish();
+}
+
+/** Open water at a point: the sea, or a lake (as the map draws them). */
+export function isOpenWater(model: TerrainModel, x: number, y: number): boolean {
+  if (y < 0 || y >= model.H) return false;
+  const wx = model.geo.wrapX(x);
+  return model.heightAt(wx, y) < model.seaLevel || lakeDepthAt(model, wx, y).depth > 0;
+}
+
+/** Whether open water lies within `r` cells of a point (a river's mouth still meets it). */
+export function waterNear(model: TerrainModel, x: number, y: number, r: number): boolean {
+  if (isOpenWater(model, x, y)) return true;
+  for (let k = 0; k < 12; k++) {
+    const a = (k / 12) * Math.PI * 2;
+    for (const f of [0.5, 1]) if (isOpenWater(model, x + Math.cos(a) * r * f, y + Math.sin(a) * r * f)) return true;
+  }
+  return false;
 }

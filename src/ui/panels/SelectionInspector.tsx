@@ -33,6 +33,8 @@ import { sampleSpline } from '../../render/vectorGeometry';
 import { ColorField, Hint, MeasureField, NumberField, Select, Slider, TextField, Toggle } from '../controls/controls';
 import { useTranslation } from 'react-i18next';
 import { t } from '../../i18n';
+import { riverEnd, tributaries } from '../../editor/waterLinks';
+import { nameAt } from '../../editor/geography';
 
 const SWATCHES = ['#b5452f', '#2f5d9a', '#3f8f5a', '#c79a2e', '#7a4aa0', '#2a8a8a', '#8f3a5c', '#5a5a5a'];
 
@@ -215,6 +217,10 @@ function PathInspector({ p }: { p: PathFeature }) {
   const zoom = useViewInfo((s) => s.zoom);
   const upd = (patch: Partial<PathFeature>, key: string) => updateFeature('path', p.id, patch, t('Edit path'), `${key}:${p.id}`);
   const g = geo();
+  // where it flows changes with the lakes and the coast as well
+  useEditor((s) => s.lakeRev);
+  useEditor((s) => s.geography);
+  const tribs = p.kind === 'river' ? tributaries(useDoc.getState().doc.paths, p.id) : [];
   let len = 0;
   const pts = sampleSpline(p.points, 1, false, 2);
   for (let i = 1; i < pts.length; i++) len += g.distanceKm(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]);
@@ -228,10 +234,18 @@ function PathInspector({ p }: { p: PathFeature }) {
       <Slider label={t('Width')} value={p.width * zoom} min={0.3} max={60} log onChange={(v) => upd({ width: v / zoom }, 'width')} format={(v) => `${v.toFixed(1)} px · ${formatLength((v / zoom) * g.kmPerCellY, units)}`} />
       {p.kind === 'river' ? (
         // a river is the map's water, so it has no colour of its own
-        <div className="kv">
-          <span>{t('Flows into')}</span>
-          <b>{flowsInto(p)}</b>
-        </div>
+        <>
+          <div className="kv">
+            <span>{t('Flows into')}</span>
+            <b>{flowsInto(p)}</b>
+          </div>
+          {tribs.length > 0 && (
+            <div className="kv">
+              <span>{t('Tributaries')}</span>
+              <b>{tribs.map((x) => x.name || t('unnamed')).join(', ')}</b>
+            </div>
+          )}
+        </>
       ) : (
         <ColorField label={t('Colour')} value={p.color} swatches={['#7a5532', '#4b3a2a', '#9a7b52', '#8a2e2e', '#2d2216', '#5c6b73']} onChange={(v) => upd({ color: v }, 'color')} />
       )}
@@ -432,14 +446,15 @@ function PeakInspector({ id }: { id: string }) {
   );
 }
 
-/** Where a river ends, in words. */
+/** Where a river ends, in words (read off the map: a lake removed since leaves it on land). */
 function flowsInto(p: PathFeature): string {
-  const o = p.outlet;
-  if (o?.kind === 'water') return t('the sea or a lake');
-  if (o?.kind === 'path') {
-    const main = useDoc.getState().doc.paths[o.id];
-    if (main) return main.name || t('another river');
-  }
+  const model = editor.model;
+  const paths = useDoc.getState().doc.paths;
+  if (!model) return '';
+  const end = riverEnd(model, paths, p);
+  if (end.kind === 'river') return paths[end.id].name || t('another river');
+  if (end.kind === 'sea') return nameAt(p.points[p.points.length - 1][0], p.points[p.points.length - 1][1]) ?? t('the sea');
+  if (end.kind === 'lake') return nameAt((end.cell % model.W) + 0.5, Math.floor(end.cell / model.W) + 0.5) ?? t('a lake');
   return t('nowhere (it ends on land)');
 }
 

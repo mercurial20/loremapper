@@ -42,6 +42,7 @@ const SAVE_DELAY = 900;
 /** A bump of the lakes' revision is already queued. */
 let lakeBump = false;
 let lakeGeoTimer = 0;
+let riverTimer = 0;
 
 /**
  * Editor runtime: owns the active project's raster model and renderer and
@@ -270,6 +271,17 @@ class Editor {
       model.subscribe((layer) => {
         this.scheduleSave();
         if (layer === 'height') this.schedulePeaks();
+        // river mouths open or close as lakes and coasts change
+        if ((layer === 'lake' || layer === 'height') && this.rivers) {
+          clearTimeout(riverTimer);
+          riverTimer = window.setTimeout(() => {
+            const rect = this.rivers?.sync(useDoc.getState().doc.paths);
+            if (rect && this.renderer) {
+              this.renderer.terrain.riversChanged(rect);
+              this.renderer.requestRender();
+            }
+          }, 120);
+        }
         // lakes split the land into islands and are water bodies of their own
         if (layer === 'lake') {
           clearTimeout(lakeGeoTimer);

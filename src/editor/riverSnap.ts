@@ -1,6 +1,6 @@
 import { alongCurve, nearestOnCurve, riverCurve } from '../model/rivers';
 import type { PathFeature, PathOutlet, Vec2 } from '../model/types';
-import { lakeDepthAt } from '../terrain/lakes';
+import { isOpenWater, lakeDepthAt } from '../terrain/lakes';
 import type { TerrainModel } from '../terrain/TerrainModel';
 
 /*
@@ -10,11 +10,7 @@ import type { TerrainModel } from '../terrain/TerrainModel';
  */
 
 /** Open water at a point: the sea, or a lake. */
-export function isWater(model: TerrainModel, x: number, y: number): boolean {
-  if (y < 0 || y >= model.H) return false;
-  const wx = model.geo.wrapX(x);
-  return model.heightAt(wx, y) < model.seaLevel || lakeDepthAt(model, wx, y).depth > 0;
-}
+export const isWater = isOpenWater;
 
 /** The height of the surface at a point: a lake's level over its water, else the ground or the sea. */
 function surface(model: TerrainModel, p: Vec2): number {

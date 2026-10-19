@@ -225,6 +225,16 @@ export function defaultName(g: { land: RegionInfo[]; water: RegionInfo[] }, r: R
   return `${kindLabel(r.kind)} ${rank}`;
 }
 
+/** The name of the landmass or water body at a cell (its own, or the default), when measured. */
+export function nameAt(x: number, y: number): string | null {
+  const g = freshGeography();
+  const geography = useEditor.getState().geography;
+  if (!g || !geography) return null;
+  const r = regionAt(g, x, y);
+  if (!r) return null;
+  return regionName(g, r, useDoc.getState().doc.regionNames)?.name || defaultName(geography, r);
+}
+
 export function setRegionName(r: RegionInfo, name: string) {
   const g = freshGeography();
   if (!g) return;
