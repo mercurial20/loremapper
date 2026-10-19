@@ -1,6 +1,8 @@
 import type { Geo } from '../core/geo';
 import type { PlanetSettings } from '../core/planet';
 import type { Vec2 } from '../model/types';
+import { Simplex3, subSeed } from '../core/noise3';
+import { smoothstep } from '../core/math';
 import { isLake, type TerrainModel } from './TerrainModel';
 
 /*
@@ -27,6 +29,8 @@ export interface SourceParams {
   seepage: number;
   /** Hollows shallower than this (m) are passed through instead of filling with a lake. */
   carve: number;
+  /** The map's seed: the unseen roughness of its flat ground (the same for every source). */
+  seed?: number;
 }
 
 export type SimEnd = 'sea' | 'lake' | 'closed-lake' | 'marsh' | 'river' | 'edge' | 'pit' | 'dry';
@@ -69,6 +73,16 @@ export interface SimResult {
 export const EVAPORATION = 1e-3 / 31.557e6 * 1e6;
 /** Below this discharge (m³/s) a river has run dry. */
 const DRY = 0.05;
+/**
+ * Flat ground is never quite flat: the slopes of a few centimetres a kilometre that lead real
+ * rivers across plains are finer than any map. Where the map's ground is about this flat (m/m)
+ * or flatter, water follows an unseen roughness of the same gentle slope, MICRO_CELLS across at
+ * its largest; on steeper ground the map's own slope leads it.
+ */
+const MICRO_SLOPE = 2e-4;
+const MICRO_CELLS = 64;
+/** The roughness of flat ground is never taller than this (m). */
+const MICRO_HEIGHT = 4;
 /** Differences of height smaller than this (m) do not lead water across a flat. */
 const FLAT_TOLERANCE = 0.5;
 /** Hollows smaller than this many cells never hold a lake (the water passes on). */
@@ -183,14 +197,55 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     if (join) cur.join = join;
     if (cur.points.length >= 2) rivers.push(cur);
   };
+  // the cells the water has run through: it never flows back over its own course
+  const passed = new Set<number>();
   const add = (k: number, at: Vec2 = centre(k)) => {
     cur.points.push(at);
     cur.flow.push(Q);
+    passed.add(k);
   };
   // the water's position, between cell centres where it follows the slope
   let pos: Vec2;
   const geo = model.geo;
   const sample = (x: number, y: number) => model.heightAt(geo.wrapX(x), Math.min(H - 0.5, Math.max(0.5, y)));
+
+  // the unseen roughness of flat ground (see MICRO_SLOPE): heights the water goes by, never shown
+  const rough = new Simplex3(subSeed(p.seed ?? 0, 0x5eed));
+  // (a few metres at most: on a coarse map a gentle slope over many cells would make it as tall
+  // as real hills, and the water would cross real lakes as if they were its own dips)
+  const roughM = Math.min(MICRO_HEIGHT, (MICRO_SLOPE * MICRO_CELLS * cellKm * 1000) / 4);
+  const roughAt = (x: number, y: number) => {
+    if (geo.flat) return rough.fbm(x / MICRO_CELLS, y / MICRO_CELLS, 0.5, 1, 4);
+    // on a planet, on the sphere: no seam, no stretching towards the poles
+    const lon = (x / W) * 2 * Math.PI;
+    const lat = (0.5 - y / H) * Math.PI;
+    return rough.fbm(Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat), W / (2 * Math.PI * MICRO_CELLS), 4);
+  };
+  /** How flat the map's ground is at a point: 1 where the roughness leads, 0 where its slope does. */
+  const flatness = (x: number, y: number) => {
+    const kx = Math.max(1e-6, Math.abs(geo.kmPerCellX(y))) * 1000;
+    const sx = (sample(x + 1, y) - sample(x - 1, y)) / (2 * kx);
+    const sy = (sample(x, y + 1) - sample(x, y - 1)) / (2 * cellKm * 1000);
+    return 1 - smoothstep(MICRO_SLOPE, 4 * MICRO_SLOPE, Math.hypot(sx, sy));
+  };
+  /** The height water goes by at a point. */
+  const routeAt = (x: number, y: number) => {
+    const f = flatness(x, y);
+    return sample(x, y) + (f > 0 ? roughM * f * roughAt(x, y) : 0);
+  };
+  const routed = new Map<number, number>();
+  /** The height water goes by in a cell. */
+  const r = (k: number): number => {
+    let v = routed.get(k);
+    if (v === undefined) {
+      const x = (k % W) + 0.5;
+      const y = ((k / W) | 0) + 0.5;
+      const f = flatness(x, y);
+      v = h(k) + (f > 0 ? roughM * f * roughAt(x, y) : 0);
+      routed.set(k, v);
+    }
+    return v;
+  };
   /**
    * A step of about a cell down the slope of the land, in whatever direction it falls (not only
    * the eight from cell to cell, which would draw rivers as straight runs at 45°). Null where
@@ -199,8 +254,8 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
   const alongSlope = (k: number): { at: Vec2; k: number } | null => {
     const [x, y] = pos;
     const kx = Math.max(1e-6, Math.abs(geo.kmPerCellX(y)));
-    const gx = (sample(x + 0.5, y) - sample(x - 0.5, y)) / kx;
-    const gy = (sample(x, y + 0.5) - sample(x, y - 0.5)) / cellKm;
+    const gx = (routeAt(x + 0.5, y) - routeAt(x - 0.5, y)) / kx;
+    const gy = (routeAt(x, y + 0.5) - routeAt(x, y - 0.5)) / cellKm;
     // downhill, in cells
     let dx = -gx / kx;
     let dy = -gy / cellKm;
@@ -214,7 +269,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       const n = Math.floor(at[1]) * W + ((Math.floor(at[0]) % W) + W) % W;
       if (n === k) continue;
       if (!wrap && (at[0] < 0 || at[0] >= W)) return null;
-      return h(n) < h(k) ? { at: [((at[0] % W) + W) % W, at[1]], k: n } : null;
+      return r(n) < r(k) && !passed.has(n) ? { at: [((at[0] % W) + W) % W, at[1]], k: n } : null;
     }
     return null;
   };
@@ -302,8 +357,8 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     let bestSlope = 0;
     for (const n of nb) {
       const dist = (n % W) !== (c % W) && ((n / W) | 0) !== ((c / W) | 0) ? Math.SQRT2 : 1;
-      const s = (g - h(n)) / dist;
-      if (s > bestSlope) {
+      const s = (r(c) - r(n)) / dist;
+      if (s > bestSlope && !passed.has(n)) {
         bestSlope = s;
         best = n;
       }
@@ -432,8 +487,8 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
           heap.push(n, hn);
           continue;
         }
-        if (hn < level || hn < sea || isEdge(n)) {
-          // the way out: lower land (or the sea) beyond the rim
+        if (((hn < level && !passed.has(n)) || hn < sea || isEdge(n))) {
+          // the way out: lower land (or the sea) beyond the rim (not back the way the water came)
           const cells = popped.filter((x) => h(x) < level);
           const path = across(popped, pit, k);
           // out of the lake: from its deepest point (under the water), over the rim; where the
@@ -455,20 +510,24 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
    * astray from pit to pit, it crosses to where the land falls away), or null for a deeper hollow.
    */
   function breach(pit: number): number[] | null {
-    const base = h(pit);
-    const tol = Math.max(1e-3, Math.min(FLAT_TOLERANCE, p.carve / 2));
+    const base = r(pit);
+    // the roughness of flat ground makes dips of its own, which the water always crosses
+    const limit = p.carve + 2 * roughM * (1 - smoothstep(0, 1, 1 - flatness((pit % W) + 0.5, ((pit / W) | 0) + 0.5)));
+    // (and no more than half the roughness of flat ground: its dips are crossed in a short step,
+    // and the slope of the land around still leads the water)
+    const tol = Math.max(1e-3, Math.min(FLAT_TOLERANCE, p.carve / 2, roughM / 2));
     const lower = base - tol;
     // lowest first, by bands of the tolerance; within a band, nearest first (so on a flat the
     // water makes for the nearest edge where the land falls away)
     const steps = new Map<number, number>([[pit, 0]]);
-    const key = (n: number, d: number) => Math.floor(Math.max(0, h(n) - base) / tol) * 1e7 + d;
+    const key = (n: number, d: number) => Math.floor(Math.max(0, r(n) - base) / tol) * 1e7 + d;
     const heap = new Heap();
     const region: number[] = [];
     const local: number[] = [];
     heap.push(pit, 0);
     while (heap.size) {
       const [k] = heap.pop();
-      if (h(k) - base >= p.carve) return null;
+      if (r(k) - base >= limit) return null;
       region.push(k);
       if (region.length > MAX_BASIN) return null;
       neighbours(k, local);
@@ -476,9 +535,9 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
         if (steps.has(n)) continue;
         const d = steps.get(k)! + 1;
         steps.set(n, d);
-        const hn = h(n);
+        const hn = r(n);
         // not back into a hollow the water came through (it would only come back out the same way)
-        if ((hn < lower && !hollowOf.has(n)) || hn < sea || isEdge(n)) return [...across(region, pit, k).slice(1), n];
+        if ((hn < lower && !hollowOf.has(n) && !passed.has(n)) || h(n) < sea || isEdge(n)) return [...across(region, pit, k).slice(1), n];
         heap.push(n, key(n, d));
       }
     }
@@ -486,24 +545,36 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
   }
 
   /**
-   * The shortest way across a hollow from `from` to `to` through its cells (not the order the
-   * water filled them in, which on a flat winds back and forth across all of it).
+   * The way across a hollow from `from` to `to` through its cells: short, and along the lowest
+   * ground in it (on a flat, the faint channels of its roughness), not the order the water filled
+   * it in, which winds back and forth over all of it, nor a ruler-straight line.
    */
   function across(region: number[], from: number, to: number): number[] {
     const inside = new Set(region);
+    const base = r(from);
+    const scale = Math.max(0.05, roughM);
+    const cost = new Map<number, number>([[from, 0]]);
     const prev = new Map<number, number>([[from, -1]]);
-    const queue = [from];
+    const done = new Set<number>();
+    const heap = new Heap();
     const local: number[] = [];
-    for (let qi = 0; qi < queue.length && !prev.has(to); qi++) {
-      const k = queue[qi];
+    heap.push(from, 0);
+    while (heap.size) {
+      const [k, ck] = heap.pop();
+      if (done.has(k)) continue;
+      done.add(k);
+      if (k === to) break;
       neighbours(k, local);
-      // straight steps first, so the way runs straight rather than in a staircase of diagonals
-      local.sort((a, b) => Number((a % W !== k % W) && ((a / W) | 0) !== ((k / W) | 0)) - Number((b % W !== k % W) && ((b / W) | 0) !== ((k / W) | 0)));
-      for (const n of local)
-        if (inside.has(n) && !prev.has(n)) {
+      for (const n of local) {
+        if (!inside.has(n) || done.has(n)) continue;
+        const diag = n % W !== k % W && ((n / W) | 0) !== ((k / W) | 0);
+        const cn = ck + (diag ? Math.SQRT2 : 1) * (1 + Math.max(0, r(n) - base) / scale);
+        if (cn < (cost.get(n) ?? Infinity)) {
+          cost.set(n, cn);
           prev.set(n, k);
-          queue.push(n);
+          heap.push(n, cn);
         }
+      }
     }
     const path: number[] = [];
     for (let q = prev.has(to) ? to : from; q >= 0; q = prev.get(q)!) path.push(q);

@@ -35,7 +35,7 @@ import { clearLake, fillBasin, lakeAt, lakeDepthAt, lakesFollowGround, paintLake
 import { pickLake, selectLake } from '../editor/lakes';
 import { riverSnapAt, snapRiver, type SnappedRiver } from '../editor/riverSnap';
 import { addCrestLine, snapToCrest } from '../editor/ranges';
-import { addSource, sourceAt, updateSource } from '../editor/sources';
+import { addSource, setWater, sourceAt, sourcesFollowGround, updateSource } from '../editor/sources';
 import { crestCurve } from '../terrain/ranges';
 import { sampleSpline } from '../render/vectorGeometry';
 import type { TerrainModel, TileChange } from '../terrain/TerrainModel';
@@ -1774,6 +1774,9 @@ function withLakes(changes: TileChange[], model: TerrainModel): TileChange[] {
 /** Push several raster changes (e.g. water and the valley it cut) as one undo step. */
 export function pushTileChanges(changes: TileChange[], label: string, model = editor.model!) {
   changes = withLakes(changes, model);
+  // water sources whose water the edit touched run again, in the same undo step
+  const water = model === editor.model ? sourcesFollowGround(model, changes) : null;
+  if (water) changes.push(...water.changes);
   let bytes = 0;
   for (const c of changes) for (const v of [...c.before.values(), ...c.after.values()]) bytes += v?.byteLength ?? 0;
   history.push({
@@ -1781,9 +1784,11 @@ export function pushTileChanges(changes: TileChange[], label: string, model = ed
     cost: bytes,
     undo: () => {
       for (const c of changes.slice().reverse()) model.applyTiles(c, 'before');
+      if (water) setWater(water.before);
     },
     redo: () => {
       for (const c of changes) model.applyTiles(c, 'after');
+      if (water) setWater(water.after);
     },
   });
   track('first_edit');
@@ -1792,11 +1797,9 @@ export function pushTileChanges(changes: TileChange[], label: string, model = ed
 /** Push a raster change onto the undo stack. */
 export function pushTileChange(change: TileChange, label: string, model = editor.model!) {
   if (change.layer === 'height') {
-    const changes = withLakes([change], model);
-    if (changes.length > 1) {
-      pushTileChanges(changes, label, model);
-      return;
-    }
+    // lakes and water sources follow the new ground
+    pushTileChanges([change], label, model);
+    return;
   }
   let bytes = 0;
   for (const v of change.before.values()) bytes += v?.byteLength ?? 0;

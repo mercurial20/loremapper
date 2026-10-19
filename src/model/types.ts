@@ -80,6 +80,8 @@ export interface WaterSource {
     /** Marshes on the way (world cells, radius in cells). */
     marshes: { x: number; y: number; r: number }[];
     end: SourceEnd;
+    /** Where its water went (rivers and lakes), world cells: x0, y0, x1, y1. */
+    box?: [number, number, number, number];
   };
   locked: boolean;
 }

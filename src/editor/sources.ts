@@ -21,11 +21,19 @@ import { editor } from './Editor';
 /** Dips shallower than this (m) are crossed by the river instead of filled with a lake. */
 const CARVE = 4;
 /** How close (cells) to another river the water must come to join it, beyond its banks. */
-const JOIN = 0.75;
+const JOIN = 2;
 
-type Water = { paths: Record<string, PathFeature>; sources: Record<string, WaterSource> };
+/** The rivers and the sources of the document: what running sources changes. */
+export type Water = { paths: Record<string, PathFeature>; sources: Record<string, WaterSource> };
 
-const setWater = (w: Water) => useDoc.setState((s) => ({ doc: { ...s.doc, paths: w.paths, sources: w.sources }, revision: s.revision + 1 }));
+export const setWater = (w: Water) => useDoc.setState((s) => ({ doc: { ...s.doc, paths: w.paths, sources: w.sources }, revision: s.revision + 1 }));
+
+/** A run of sources: the document before and after, and the lakes it changed (already applied). */
+export interface WaterRun {
+  before: Water;
+  after: Water;
+  changes: TileChange[];
+}
 
 /** The net evaporation a source's water meets, mm a year: its own, or the climate's at its latitude. */
 export function sourceAridity(model: TerrainModel, s: Pick<WaterSource, 'at' | 'aridity'>): number {
@@ -39,7 +47,7 @@ function riverCells(model: TerrainModel, paths: Record<string, PathFeature>): Ma
   const out = new Map<number, string>();
   for (const p of Object.values(paths)) {
     if (p.kind !== 'river' || p.hidden || p.points.length < 2) continue;
-    const r = Math.max(JOIN, p.width / 2 + JOIN * 0.5);
+    const r = p.width / 2 + JOIN;
     const R = Math.ceil(r);
     const c = riverCurve(p.points);
     for (let i = 0; i < c.length; i++) {
@@ -154,7 +162,8 @@ function make(model: TerrainModel, s: WaterSource, paths: Record<string, PathFea
     const n = nearestOnCurve(riverCurve(p.points), [ref + model.geo.deltaX(ref, at[0]), at[1]]);
     return { id, t: n.t };
   };
-  const res = simulateSource(model, { at: s.at, q: s.q, aridity: sourceAridity(model, s), seepage: 0, carve: CARVE }, joinRiver);
+  const seed = useDoc.getState().meta?.seed ?? 0;
+  const res = simulateSource(model, { at: s.at, q: s.q, aridity: sourceAridity(model, s), seepage: 0, carve: CARVE, seed }, joinRiver);
   const lakes: number[] = [];
   for (const l of res.lakes) {
     const c = setLake(model, l.cells, l.level);
@@ -188,7 +197,16 @@ function make(model: TerrainModel, s: WaterSource, paths: Record<string, PathFea
       locked: false,
     };
   });
-  return { ...s, made: { lakes, marshes: res.marshes.map((m) => ({ x: m.x, y: m.y, r: m.r })), end: res.end } };
+  // where its water goes, so an edit of the ground there runs it again
+  let box: [number, number, number, number] = [s.at[0], s.at[1], s.at[0], s.at[1]];
+  const grow = (x: number, y: number) => (box = [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)]);
+  for (const p of Object.values(paths)) if (p.source === s.id) for (const [x, y] of p.points) grow(x, y);
+  for (const l of res.lakes)
+    for (const k of l.cells) {
+      const x = (k % W) + 0.5;
+      grow(s.at[0] + model.geo.deltaX(s.at[0], x), Math.floor(k / W) + 0.5);
+    }
+  return { ...s, made: { lakes, marshes: res.marshes.map((m) => ({ x: m.x, y: m.y, r: m.r })), end: res.end, box } };
 }
 
 /**
@@ -198,6 +216,26 @@ function make(model: TerrainModel, s: WaterSource, paths: Record<string, PathFea
 function changeSources(label: string, next: Record<string, WaterSource>, run: string[], removed: WaterSource[] = []) {
   const model = editor.model;
   if (!model) return;
+  const { before, after, changes } = runSources(model, next, run, removed);
+  let bytes = 4096;
+  for (const c of changes) for (const v of [...c.before.values(), ...c.after.values()]) bytes += v?.byteLength ?? 0;
+  history.push({
+    label,
+    cost: bytes,
+    undo: () => {
+      for (const c of changes.slice().reverse()) model.applyTiles(c, 'before');
+      setWater(before);
+    },
+    redo: () => {
+      for (const c of changes) model.applyTiles(c, 'after');
+      setWater(after);
+    },
+  });
+  track('first_edit');
+}
+
+/** Run sources (and those whose water joins theirs) with the document's sources set to `next`. */
+function runSources(model: TerrainModel, next: Record<string, WaterSource>, run: string[], removed: WaterSource[] = []): WaterRun {
   const before: Water = { paths: useDoc.getState().doc.paths, sources: useDoc.getState().doc.sources };
   const paths = { ...before.paths };
   const sources = { ...next };
@@ -224,21 +262,54 @@ function changeSources(label: string, next: Record<string, WaterSource>, run: st
   for (const id of todo) sources[id] = make(model, sources[id], paths, changes);
   const after: Water = { paths, sources };
   setWater(after);
-  let bytes = 4096;
-  for (const c of changes) for (const v of [...c.before.values(), ...c.after.values()]) bytes += v?.byteLength ?? 0;
-  history.push({
-    label,
-    cost: bytes,
-    undo: () => {
-      for (const c of changes.slice().reverse()) model.applyTiles(c, 'before');
-      setWater(before);
-    },
-    redo: () => {
-      for (const c of changes) model.applyTiles(c, 'after');
-      setWater(after);
-    },
-  });
-  track('first_edit');
+  return { before, after, changes };
+}
+
+/** The cells an edit of the ground changed, as a rectangle (null when nothing changed). */
+function changedRect(model: TerrainModel, change: TileChange): [number, number, number, number] | null {
+  const g = model.height;
+  const TS = g.TS;
+  let r: [number, number, number, number] | null = null;
+  for (const [key, after] of change.after) {
+    const before = change.before.get(key) ?? null;
+    const [tx, ty] = g.tileXY(key);
+    for (let i = 0; i < TS * TS; i++) {
+      const a = after ? after[i] : NaN;
+      const b = before ? before[i] : NaN;
+      if (a === b || (Number.isNaN(a) && Number.isNaN(b))) continue;
+      const x = tx * TS + (i % TS);
+      const y = ty * TS + Math.floor(i / TS);
+      r = r ? [Math.min(r[0], x), Math.min(r[1], y), Math.max(r[2], x), Math.max(r[3], y)] : [x, y, x, y];
+    }
+  }
+  return r;
+}
+
+/** How close (cells) an edit of the ground must come to a source's water to run it again. */
+const FOLLOW = 3;
+
+/**
+ * Sources whose water an edit of the ground touches run again: a hill raised across a river
+ * dams it into a lake that spills where it can, ground lowered beside it may take it another
+ * way. Returns the run (applied) to fold into the edit's undo step, or null.
+ */
+export function sourcesFollowGround(model: TerrainModel, changes: TileChange[]): WaterRun | null {
+  const sources = useDoc.getState().doc.sources;
+  const list = Object.values(sources);
+  if (!list.length) return null;
+  const rects = changes.filter((c) => c.layer === 'height').map((c) => changedRect(model, c)).filter((r): r is [number, number, number, number] => !!r);
+  if (!rects.length) return null;
+  const W = model.W;
+  const touched = (box: [number, number, number, number]) =>
+    rects.some(([x0, y0, x1, y1]) => {
+      if (box[1] - FOLLOW > y1 || box[3] + FOLLOW < y0) return false;
+      // a planet wraps: the box may lie a turn east or west of the edit
+      for (const s of model.geo.wraps ? [-W, 0, W] : [0]) if (box[0] - FOLLOW <= x1 + s && box[2] + FOLLOW >= x0 + s) return true;
+      return false;
+    });
+  const hit = list.filter((s) => touched(s.made.box ?? [s.at[0], s.at[1], s.at[0], s.at[1]])).map((s) => s.id);
+  if (!hit.length) return null;
+  return runSources(model, sources, hit);
 }
 
 /** Whether water can come out at a point (on land, not in the sea or a lake). */

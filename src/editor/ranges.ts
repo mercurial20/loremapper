@@ -9,6 +9,7 @@ import type { TileChange } from '../terrain/TerrainModel';
 import { bakeRanges, crestCurve, nearestOnCurve, rebuildRanges } from '../terrain/ranges';
 import { lakesFollowGround } from '../terrain/lakes';
 import { editor } from './Editor';
+import { setWater, sourcesFollowGround } from './sources';
 
 /*
  * Editing mountain ranges drawn as crest lines (the Mountain range tool's lines
@@ -29,6 +30,9 @@ function pushChange(label: string, before: Record<string, MountainRange>, after:
     const lc = c.layer === 'height' ? lakesFollowGround(model, c) : null;
     if (lc) changes.push(lc);
   }
+  // and the water of sources there finds its way again
+  const water = sourcesFollowGround(model, changes);
+  if (water) changes.push(...water.changes);
   let bytes = 4096;
   for (const c of changes) for (const v of [...c.before.values(), ...c.after.values()]) bytes += v?.byteLength ?? 0;
   history.push({
@@ -37,10 +41,12 @@ function pushChange(label: string, before: Record<string, MountainRange>, after:
     undo: () => {
       for (const c of changes.slice().reverse()) model.applyTiles(c, 'before');
       setRanges(before);
+      if (water) setWater(water.before);
     },
     redo: () => {
       for (const c of changes) model.applyTiles(c, 'after');
       setRanges(after);
+      if (water) setWater(water.after);
     },
   });
   track('first_edit');
