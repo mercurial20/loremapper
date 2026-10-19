@@ -683,7 +683,10 @@ export function paintLake(model: TerrainModel, cover: Map<number, number>, maxDe
   return { changes, cells: wet };
 }
 
-/** Water painted into the sea: the stroke's ground is cut below sea level, shelving like a lake's bed. */
+/** How deep water painted into the sea is cut, at most, metres. */
+const BAY_DEPTH = 3;
+
+/** Water painted into the sea: the stroke's ground is cut just below sea level, so it reads as shallow sea. */
 function paintBay(model: TerrainModel, d: Map<number, number>, maxDepth: number): { changes: TileChange[]; cells: number[] } {
   const W = model.W;
   const sea = model.seaLevel;
@@ -695,7 +698,8 @@ function paintBay(model: TerrainModel, d: Map<number, number>, maxDepth: number)
     if (v <= 0) continue;
     const g = model.height.get(c % W, (c / W) | 0);
     const fall = SHELF * v + (k - SHELF) * Math.max(0, v - 1) ** 2 * 0.25;
-    const t = Math.min(sea - 0.1, sea - depth * (1 - Math.exp(-fall / depth)));
+    // shallow: the sea's colour follows its depth, and a deep cut would show as a dark trench
+    const t = Math.min(sea - 0.1, sea - BAY_DEPTH * (1 - Math.exp(-fall / BAY_DEPTH)));
     if (t < g) {
       const { t: tile, i } = height.tile(c);
       tile[i] = t;

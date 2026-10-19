@@ -81,14 +81,60 @@ export function riverSnapAt(model: TerrainModel, paths: Record<string, PathFeatu
 export interface SnappedRiver {
   points: Vec2[];
   outlet?: PathOutlet;
+  /** A river drawn on through a lake goes on as another river, flowing out of it. */
+  more?: SnappedRiver[];
 }
+
+/**
+ * Where a line drawn through water crosses it: the shore where it first goes in, and where it
+ * comes out again, by segment. Null when it never goes into water, or the water is the sea.
+ */
+function crossing(model: TerrainModel, pts: Vec2[]): { inSeg: number; inAt: Vec2; outSeg: number; outAt: Vec2 } | null {
+  let entered: { seg: number; at: Vec2 } | null = null;
+  let prev = pts[0];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [ax, ay] = pts[i];
+    const [bx, by] = pts[i + 1];
+    const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 0.5));
+    for (let k = 1; k <= steps; k++) {
+      const q: Vec2 = [ax + ((bx - ax) * k) / steps, ay + ((by - ay) * k) / steps];
+      const w = isWater(model, q[0], q[1]);
+      if (!entered && w) {
+        // only lakes are crossed: a river drawn into the sea ends there
+        if (lakeDepthAt(model, model.geo.wrapX(q[0]), q[1]).depth <= 0) return null;
+        entered = { seg: i, at: shoreBetween(model, prev, q) };
+      } else if (entered && !w) return { inSeg: entered.seg, inAt: entered.at, outSeg: i, outAt: shoreBetween(model, q, prev) };
+      prev = q;
+    }
+  }
+  return null;
+}
+
+/** A drawn river that starts out in a lake begins at the shore where it leaves it. */
+function leaveWater(model: TerrainModel, pts: Vec2[]): Vec2[] {
+  if (!isWater(model, pts[0][0], pts[0][1])) return pts;
+  let prev = pts[0];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [ax, ay] = pts[i];
+    const [bx, by] = pts[i + 1];
+    const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 0.5));
+    for (let k = 1; k <= steps; k++) {
+      const q: Vec2 = [ax + ((bx - ax) * k) / steps, ay + ((by - ay) * k) / steps];
+      if (!isWater(model, q[0], q[1])) return [shoreBetween(model, q, prev), ...pts.slice(i + 1)];
+      prev = q;
+    }
+  }
+  return pts;
+}
+
+const lengthOf = (pts: Vec2[]) => pts.reduce((s, p, i) => (i ? s + Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0), 0);
 
 /**
  * A drawn river with its ends snapped: drawn from its mouth upstream, it is turned around; a
  * mouth near water is pulled onto the shore (a course drawn on into the water is cut there); a
  * mouth near another river joins it.
  */
-export function snapRiver(model: TerrainModel, paths: Record<string, PathFeature>, raw: Vec2[], radius: number, self?: string): SnappedRiver {
+export function snapRiver(model: TerrainModel, paths: Record<string, PathFeature>, raw: Vec2[], radius: number, self?: string, orient = true): SnappedRiver {
   let pts = raw.slice();
   if (pts.length < 2) return { points: pts };
   const startSnap = riverSnapAt(model, paths, pts[0], radius, self);
@@ -96,10 +142,26 @@ export function snapRiver(model: TerrainModel, paths: Record<string, PathFeature
   // drawn from the mouth: rivers run downhill, so a river that starts at other water lower than
   // where it ends was drawn upstream (one leaving a lake runs downhill from it, and stays)
   const lower = (a: Vec2, b: Vec2) => surface(model, a) < surface(model, b);
-  if (startSnap && lower(pts[0], pts[pts.length - 1])) {
+  if (orient && startSnap && lower(pts[0], pts[pts.length - 1])) {
     pts = pts.reverse();
     endSnap = startSnap;
   }
+  // drawn on through a lake: a river into it, and another flowing out of it
+  pts = leaveWater(model, pts);
+  if (pts.length < 2) return { points: pts };
+  const through = crossing(model, pts);
+  if (through) {
+    const rest = [through.outAt, ...pts.slice(through.outSeg + 1)];
+    if (lengthOf(rest) > Math.max(3, radius)) {
+      const inflow = pts.slice(0, through.inSeg + 1);
+      while (inflow.length > 1 && Math.hypot(inflow[inflow.length - 1][0] - through.inAt[0], inflow[inflow.length - 1][1] - through.inAt[1]) < radius) inflow.pop();
+      inflow.push(through.inAt);
+      // the river goes on the way it was drawn
+      const out = snapRiver(model, paths, rest, radius, self, false);
+      return { points: dedupe(inflow), outlet: { kind: 'water' }, more: [{ ...out, more: undefined }, ...(out.more ?? [])] };
+    }
+  }
+  endSnap = riverSnapAt(model, paths, pts[pts.length - 1], radius, self);
   if (!endSnap) return { points: pts };
   /** Drop the drawn points close to where the river now ends, so its last bend is not a tight loop. */
   const approach = (target: Vec2) => {

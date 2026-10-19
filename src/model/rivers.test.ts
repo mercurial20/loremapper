@@ -149,4 +149,27 @@ describe('river snapping', () => {
     expect(Math.hypot(end[0] - prev[0], end[1] - prev[1])).toBeGreaterThan(16);
     expect(dir[0]).toBeLessThan(0);
   });
+
+  it('turns a river drawn on through a lake into one flowing in and one flowing out', () => {
+    const model = coast();
+    const cells: number[] = [];
+    for (let y = 480; y < 520; y++)
+      for (let x = 680; x < 720; x++) {
+        model.height.ensureTile((x / 256) | 0, (y / 256) | 0)[(y % 256) * 256 + (x % 256)] = 120;
+        cells.push(y * model.W + x);
+      }
+    setLake(model, cells, 160);
+    const s = snapRiver(model, {}, [
+      [700, 300],
+      [700, 450],
+      [700, 560],
+      [690, 700],
+    ], 8);
+    expect(s.outlet).toEqual({ kind: 'water' });
+    expect(s.points[s.points.length - 1][1]).toBeLessThan(482);
+    expect(s.more?.length).toBe(1);
+    const out = s.more![0];
+    expect(out.points[0][1]).toBeGreaterThan(518);
+    expect(out.points[out.points.length - 1]).toEqual([690, 700]);
+  });
 });

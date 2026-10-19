@@ -6,6 +6,7 @@ import { clamp, simplifyPath, uid } from '../core/math';
 import { BIOMES } from '../core/planet';
 import {
   addFeature,
+  addFeatures,
   addObjects,
   deleteRefs,
   designatePeak,
@@ -23,7 +24,7 @@ import { rotateHandle } from '../model/geometry';
 import { territoryLabelPos } from '../render/TerritoryLayer';
 import { history } from '../model/history';
 import { track } from '../analytics';
-import type { MapDocument, MapLabel, PathFeature, SelectionRef, Territory, Vec2 } from '../model/types';
+import type { MapDocument, MapLabel, PathFeature, PathOutlet, SelectionRef, Territory, Vec2 } from '../model/types';
 import { hexToNumber, STYLE_PRESETS } from '../render/styles';
 import { useDoc } from '../store/docStore';
 import { brushGroupOf, togglePanel, useEditor, type ToolId } from '../store/editorStore';
@@ -32,7 +33,7 @@ import { erodeRiver, newWaterCells, waterIn } from '../terrain/riverErosion';
 import { carveUplift } from '../terrain/upliftStroke';
 import { clearLake, fillBasin, lakeAt, lakeDepthAt, lakesFollowGround, paintLake, setLake, touchingLakes } from '../terrain/lakes';
 import { pickLake, selectLake } from '../editor/lakes';
-import { riverSnapAt, snapRiver } from '../editor/riverSnap';
+import { riverSnapAt, snapRiver, type SnappedRiver } from '../editor/riverSnap';
 import { addCrestLine, snapToCrest } from '../editor/ranges';
 import { crestCurve } from '../terrain/ranges';
 import { sampleSpline } from '../render/vectorGeometry';
@@ -529,9 +530,30 @@ export class ToolController {
       case 'freehand':
         this.finishFreehand(d);
         break;
+      case 'vertex':
+        this.endVertex(d);
+        break;
     }
     this.updateCursorStyle();
   };
+
+  /** A river's mouth dragged to a new place snaps to the water or river there (or lets go of it). */
+  private endVertex(d: Extract<Drag, { kind: 'vertex' }>) {
+    if (d.ref.kind !== 'path') return;
+    const paths = useDoc.getState().doc.paths;
+    const p = paths[d.ref.id];
+    if (!p || p.kind !== 'river' || d.index !== p.points.length - 1) return;
+    const end = p.points[d.index];
+    const target = riverSnapAt(editor.model!, paths, end, riverSnapRadius(editor.zoom), p.id);
+    if (!target) {
+      if (p.outlet) updateFeature('path', p.id, { outlet: undefined }, t('Edit path'), d.key);
+      return;
+    }
+    const pts = p.points.slice();
+    pts[d.index] = target.at;
+    const outlet: PathOutlet = target.kind === 'water' ? { kind: 'water' } : { kind: 'path', id: target.id, t: target.t };
+    updateFeature('path', p.id, { points: pts, outlet }, t('Edit path'), d.key);
+  }
 
   private onWheel = (e: WheelEvent) => {
     e.preventDefault();
@@ -1196,7 +1218,7 @@ export class ToolController {
   /** Mark the point of a crest a line would branch from, when starting or ending one near it. */
   /** River tool: where the river's end would snap (a shore, or another river). */
   private showRiverSnap(x: number, y: number) {
-    const at = riverSnapAt(editor.model!, useDoc.getState().doc.paths, [x, y], RIVER_SNAP_PX / editor.zoom);
+    const at = riverSnapAt(editor.model!, useDoc.getState().doc.paths, [x, y], riverSnapRadius(editor.zoom));
     const prev = this.overlay().state.snap;
     const next = at && at.d > 0 ? at.at : null;
     if (prev === next || (prev && next && prev[0] === next[0] && prev[1] === next[1])) return;
@@ -1335,14 +1357,15 @@ export class ToolController {
       this.overlay().set({ snap: null });
     } else if ((tool === 'river' || tool === 'road') && pts.length >= 2) {
       const def = tool === 'river' ? st.pathDefaults.river : st.pathDefaults.road;
-      // a river's mouth meets the sea, a lake or another river
-      const snapped = tool === 'river' ? snapRiver(editor.model!, useDoc.getState().doc.paths, pts, RIVER_SNAP_PX / zoom) : { points: pts, outlet: undefined };
+      // a river's mouth meets the sea, a lake or another river; one drawn on through a lake
+      // goes on as a second river flowing out of it
+      const snapped: SnappedRiver = tool === 'river' ? snapRiver(editor.model!, useDoc.getState().doc.paths, pts, riverSnapRadius(zoom)) : { points: pts };
       this.overlay().set({ snap: null });
-      const p: PathFeature = {
+      const make = (r: SnappedRiver): PathFeature => ({
         id: uid('path-'),
         kind: tool,
-        points: snapped.points,
-        ...(snapped.outlet ? { outlet: snapped.outlet } : {}),
+        points: r.points,
+        ...(r.outlet ? { outlet: r.outlet } : {}),
         width: def.width / zoom,
         color: def.color,
         style: tool === 'road' ? st.pathDefaults.road.style : 'solid',
@@ -1350,10 +1373,13 @@ export class ToolController {
         name: '',
         hidden: false,
         locked: false,
-      };
-      if (tool === 'river' && st.riverCarve) this.addRiverWithValley(p);
-      else addFeature('path', p, tool === 'river' ? t('Draw river') : t('Draw road'));
-      st.select([{ kind: 'path', id: p.id }]);
+      });
+      const all = [snapped, ...(snapped.more ?? [])].filter((r) => r.points.length >= 2).map(make);
+      if (!all.length) return;
+      if (tool === 'river' && st.riverCarve) for (const p of all) this.addRiverWithValley(p);
+      else if (all.length > 1) addFeatures('path', all, t('Draw river'));
+      else addFeature('path', all[0], tool === 'river' ? t('Draw river') : t('Draw road'));
+      st.select(all.map((p) => ({ kind: 'path' as const, id: p.id })));
     } else if (tool === 'territory' && pts.length >= 3) {
       const d = st.territoryDefaults;
       const count = Object.keys(useDoc.getState().doc.territories).length;
@@ -1735,6 +1761,8 @@ useDoc.subscribe((s, prev) => {
 const CREST_SNAP_PX = 14;
 /** How close to a shore or another river (screen px) a river's end snaps to it. */
 const RIVER_SNAP_PX = 24;
+/** The snapping distance in world cells at a zoom: the screen distance, kept to 3 … 15 cells. */
+const riverSnapRadius = (zoom: number) => Math.min(15, Math.max(3, RIVER_SNAP_PX / zoom));
 
 export const tools = new ToolController();
 Object.assign(window as object, { __tools: tools });

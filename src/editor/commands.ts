@@ -75,6 +75,12 @@ export function addFeature<K extends keyof KindMap>(kind: K, item: KindMap[K], l
   commit(label, (d) => ({ [key]: { ...d[key], [item.id]: item } }));
 }
 
+/** Add several features of one kind as one undo step. */
+export function addFeatures<K extends keyof KindMap>(kind: K, items: KindMap[K][], label: string) {
+  const key = KEY[kind];
+  commit(label, (d) => ({ [key]: { ...d[key], ...Object.fromEntries(items.map((i) => [i.id, i])) } }));
+}
+
 export function updateFeature<K extends keyof KindMap>(kind: K, id: string, patch: Partial<KindMap[K]>, label: string, mergeKey?: string) {
   const key = KEY[kind];
   commit(
