@@ -1,5 +1,6 @@
 import { track } from '../analytics';
-import { evenSpacing, simplifyPath, uid } from '../core/math';
+import { evenSpacing, simplifyPath, smoothstep, uid } from '../core/math';
+import { meander, oxbowsFrom } from '../terrain/meander';
 import { t } from '../i18n';
 import { history } from '../model/history';
 import { curveLengths, nearestOnCurve, riverCurve, widthForFlow } from '../model/rivers';
@@ -7,7 +8,7 @@ import type { MapDocument, PathFeature, Vec2, WaterSource } from '../model/types
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import { clearLake, isOpenWater, lakeAt, setLake } from '../terrain/lakes';
-import type { TerrainModel, TileChange } from '../terrain/TerrainModel';
+import { isLake, type TerrainModel, type TileChange } from '../terrain/TerrainModel';
 import { aridityAt, climateLatAt, simulateSource, type SimRiver } from '../terrain/waterSim';
 import { editor } from './Editor';
 
@@ -46,7 +47,7 @@ function riverCells(model: TerrainModel, paths: Record<string, PathFeature>): Ma
   const W = model.W;
   const out = new Map<number, string>();
   for (const p of Object.values(paths)) {
-    if (p.kind !== 'river' || p.hidden || p.points.length < 2) continue;
+    if (p.kind !== 'river' || p.hidden || p.oxbow || p.points.length < 2) continue;
     const r = p.width / 2 + JOIN;
     const R = Math.ceil(r);
     const c = riverCurve(p.points);
@@ -69,11 +70,11 @@ function riverCells(model: TerrainModel, paths: Record<string, PathFeature>): Ma
 const HEAD = 30;
 
 /**
- * The course of a simulated river as a smooth line, unwrapped from `x0`, with its discharge at
- * each point. Below the source itself (`head`) the water gathers over the first stretch, so the
- * river starts as a stream and widens, as one fed by the brooks of its upper basin does.
+ * The course of a simulated river, smoothed and resampled every cell, unwrapped from `x0`, and
+ * its discharge at a distance along it. Below the source itself (`head`) the water gathers over
+ * the first stretch, so the river starts as a stream and widens.
  */
-function toLine(model: TerrainModel, r: SimRiver, x0: number, head: boolean): { points: Vec2[]; flow: number[] } {
+function toCourse(model: TerrainModel, r: SimRiver, x0: number, head: boolean): { course: Vec2[]; flowAt: (s: number) => number } {
   const raw: Vec2[] = [];
   let prev = x0;
   for (const [x, y] of r.points) {
@@ -84,21 +85,25 @@ function toLine(model: TerrainModel, r: SimRiver, x0: number, head: boolean): { 
   }
   const cum = curveLengths(raw);
   const total = cum[cum.length - 1] || 1;
-  // water steps from cell to cell in eight directions; the river's course is that path smoothed
-  // over a few cells (no straight runs at 45° with sharp turns between them), then evenly spaced
-  // control points
-  const points = evenSpacing(simplifyPath(smoothCourse(raw, SMOOTH), 0.3), 5) as Vec2[];
-  const along = curveLengths(points);
-  const all = along[along.length - 1] || 1;
-  let j = 1;
-  const flow = points.map((_, i) => {
-    const s = (along[i] / all) * total;
-    while (j < cum.length - 1 && cum[j] < s) j++;
+  // water steps from cell to cell; the river's course is that path smoothed over a few cells
+  const course = smoothCourse(raw, SMOOTH);
+  const len = curveLengths(course).at(-1) || 1;
+  const flowAt = (sc: number) => {
+    // (along the smoothed course, as far along the raw one)
+    const s = (Math.min(Math.max(sc, 0), len) / len) * total;
+    let lo = 1;
+    let hi = cum.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cum[mid] < s) lo = mid + 1;
+      else hi = mid;
+    }
+    const j = Math.max(1, lo);
     const u = Math.min(1, Math.max(0, (s - cum[j - 1]) / Math.max(1e-9, cum[j] - cum[j - 1])));
     const gather = head ? 0.1 + 0.9 * Math.sqrt(Math.min(1, s / Math.min(HEAD, 0.4 * total))) : 1;
     return Math.round((r.flow[j - 1] + (r.flow[j] - r.flow[j - 1]) * u) * gather * 100) / 100;
-  });
-  return { points, flow };
+  };
+  return { course, flowAt };
 }
 
 /** How far (cells) a river's course is smoothed along its length. */
@@ -139,6 +144,116 @@ function smoothCourse(line: Vec2[], sigma: number): Vec2[] {
   });
 }
 
+/**
+ * A simulated river as it is drawn: its course meanders where its floodplain is flat (the
+ * steeper the reach, the straighter), held at its ends and under lakes, never out into the sea or
+ * a lake or up the valley side; the loops it once made are left beside it as oxbow lakes.
+ */
+function winding(model: TerrainModel, r: SimRiver, x0: number, head: boolean, key: string, others: Set<number>): { points: Vec2[]; flow: number[]; oxbows: { points: Vec2[]; width: number }[] } {
+  const { course, flowAt } = toCourse(model, r, x0, head);
+  const cellKm = model.geo.kmPerCellY;
+  const total = curveLengths(course).at(-1) || 0;
+  const n = course.length;
+  if (n < 3 || total < 4) return { ...lineOf(course, flowAt, total), oxbows: [] };
+  // the ground along the course, and its slope
+  const at = (s: number): Vec2 => course[Math.min(n - 1, Math.max(0, Math.round((s / total) * (n - 1))))];
+  const ground = course.map(([x, y]) => model.heightAt(model.geo.wrapX(x), y));
+  const groundAt = (s: number) => ground[Math.min(n - 1, Math.max(0, Math.round((s / total) * (n - 1))))];
+  let qmax = 0;
+  for (let k = 0; k <= 20; k++) qmax = Math.max(qmax, flowAt((k / 20) * total));
+  const wMax = widthForFlow(qmax, cellKm);
+  const width = (s: number) => Math.max(0.25, wMax * Math.pow(Math.max(0, flowAt(s)) / Math.max(1e-6, qmax), 0.4));
+  const span = 5;
+  const mobility = (s: number) => {
+    const w = width(s);
+    // held at its ends (the source, a mouth, a join)
+    const ends = Math.min(1, s / (3 * w), (total - s) / (3 * w));
+    if (ends <= 0) return 0;
+    const [x, y] = at(s);
+    if (isOpenWater(model, model.geo.wrapX(x), y)) return 0;
+    // the steeper the reach, the straighter (lowland rivers wind at slopes below about 0.3 m a km)
+    const slope = Math.max(0, groundAt(s - span) - groundAt(s + span)) / (2 * span * cellKm * 1000);
+    return Math.min(1, ends) * (1 - smoothstep(3e-4, 3e-3, slope));
+  };
+  // how far above its course it may wander up the floodplain (more on a coarse map, whose cells
+  // hold more relief than a floodplain has)
+  const rise = (s: number) => 3 + 1.5e-3 * width(s) * cellKm * 1000;
+  // the ground of the cells it may move over (NaN: water), as it is asked for
+  const cellGround = new Map<number, number>();
+  const W = model.W;
+  const groundOf = (x: number, y: number) => {
+    const cx = ((Math.floor(x) % W) + W) % W;
+    const k = Math.floor(y) * W + cx;
+    let g = cellGround.get(k);
+    if (g === undefined) {
+      g = model.height.get(cx, Math.floor(y));
+      const lv = model.lake.get(cx, Math.floor(y));
+      if (g < model.seaLevel || (isLake(lv) && lv > g)) g = NaN;
+      cellGround.set(k, g);
+    }
+    return g;
+  };
+  const allowed = (x: number, y: number, s: number) => {
+    if (y < 0 || y >= model.H) return false;
+    const g = groundOf(x, y);
+    // (and never over another river or an oxbow lake)
+    return g === g && g <= groundAt(s) + rise(s) && !others.has(Math.floor(y) * W + (((Math.floor(x) % W) + W) % W));
+  };
+  const seed = hashKey(key);
+  // a map draws a brook's bends no smaller than a river's about a cell wide (smaller, they would
+  // read as a trembling line)
+  const loops = (s: number) => Math.max(LOOP_MIN, width(s));
+  const now = meander({ points: course, width: loops, mobility, allowed, seed });
+  const former = meander({ points: course, width: loops, mobility, allowed, seed: seed ^ 0x51ed27, sinuosity: 2.8 });
+  const oxbows = oxbowsFrom(former, now.points, width).map((o) => ({ points: evenSpacing(simplifyPath(o.points, 0.05), Math.max(1, width(o.along))) as Vec2[], width: 0.8 * width(o.along) }));
+  // control points close enough to keep the loops' shape
+  const pts = now.points;
+  const keep: number[] = [0];
+  for (let k = 1; k < pts.length - 1; k++) {
+    const p = pts[keep[keep.length - 1]];
+    if (Math.hypot(pts[k][0] - p[0], pts[k][1] - p[1]) >= Math.max(0.8, 0.9 * width(now.along[k]))) keep.push(k);
+  }
+  keep.push(pts.length - 1);
+  return { points: keep.map((k) => pts[k]), flow: keep.map((k) => flowAt(now.along[k])), oxbows };
+}
+
+/** A course as control points and the discharge at each. */
+function lineOf(course: Vec2[], flowAt: (s: number) => number, total: number): { points: Vec2[]; flow: number[] } {
+  const points = evenSpacing(simplifyPath(course, 0.3), 5) as Vec2[];
+  const along = curveLengths(points);
+  const all = along[along.length - 1] || 1;
+  return { points, flow: points.map((_, i) => flowAt((along[i] / all) * total)) };
+}
+
+/** The cells the rivers and oxbow lakes on the map cover, with a cell to spare beside them. */
+function taken(model: TerrainModel, paths: Record<string, PathFeature>): Set<number> {
+  const W = model.W;
+  const out = new Set<number>();
+  for (const p of Object.values(paths)) {
+    if (p.kind !== 'river' || p.hidden || p.points.length < 2) continue;
+    const r = p.width / 2 + 1;
+    const R = Math.ceil(r);
+    for (const [x, y] of riverCurve(p.points))
+      for (let dy = -R; dy <= R; dy++)
+        for (let dx = -R; dx <= R; dx++) {
+          if (dx * dx + dy * dy > r * r) continue;
+          const cy = Math.floor(y + dy);
+          if (cy >= 0 && cy < model.H) out.add(cy * W + (((Math.floor(x + dx) % W) + W) % W));
+        }
+  }
+  return out;
+}
+
+/** The smallest width (cells) a river's loops are made for. */
+const LOOP_MIN = 0.9;
+
+/** A number from a string, to seed a river's own pattern. */
+function hashKey(k: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < k.length; i++) h = Math.imul(h ^ k.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
 /** Take away what a source made: its rivers and the lakes it filled. */
 function unmake(model: TerrainModel, s: WaterSource, paths: Record<string, PathFeature>, changes: TileChange[]) {
   for (const p of Object.values(paths)) if (p.source === s.id) delete paths[p.id];
@@ -177,10 +292,14 @@ function make(model: TerrainModel, s: WaterSource, paths: Record<string, PathFea
   const cellKm = model.geo.kmPerCellY;
   let x0 = s.at[0];
   res.rivers.forEach((r, i) => {
-    const { points, flow } = toLine(model, r, x0, i === 0 && !r.fromLake);
+    const { points, flow, oxbows } = winding(model, r, x0, i === 0 && !r.fromLake, `${s.id}-r${i}`, taken(model, paths));
     x0 = points[points.length - 1][0];
     if (points.length < 2) return;
     const id = `${s.id}-r${i}`;
+    oxbows.forEach((o, k) => {
+      const oid = `${id}-o${k}`;
+      paths[oid] = { id: oid, kind: 'river', points: o.points, width: o.width, color, style: 'solid', taper: false, oxbow: true, source: s.id, name: paths[oid]?.name ?? '', hidden: false, locked: false };
+    });
     paths[id] = {
       id,
       kind: 'river',

@@ -40,7 +40,7 @@ export type RiverSnapTarget = { kind: 'water'; at: Vec2; d: number } | { kind: '
 export function riverSnapAt(model: TerrainModel, paths: Record<string, PathFeature>, p: Vec2, radius: number, self?: string): RiverSnapTarget | null {
   let best: RiverSnapTarget | null = null;
   for (const q of Object.values(paths)) {
-    if (q.kind !== 'river' || q.id === self || q.hidden || q.points.length < 2) continue;
+    if (q.kind !== 'river' || q.id === self || q.hidden || q.oxbow || q.points.length < 2) continue;
     const n = nearestOnCurve(riverCurve(q.points), p);
     // the line, and a little more for a wide river's banks
     const reach = radius + q.width / 2;

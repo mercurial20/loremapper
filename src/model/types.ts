@@ -51,6 +51,8 @@ export interface PathFeature {
   source?: string;
   /** Rivers from a source: the discharge at each point, m³/s (its width follows it). */
   flow?: number[];
+  /** An oxbow lake: a loop the river once made and left behind, standing water beside it. */
+  oxbow?: boolean;
   name: string;
   hidden: boolean;
   locked: boolean;

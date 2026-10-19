@@ -116,7 +116,8 @@ export function deleteRefs(refs: SelectionRef[]) {
   };
   // a river from a source goes with its source (and the rest of what the source made)
   const d = doc();
-  const sources = [...new Set(refs.map((r) => (r.kind === 'path' && !d.paths[r.id]?.locked ? d.paths[r.id]?.source : undefined)).filter((x): x is string => !!x))];
+  // (an oxbow lake alone goes alone: the source would make it again)
+  const sources = [...new Set(refs.map((r) => (r.kind === 'path' && !d.paths[r.id]?.locked && !d.paths[r.id]?.oxbow ? d.paths[r.id]?.source : undefined)).filter((x): x is string => !!x))];
   if (sources.length) removeSources(sources, label, remove);
   else commit(label, remove);
   for (const r of refs) if (r.kind === 'peak') removePeak(r.id);

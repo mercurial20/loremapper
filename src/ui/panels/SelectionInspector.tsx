@@ -237,10 +237,14 @@ function PathInspector({ p }: { p: PathFeature }) {
         // a river is the map's water, so it has no colour of its own
         <>
           {p.source && <RiverSource id={p.source} />}
-          <div className="kv">
-            <span>{t('Flows into')}</span>
-            <b>{flowsInto(p)}</b>
-          </div>
+          {p.oxbow ? (
+            <Hint>{t('An oxbow lake: a loop the river once made, cut off when it broke through the neck, standing water beside it now.')}</Hint>
+          ) : (
+            <div className="kv">
+              <span>{t('Flows into')}</span>
+              <b>{flowsInto(p)}</b>
+            </div>
+          )}
           {tribs.length > 0 && (
             <div className="kv">
               <span>{t('Tributaries')}</span>

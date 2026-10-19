@@ -64,7 +64,7 @@ export function lakeLinks(model: TerrainModel, paths: Record<string, PathFeature
   const inflows: PathFeature[] = [];
   const outflows: PathFeature[] = [];
   for (const p of Object.values(paths)) {
-    if (p.kind !== 'river' || p.points.length < 2) continue;
+    if (p.kind !== 'river' || p.oxbow || p.points.length < 2) continue;
     if (p.outlet?.kind !== 'path' && touches(p.points[p.points.length - 1])) inflows.push(p);
     else if (touches(p.points[0])) outflows.push(p);
   }
