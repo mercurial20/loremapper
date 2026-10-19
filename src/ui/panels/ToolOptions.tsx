@@ -399,7 +399,7 @@ export function ToolOptions() {
                   <AlphaBadge tip={t('A new tool that is still being tested: it may work unstably or not quite right.')} />
                 </>
               ),
-              title: t('Place a source and let its water find the way: rivers, lakes and marshes follow the land'),
+              title: t('Place a source and let its water find the way: rivers and lakes follow the land'),
             },
           ]}
         />

@@ -4,7 +4,8 @@ import { setLake } from './lakes';
 import { TerrainModel } from './TerrainModel';
 import { Geo } from '../core/geo';
 import { Simplex3 } from '../core/noise3';
-import { aridityAt, climateLatAt, EVAPORATION, simulateSource } from './waterSim';
+import { biomeIndex } from '../core/planet';
+import { aridityAt, climateLatAt, EVAPORATION, LAKE_LEAK, simulateSource } from './waterSim';
 
 /** A model whose ground is `f(x, y)` over a 1024-cell square (the sea around it). */
 function land(f: (x: number, y: number) => number) {
@@ -62,10 +63,13 @@ describe('water from a source', () => {
     expect(r.end).toBe('closed-lake');
     const lake = r.lakes[0];
     expect(lake.kind).toBe('closed');
-    // evaporation over the lake about balances the inflow
+    // what the lake loses to the air and into the ground about balances what flows in
     const km2 = lake.cells.length * model.geo.cellAreaKm2(500);
-    expect(km2 * aridity * EVAPORATION).toBeGreaterThan(q * 0.8);
-    expect(km2 * aridity * EVAPORATION).toBeLessThan(q * 1.3);
+    const loss = km2 * (aridity + LAKE_LEAK) * EVAPORATION;
+    const inflow = r.rivers[0].flow[r.rivers[0].flow.length - 1];
+    expect(inflow).toBeLessThan(q);
+    expect(loss).toBeGreaterThan(inflow * 0.8);
+    expect(loss).toBeLessThan(inflow * 1.3);
   });
 
   it('ends in a lake of a cell or two on a coarse map, where that is hundreds of km²', () => {
@@ -146,15 +150,25 @@ describe('water from a source', () => {
     expect(r.end).toBe('sea');
   });
 
-  it('vanishes into marsh on flat ground in a dry climate, or crosses it with enough water', () => {
-    // a long flat plain (5 cm a cell) before the sea
-    const f = (x: number) => (x < 100 ? -50 : x < 800 ? 2 + (x - 100) * 0.0005 : 2.35 + (x - 800) * 2);
-    const small = simulateSource(land(f), params({ q: 0.2, aridity: 2000 }));
+  it('loses a small river in a marsh painted on the map, and lets a great one through', () => {
+    const model = land((x) => (x < 100 ? -50 : (x - 100) * 0.3));
+    // swamp painted across the river's way (the biome layer is at half the resolution)
+    const swamp = biomeIndex('swamp');
+    const g = model.biome;
+    for (let y = 400; y < 600; y += 2)
+      for (let x = 300; x < 700; x += 2) {
+        const bx = x / 2;
+        const by = y / 2;
+        g.ensureTile((bx / g.TS) | 0, (by / g.TS) | 0)[((by % g.TS) * g.TS + (bx % g.TS)) * g.channels + swamp] = 255;
+      }
+    const marsh = (k: number) => model.biomeAt((k % model.W) + 0.5, Math.floor(k / model.W) + 0.5) === swamp;
+    const small = simulateSource(model, params({ q: 0.5, aridity: 600, marsh }));
     expect(small.end).toBe('marsh');
-    expect(small.marshes.length).toBeGreaterThan(3);
-    const big = simulateSource(land(f), params({ q: 3000, aridity: 2000 }));
+    const big = simulateSource(model, params({ q: 500, aridity: 600, marsh }));
     expect(big.end).toBe('sea');
-    expect(big.marshes.length).toBeGreaterThan(3);
+    // and without the marsh, the small one would have got through
+    const plain = simulateSource(land((x) => (x < 100 ? -50 : (x - 100) * 0.3)), params({ q: 0.5, aridity: 600 }));
+    expect(plain.end).toBe('sea');
   });
 
   it('ends in a lake already on the map', () => {
@@ -199,24 +213,34 @@ describe('water from a source', () => {
     }
   }, 60_000);
 
-  it('lets a weak river fade away in a desert and a strong one cross it, and grows rivers in a wet climate', () => {
+  it('lets a small river fade away and a great one go far, sooner in a dry land', () => {
     // a long plain sloping gently to the sea (cells of about 5 km: 900 cells are 4,400 km)
     const model = new TerrainModel({ ...flatMap(10000, 10000, 'standard'), seaLevel: 0 });
     for (let y = 0; y < 1024; y++) for (let x = 0; x < 1024; x++) model.height.ensureTile((x / 256) | 0, (y / 256) | 0)[(y % 256) * 256 + (x % 256)] = x < 100 ? -50 : (x - 100) * 3;
-    const desert = (q: number) => simulateSource(model, params({ q, aridity: 2000, at: [1000, 500] }));
-    const weak = desert(5);
-    expect(weak.end).toBe('dry');
-    const strong = desert(3000);
-    expect(strong.end).toBe('sea');
-    const f = strong.rivers[0].flow;
-    // it arrives weaker than it set out (the Nile loses about a third across the Sahara)
+    const run = (q: number, aridity: number) => simulateSource(model, params({ q, aridity, at: [1000, 500] }));
+    const kmRun = (r: ReturnType<typeof run>) => r.rivers.reduce((s, x) => s + x.points.length, 0) * model.geo.kmPerCellY;
+    // a brook fades within a few hundred km in middle latitudes, sooner in a desert
+    const brook = run(1, 100);
+    expect(brook.end).toBe('dry');
+    expect(kmRun(brook)).toBeGreaterThan(150);
+    expect(kmRun(brook)).toBeLessThan(900);
+    expect(kmRun(run(1, 2000))).toBeLessThan(kmRun(brook));
+    // a great river crosses even a desert, arriving weaker (the Nile loses about a third)
+    const great = run(3000, 2000);
+    expect(great.end).toBe('sea');
+    const f = great.rivers[0].flow;
     expect(f[f.length - 1]).toBeLessThan(0.9 * f[0]);
     expect(f[f.length - 1]).toBeGreaterThan(0.3 * f[0]);
-    // where it rains, the river gathers the runoff of the land it drains on the way
-    const wet = simulateSource(model, params({ q: 100, aridity: -800, at: [1000, 500] }));
-    expect(wet.end).toBe('sea');
-    const g = wet.rivers[0].flow;
-    expect(g[g.length - 1]).toBeGreaterThan(5 * g[0]);
   });
+
+  it('fills only a small lake from a small river, even where it rains more than the air takes', () => {
+    const model = land(bowl);
+    const small = simulateSource(model, params({ q: 0.1, aridity: -800 }));
+    expect(small.end).toBe('closed-lake');
+    const big = simulateSource(model, params({ q: 200, aridity: -800 }));
+    expect(big.lakes[0].kind).toBe('open');
+    expect(small.lakes[0].cells.length).toBeLessThan(big.lakes[0].cells.length);
+  });
+
 });
 

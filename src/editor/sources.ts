@@ -1,5 +1,6 @@
 import { track } from '../analytics';
 import { evenSpacing, simplifyPath, smoothstep, uid } from '../core/math';
+import { biomeIndex } from '../core/planet';
 import { meander, oxbowsFrom } from '../terrain/meander';
 import { t } from '../i18n';
 import { history } from '../model/history';
@@ -42,6 +43,12 @@ export function sourceAridity(model: TerrainModel, s: Pick<WaterSource, 'at' | '
   if (s.aridity !== null) return s.aridity;
   return Math.round(aridityAt(climateLatAt(model.planet, model.geo, s.at[1])));
 }
+
+/** Whether a cell is marsh: painted with the swamp biome. */
+const marshOf = (model: TerrainModel) => {
+  const swamp = biomeIndex('swamp');
+  return (k: number) => model.biomeAt((k % model.W) + 0.5, Math.floor(k / model.W) + 0.5) === swamp;
+};
 
 /** Cells covered by the rivers, with the river on each (where other water joins them). */
 function riverCells(model: TerrainModel, paths: Record<string, PathFeature>): Map<number, string> {
@@ -129,7 +136,7 @@ function smoothCourse(line: Vec2[], sigma: number): Vec2[] {
   }
   const R = Math.ceil(3 * sigma);
   const w = Array.from({ length: R + 1 }, (_, i) => Math.exp(-((i / sigma) ** 2) / 2));
-  return pts.map((p, k) => {
+  return pts.map((_, k) => {
     // near an end the window shrinks to stay symmetric, so the end itself does not move
     const r = Math.min(R, k, n - 1 - k);
     let x = 0;
@@ -279,7 +286,7 @@ function make(model: TerrainModel, s: WaterSource, paths: Record<string, PathFea
     return { id, t: n.t };
   };
   const seed = useDoc.getState().meta?.seed ?? 0;
-  const res = simulateSource(model, { at: s.at, q: s.q, aridity: sourceAridity(model, s), seepage: 0, carve: CARVE, seed }, joinRiver);
+  const res = simulateSource(model, { at: s.at, q: s.q, aridity: sourceAridity(model, s), seepage: 0, carve: CARVE, seed, marsh: marshOf(model) }, joinRiver);
   const lakes: number[] = [];
   for (const l of res.lakes) {
     const c = setLake(model, l.cells, l.level);
@@ -326,7 +333,7 @@ function make(model: TerrainModel, s: WaterSource, paths: Record<string, PathFea
       const x = (k % W) + 0.5;
       grow(s.at[0] + model.geo.deltaX(s.at[0], x), Math.floor(k / W) + 0.5);
     }
-  return { ...s, made: { lakes, marshes: res.marshes.map((m) => ({ x: m.x, y: m.y, r: m.r })), end: res.end, box } };
+  return { ...s, made: { lakes, end: res.end, box } };
 }
 
 /**
@@ -471,7 +478,7 @@ export function addSource(at: Vec2, q: number): string | null {
   }
   const sources = useDoc.getState().doc.sources;
   const n = Object.keys(sources).length;
-  const s: WaterSource = { id: uid('source-'), name: t('Source {n}', { n: n + 1 }), at, q, aridity: null, made: { lakes: [], marshes: [], end: 'dry' }, locked: false };
+  const s: WaterSource = { id: uid('source-'), name: t('Source {n}', { n: n + 1 }), at, q, aridity: null, made: { lakes: [], end: 'dry' }, locked: false };
   changeSources(t('Add a water source'), { ...sources, [s.id]: s }, [s.id]);
   return s.id;
 }
@@ -597,7 +604,7 @@ export function previewSource(at: Vec2, q: number, aridity: number | null, self?
   if (self && sources[self]) for (const k of sources[self].made.lakes) for (const c of lakeAt(model, (k % W) + 0.5, Math.floor(k / W) + 0.5)) notLake.add(c);
   const res = simulateSource(
     model,
-    { at, q, aridity: sourceAridity(model, { at, aridity }), seepage: 0, carve: CARVE, seed: useDoc.getState().meta?.seed ?? 0, deadline: performance.now() + budgetMs, notLake },
+    { at, q, aridity: sourceAridity(model, { at, aridity }), seepage: 0, carve: CARVE, seed: useDoc.getState().meta?.seed ?? 0, deadline: performance.now() + budgetMs, notLake, marsh: marshOf(model) },
     (p) => (cells.has(Math.floor(p[1]) * W + ((Math.floor(p[0]) % W) + W) % W) ? { id: '', t: 0 } : null),
   );
   let x0 = at[0];

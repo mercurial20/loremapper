@@ -8,14 +8,15 @@ import { isLake, type TerrainModel } from './TerrainModel';
 /*
  * Where water from a source goes. The water runs down the land; in a hollow it rises until
  * either it spills over the lowest point of the rim (an open lake, and the river goes on with
- * what is left) or the lake has grown so wide that it loses to evaporation all that flows in
- * (a closed, salt lake: the river ends). On long flat stretches it spreads into marsh and loses
- * water as it goes, and may vanish there (as the Okavango does) or, with enough water, cross
- * the marsh and go on (as the Nile crosses the Sudd). It ends in the sea, a lake, another river,
- * or at the map's edge.
+ * what is left) or the lake has grown so wide that it loses all that flows in (a closed lake:
+ * the river ends). On its way the river loses water into its bed and to the air, the more the
+ * drier the climate and the wider the river: a small river fades away after a while, a great one
+ * goes far (the Nile crosses the Sahara). In a marsh (painted on the map) the water spreads out
+ * and loses much more. It ends in the sea, a lake, another river, at the map's edge, or where its
+ * water has run out.
  *
- * Everything is decided by two numbers: how much water the source gives (m³/s) and how much
- * the climate takes back (net evaporation, mm a year).
+ * The river carries the water of its source and no more: the tributaries it gathers on the way
+ * are the map maker's to place (as sources of their own).
  */
 
 export interface SourceParams {
@@ -25,6 +26,8 @@ export interface SourceParams {
   q: number;
   /** Net evaporation (evaporation minus rain on water), mm a year. */
   aridity: number;
+  /** Whether a cell is marsh (painted so on the map): the water spreads there and loses much more. */
+  marsh?: (k: number) => boolean;
   /** Water lost into the ground, fraction per 100 km of river. */
   seepage: number;
   /** Hollows shallower than this (m) are passed through instead of filling with a lake. */
@@ -59,17 +62,10 @@ export interface SimLake {
   kind: 'open' | 'closed';
 }
 
-export interface SimMarsh {
-  x: number;
-  y: number;
-  /** Radius, cells. */
-  r: number;
-}
 
 export interface SimResult {
   rivers: SimRiver[];
   lakes: SimLake[];
-  marshes: SimMarsh[];
   end: SimEnd;
   /** It ran out of time (see `deadline`): the course goes on beyond what was found. */
   partial?: boolean;
@@ -77,12 +73,16 @@ export interface SimResult {
 
 /** m³/s lost per km² of water surface, per mm a year of net evaporation. */
 export const EVAPORATION = 1e-3 / 31.557e6 * 1e6;
-/** Runoff (mm a year) where open water loses as much to the air as rain brings. */
-const RUNOFF_MM = 300;
-/** What a sandy river bed soaks up in a dry climate, m³/s per km² of bed (0.1 m a day). */
-const SOAK = 1.16;
-/** A marsh's width (km) for every √(m³/s) of the water spreading into it. */
-const MARSH_KM = 0.8;
+/**
+ * What a river's bed lets into the ground, metres a day: little where the ground is soaked (the
+ * wet tropics), more in middle latitudes, most in the sand and gravel of dry lands, where rivers
+ * dwindle as they go (by net evaporation, mm a year).
+ */
+const bedLoss = (aridity: number) => 0.02 + 0.06 * smoothstep(-500, 100, aridity) + 0.07 * smoothstep(100, 1500, aridity);
+/** What a lake loses through its bed into the ground, mm a year, besides what the air takes. */
+export const LAKE_LEAK = 300;
+/** In a marsh the water spreads this many times wider than its channel, and loses as much more. */
+const MARSH_SPREAD = 12;
 /** Below this discharge (m³/s) a river has run dry. */
 const DRY = 0.05;
 /**
@@ -105,9 +105,6 @@ const MAX_BASIN = 400_000;
 const MAX_MERGES = 2000;
 /** Longest course followed, steps (cells). */
 const MAX_STEPS = 40_000;
-/** A stretch this long (steps) falling less than FLAT_SLOPE (m/m) is flat ground. */
-const FLAT_STEPS = 20;
-const FLAT_SLOPE = 5e-5;
 
 /** Binary min-heap of cells by height. */
 class Heap {
@@ -169,11 +166,13 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
   const wrap = hg.wrap;
   const h = (k: number) => hg.get(k % W, (k / W) | 0);
   const cellKm = model.geo.kmPerCellY;
-  // a stretch of FLAT_STEPS cells is flat when it falls less than this (m)
-  const flatDrop = FLAT_SLOPE * FLAT_STEPS * cellKm * 1000;
-  const flat = (g: number) => recent.length === FLAT_STEPS && recent[0] - g < flatDrop;
   const area = (k: number) => model.geo.cellAreaKm2((k / W) | 0);
   const evap = Math.max(0, p.aridity) * EVAPORATION;
+  // a lake loses to the air and into the ground: even where it rains more than the air takes, a
+  // small river fills only a small lake (m³/s per km²)
+  const lakeLoss = (Math.max(0, p.aridity) + LAKE_LEAK) * EVAPORATION;
+  // what the river's bed lets into the ground, m³/s per km² of bed
+  const seep = (bedLoss(p.aridity) / 86400) * 1e6;
   const neighbours = (k: number, out: number[]) => {
     const x = k % W;
     const y = (k / W) | 0;
@@ -197,23 +196,12 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     return y === 0 || y === H - 1 || (!wrap && (x === 0 || x === W - 1));
   };
   const centre = (k: number): Vec2 => [(k % W) + 0.5, ((k / W) | 0) + 0.5];
+  const cellOf = (q: Vec2) => Math.floor(q[1]) * W + ((Math.floor(q[0]) % W) + W) % W;
 
   const rivers: SimRiver[] = [];
   const lakes: SimLake[] = [];
-  const marshes: SimMarsh[] = [];
   const ours = new Set<number>();
   let Q = Math.max(0, p.q);
-  // the land's runoff (m³/s per km²): what rain leaves once the land has given back its share
-  // to the air, from the climate's net evaporation of open water (the wet tropics give some
-  // 700 mm a year, cool middle latitudes about 250, the dry belts nothing)
-  const runoff = Math.max(0, RUNOFF_MM - 0.5 * p.aridity) * EVAPORATION;
-  // what a dry river's bed soaks up, m³/s per km² of bed (about 0.1 m a day in a sandy bed)
-  const soak = SOAK * smoothstep(200, 1500, p.aridity);
-  /** The area a river this long drains (Hack's law), km². */
-  const hackArea = (km: number) => Math.pow(Math.max(0, km) / 1.4, 1 / 0.6);
-  // the source stands for the upper basin that gathers its water: the river is as long as that
-  // basin makes it
-  let riverKm = runoff > 0 ? 1.4 * Math.pow(Q / runoff, 0.6) : 0;
   let cur: SimRiver = { points: [], flow: [], to: 'land', fromLake: false };
   const finish = (to: SimRiver['to'], join?: SimRiver['join']) => {
     cur.to = to;
@@ -299,39 +287,16 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
   const nb: number[] = [];
   let c = Math.floor(p.at[1]) * W + ((Math.floor(p.at[0]) % W) + W) % W;
   pos = centre(c);
-  let walked = 0;
   /**
-   * What happens to the water in a cell on its way: some soaks into the ground, and on flat ground
-   * the river spreads into marsh and loses water to the air. True when it has all gone.
+   * What happens to the water in a cell on its way: some goes into the ground and to the air.
+   * True when it has all gone.
    */
   const onTheWay = (k: number): boolean => {
-    walked++;
-    const g = h(k);
     if (p.seepage > 0) Q *= Math.pow(1 - Math.min(0.99, p.seepage), cellKm / 100);
-    // Where it rains more than the land gives back to the air, the river gathers the runoff of
-    // the land it drains, which grows as it runs on (Hack's law: L = 1.4·A^0.6, km and km²).
-    // Where it is dry, it loses water into its bed (sand and gravel take it in, as in the
-    // ephemeral rivers of deserts), the more the wider its bed, and to the air above it.
-    const before = riverKm;
-    riverKm += cellKm;
-    if (runoff > 0) Q += runoff * (hackArea(riverKm) - hackArea(before));
-    const bedKm = (4.5 * Math.sqrt(Math.max(0, Q))) / 1000;
-    Q -= (soak + evap) * bedKm * cellKm;
-    recent.push(g);
-    if (recent.length > FLAT_STEPS) recent.shift();
-    if (evap > 0 && flat(g)) {
-      // the marsh is the wider the more water spreads into it: a few km for a small river, some
-      // tens of km for a great one (the Ob's wetlands, of 12,000 m³/s, are 20 … 90 km across;
-      // the flood marshes of the Okavango and the Sudd, wider still, are rarer)
-      const wideKm = MARSH_KM * Math.sqrt(Q);
-      const r = Math.max(1, (0.5 * wideKm) / cellKm);
-      Q -= evap * wideKm * Math.sqrt(area(k));
-      // discs along the way, close enough to read as one marsh
-      if (walked - lastMarsh >= Math.max(1, Math.min(12, r * 0.7))) {
-        marshes.push({ x: (k % W) + 0.5, y: ((k / W) | 0) + 0.5, r });
-        lastMarsh = walked;
-      }
-    }
+    // into its bed and to the air above it, the more the wider it is (about 4.5·√Q m), and in a
+    // marsh the water spreads out and loses as much again many times over
+    const wideKm = ((4.5 * Math.sqrt(Math.max(0, Q))) / 1000) * (p.marsh?.(k) ? MARSH_SPREAD : 1);
+    Q -= (seep + evap) * wideKm * cellKm;
     return Q <= DRY;
   };
   /** Go on from a cell (its centre). */
@@ -339,13 +304,11 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     c = k;
     pos = centre(k);
   };
-  const recent: number[] = [];
-  let lastMarsh = -1e9;
   let end: SimEnd = 'pit';
   // Every hollow the water has been through, and how things stood when it got there: a hollow
   // filling further down may rise to the rim of one above and join it (two lakes become one at
   // the level of the saddle between them), and what happened in between is undone.
-  const hollows: { rivers: number; cur: SimRiver; points: number; lakes: number; marshes: number; Q: number; km: number }[] = [];
+  const hollows: { rivers: number; cur: SimRiver; points: number; lakes: number; Q: number }[] = [];
   const hollowOf = new Map<number, number>();
   let merges = 0;
   let partial = false;
@@ -381,7 +344,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       break;
     }
     if (onTheWay(c)) {
-      end = flat(g) ? 'marsh' : 'dry';
+      end = p.marsh?.(c) ? 'marsh' : 'dry';
       finish('land');
       break;
     }
@@ -416,7 +379,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
         if ((dried = onTheWay(k))) break;
       }
       if (dried) {
-        end = 'marsh';
+        end = p.marsh?.(cur.points.length ? cellOf(cur.points[cur.points.length - 1]) : c) ? 'marsh' : 'dry';
         finish('land');
         break;
       }
@@ -424,7 +387,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       continue;
     }
     // a hollow: the water rises in it until it spills or evaporates as fast as it flows in
-    hollows.push({ rivers: rivers.length, cur, points: cur.points.length, lakes: lakes.length, marshes: marshes.length, Q, km: riverKm });
+    hollows.push({ rivers: rivers.length, cur, points: cur.points.length, lakes: lakes.length, Q });
     const basin = fillHollow(c);
     if (basin && basin.joined >= 0) {
       if (++merges > MAX_MERGES) break;
@@ -436,9 +399,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
       cur.points.length = Math.min(cur.points.length, was.points);
       cur.flow.length = cur.points.length;
       lakes.length = was.lakes;
-      marshes.length = was.marshes;
       Q = was.Q;
-      riverKm = was.km;
       hollows.length = basin.joined + 1;
       hollows[basin.joined] = { ...was };
       // the hollows after it are undone: their cells belong to none (the new one takes its own)
@@ -453,10 +414,8 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     }
     const depth = basin.level - g;
     if (basin.closed && !basin.cells.length) {
-      // a flat with nowhere to go: the water spreads and the air takes it
-      const r = Math.max(1, Math.sqrt(basin.km2 / Math.PI) / cellKm);
-      marshes.push({ x: (c % W) + 0.5, y: ((c / W) | 0) + 0.5, r });
-      end = 'marsh';
+      // a flat with nowhere to go: the water spreads out and soaks away
+      end = 'dry';
       finish('land');
       break;
     }
@@ -491,7 +450,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     }
     lakes.push({ cells: basin.cells, level: basin.level, kind: 'open' });
     for (const k of basin.cells) ours.add(k);
-    Q -= evap * basin.km2;
+    Q -= lakeLoss * basin.km2;
     finish('water');
     cur = { points: [], flow: [], to: 'land', fromLake: true };
     // The river goes on from where the water came in, across the lake along its lowest ground
@@ -500,7 +459,7 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     for (const k of across(basin.region, entry, basin.rim)) add(k);
     goTo(basin.out);
   }
-  return partial ? { rivers, lakes, marshes, end, partial } : { rivers, lakes, marshes, end };
+  return partial ? { rivers, lakes, end, partial } : { rivers, lakes, end };
 
   /**
    * Fill the hollow whose bottom is `pit`: cells join lowest first, the water level rising with
@@ -521,8 +480,8 @@ export function simulateSource(model: TerrainModel, p: SourceParams, joinRiver?:
     while (heap.size) {
       const [k, z] = heap.pop();
       if (z > level) {
-        // the water rises to this cell: does it now evaporate all that flows in?
-        if (evap > 0 && evap * km2 >= Q) {
+        // the water rises to this cell: does the lake now lose all that flows in?
+        if (lakeLoss * km2 >= Q) {
           // a closed lake, however small (a lake of a cell or two on a coarse map is still
           // hundreds of km²); none at all on a flat. Its water stands above the cells it covers,
           // short of the next one it would reach.

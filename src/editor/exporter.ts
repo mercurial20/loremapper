@@ -139,7 +139,7 @@ export async function renderWorldPixels(outW: number, outH: number, what: 'terra
   const r = editor.renderer!;
   const L = editor.layers!;
   const m = editor.model!;
-  const vectorRoots = (what === 'map' ? [L.objects, L.labels, L.peaks, L.overlay] : [L.territories, L.marshes, L.paths, L.objects, L.labels, L.peaks, L.overlay]).map((l) => l.container);
+  const vectorRoots = (what === 'map' ? [L.objects, L.labels, L.peaks, L.overlay] : [L.territories, L.paths, L.objects, L.labels, L.peaks, L.overlay]).map((l) => l.container);
   // exports include the tracing picture only when asked to; the fog pass never does
   if (what === 'fog' || (what === 'terrain' && !useDoc.getState().doc.reference?.inExport)) vectorRoots.push(L.reference.container);
   if (what === 'map') L.territories.setLabelsVisible(false);

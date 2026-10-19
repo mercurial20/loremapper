@@ -67,19 +67,6 @@ export class RiverField {
    * changed, and mouths that now meet water or no longer do (a lake filled or removed). Only the
    * cells those rivers reach are drawn again. Returns the area that changed, or null.
    */
-  /** Whether a point lies on a river's water (or within half a cell of its bank). */
-  covers(x: number, y: number): boolean {
-    const g = this.grid;
-    const cx = Math.floor(x);
-    const cy = Math.floor(y);
-    if (cy < 0 || cy >= g.H) return false;
-    const h = g.get(cx, cy, 2);
-    if (h === 0) return false;
-    const px = cx + 0.5 + g.get(cx, cy, 0);
-    const py = cy + 0.5 + g.get(cx, cy, 1);
-    return Math.hypot(x - px, y - py) <= Math.abs(h) + 0.5;
-  }
-
   sync(paths: Record<string, PathFeature>): CellRect | null {
     const rivers = Object.values(paths).filter((p) => p.kind === 'river' && !p.hidden && p.points.length >= 2);
     const net = riverNet(paths);

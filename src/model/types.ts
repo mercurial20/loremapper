@@ -64,7 +64,7 @@ export type SourceEnd = 'sea' | 'lake' | 'closed-lake' | 'marsh' | 'river' | 'ed
 /**
  * A water source (a spring, the outflow of a glacier, the head of a river): where the water
  * comes out and how much. Where it goes is worked out from the land: rivers downhill, lakes in
- * hollows, marshes on flats, until the water reaches the sea or the climate takes it all.
+ * hollows, until it reaches the sea or the bed and the air have taken it all.
  */
 export interface WaterSource {
   id: string;
@@ -84,8 +84,6 @@ export interface WaterSource {
   made: {
     /** A cell of each lake it filled. */
     lakes: number[];
-    /** Marshes on the way (world cells, radius in cells). */
-    marshes: { x: number; y: number; r: number }[];
     end: SourceEnd;
     /** Where its water went (rivers and lakes), world cells: x0, y0, x1, y1. */
     box?: [number, number, number, number];

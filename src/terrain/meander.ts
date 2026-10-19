@@ -108,7 +108,7 @@ export function meander(inp: MeanderInput): MeanderResult {
   const soft = (x: number, y: number) => 0.35 + 1.3 * (0.5 + 0.5 * bank.at(x / (9 * w0), y / (9 * w0)));
   const rnd = mulberry32((inp.seed ^ 0x2545f491) >>> 0);
   // a channel is never quite straight: a faint waver of its own, from which the loops grow
-  let rest = new Uint8Array(xs.length);
+  let rest: Uint8Array = new Uint8Array(xs.length);
   const waver = (amp: number) => {
     // (of the lengths that grow: from about 14 widths up)
     const waves = [0, 1, 2, 3, 4].map(() => ({ k: (2 * Math.PI) / ((14 + rnd() * 30) * w0), ph: rnd() * 2 * Math.PI, a: 0.3 + rnd() }));

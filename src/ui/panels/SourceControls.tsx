@@ -27,7 +27,7 @@ const ENDS: Record<SourceEnd, string> = {
   sea: N_('It reaches the sea'),
   lake: N_('It ends in a lake'),
   'closed-lake': N_('It ends in a lake of its own with no outflow: the climate takes all the water that flows in'),
-  marsh: N_('It spreads into marshes and dries up there'),
+  marsh: N_('It runs into a marsh and its water is lost there'),
   river: N_('It joins another river'),
   edge: N_('It leaves the map'),
   pit: N_('It sinks into a hollow too large to fill'),
@@ -59,7 +59,7 @@ export function SourceControls() {
   const list = Object.values(sources);
   return (
     <>
-      <Hint>{t('Click on land to place a source: its water runs downhill, fills hollows into lakes, spreads into marshes on flats and goes on until it reaches the sea or the climate takes it all. Click a source to edit it, drag it to move it; Alt-click or Delete removes it.')}</Hint>
+      <Hint>{t('Click on land to place a source: its water runs downhill and fills hollows into lakes, losing some on the way, until it reaches the sea or runs out (a small river sooner, in a dry land sooner still; in a marsh painted on the map it is soon lost). Click a source to edit it, drag it to move it; Alt-click or Delete removes it.')}</Hint>
       {!src && <Slider label={t('Water of a new source')} value={q} min={Q_MIN} max={Q_MAX} log onChange={(v) => set({ sourceQ: roundQ(v) })} format={(v) => formatFlow(v, units)} hint={t('A brook gives about 1 m³/s, the Thames 65, the Rhine 2,300, the Amazon 200,000')} />}
       {list.length > 0 && (
         <Select label={t('Source')} value={src ? src.id : ''} onChange={(id) => set({ activeSource: id || null })} options={[{ value: '', label: t('None (place a new one)') }, ...list.map((x) => ({ value: x.id, label: x.name }))]} />
@@ -109,7 +109,7 @@ export function SourceCard({ src, paths }: { src: WaterSource; paths: Record<str
         label={t('Climate from the latitude')}
         checked={v.aridity === null}
         onChange={(on) => change({ aridity: on ? null : auto })}
-        hint={t('How much water the air takes from lakes and marshes, less the rain: in the wet tropics and the cool middle latitudes it rains more (lakes overflow, rivers go on), in the dry belts around 25° of latitude the air takes the most')}
+        hint={t('How much water the air takes from lakes and rivers, less the rain: least in the wet tropics and the cool middle latitudes, most in the dry belts around 25° of latitude')}
       />
       {v.aridity === null ? (
         <div className="kv">

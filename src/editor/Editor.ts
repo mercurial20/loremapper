@@ -12,7 +12,6 @@ import { MapRenderer } from '../render/MapRenderer';
 import { ObjectLayer } from '../render/ObjectLayer';
 import { OverlayLayer } from '../render/OverlayLayer';
 import { PathLayer } from '../render/PathLayer';
-import { MarshLayer } from '../render/MarshLayer';
 import { RiverField } from '../render/riverField';
 import { PeakLayer } from '../render/PeakLayer';
 import { STYLE_PRESETS } from '../render/styles';
@@ -28,12 +27,10 @@ import { track } from '../analytics';
 import { TerrainModel } from '../terrain/TerrainModel';
 import { i18n, t } from '../i18n';
 import { selectedLake } from './lakes';
-import { isOpenWater } from '../terrain/lakes';
 
 export interface Layers {
   objects: ObjectLayer;
   paths: PathLayer;
-  marshes: MarshLayer;
   territories: TerritoryLayer;
   labels: LabelLayer;
   peaks: PeakLayer;
@@ -204,16 +201,14 @@ class Editor {
     this.renderer = renderer;
     const objects = new ObjectLayer(() => renderer.requestRender());
     const paths = new PathLayer();
-    // no marsh sign on open water: the rivers' field holds their banks, the lakes and the sea their own
-    const marshes = new MarshLayer((x, y) => isOpenWater(model, model.geo.wrapX(x), y) || this.rivers?.covers(x, y) === true);
     const territories = new TerritoryLayer();
     const labels = new LabelLayer();
     const peaks = new PeakLayer(renderer.camera, model.W);
     const overlay = new OverlayLayer(model.geo, (id) => labels.bounds(id));
     // the tracing picture sits on the terrain, under borders, rivers and symbols
     const reference = new ReferenceLayer((id) => assetLibrary.referenceBlob(id), () => renderer.requestRender());
-    renderer.addLayers([reference, territories, marshes, paths, objects, labels, peaks], overlay);
-    this.layers = { objects, paths, marshes, territories, labels, peaks, overlay, reference };
+    renderer.addLayers([reference, territories, paths, objects, labels, peaks], overlay);
+    this.layers = { objects, paths, territories, labels, peaks, overlay, reference };
     // rivers are drawn by the terrain shader, as water
     this.rivers = new RiverField(model);
     renderer.terrain.setRivers(this.rivers.grid);
@@ -326,7 +321,6 @@ class Editor {
         this.renderer.requestRender();
       }
     }
-    if (!prev || doc.sources !== prev.sources) L.marshes.sync(doc);
     if (!prev || doc.territories !== prev.territories) L.territories.sync(doc);
     if (!prev || doc.labels !== prev.labels) L.labels.sync(doc);
     if (!prev || doc.reference !== prev.reference) L.reference.sync(doc);
@@ -360,7 +354,6 @@ class Editor {
     }
     const style = STYLE_PRESETS[doc.view.style] ?? STYLE_PRESETS.parchment;
     L.paths.setStyle(style);
-    L.marshes.setStyle(style);
     L.territories.setStyle(style);
     L.labels.setStyle(style);
     L.peaks.setStyle(style);
@@ -370,8 +363,6 @@ class Editor {
       c.alpha = s.opacity;
     };
     vis(L.paths.container, sl.paths);
-    // marshes are the rivers' water spread out: shown and hidden with them
-    vis(L.marshes.container, sl.paths);
     vis(L.territories.container, sl.territories);
     vis(L.objects.container, sl.objects);
     vis(L.labels.container, sl.labels);

@@ -1,5 +1,6 @@
 import { uid } from '../core/math';
 import type {
+  MapDocument,
   ReferenceImage,
   MapLabel,
   MapObject,
