@@ -213,10 +213,12 @@ class Editor {
     // rivers are drawn by the terrain shader, as water
     this.rivers = new RiverField(model);
     renderer.terrain.setRivers(this.rivers.grid);
-    // the fine relief of real land, drawn when zoomed in (loaded once; the map does without it)
-    void loadReliefLibrary().then((lib) => {
-      if (lib && seq === this.mountSeq) renderer.enableReliefDetail(lib);
-    });
+    // the fine relief of real land, drawn when zoomed in: off (patches laid over the land read as
+    // noise and ignore its rivers; see generator-rethink)
+    if (RELIEF_DETAIL)
+      void loadReliefLibrary().then((lib) => {
+        if (lib && seq === this.mountSeq) renderer.enableReliefDetail(lib);
+      });
 
     this.syncDoc(useDoc.getState().doc, null);
     this.applyView();
@@ -539,6 +541,9 @@ function fitBrushesToMap(model: TerrainModel) {
     if (b.radiusKm < r.min || b.radiusKm > r.max || (geo.flat && b.radiusKm > want * 3)) st.setBrush(g, { radiusKm: Math.min(r.max, Math.max(r.min, want)) });
   }
 }
+
+/** Draw the relief library's patches when zoomed in (off: they read as noise). */
+const RELIEF_DETAIL = false;
 
 let reliefLibrary: Promise<ReliefLibrary | null> | null = null;
 /** The library of real relief (public/relief/library.bin), loaded once. */
