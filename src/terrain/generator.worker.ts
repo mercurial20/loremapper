@@ -1,4 +1,15 @@
 import { generate, previewImage, type GenParams } from './generator';
+import { parseReliefLibrary, setReliefLibrary } from './reliefDetail';
+
+/** The library of real relief (public/relief/library.bin), loaded once; the generator does without it if it can't be had. */
+let library: Promise<void> | null = null;
+const loadLibrary = () =>
+  (library ??= fetch(`${import.meta.env.BASE_URL}relief/library.bin`)
+    .then((r) => (r.ok ? r.arrayBuffer() : null))
+    .then((b) => {
+      if (b) setReliefLibrary(parseReliefLibrary(b));
+    })
+    .catch(() => {}));
 
 export type WorkerRequest = { kind: 'generate'; params: GenParams } | { kind: 'preview'; id: number; params: GenParams };
 export type WorkerReply =
@@ -9,8 +20,9 @@ export type WorkerReply =
 
 const post = (m: WorkerReply, transfer: Transferable[] = []) => (self as unknown as Worker).postMessage(m, transfer);
 
-self.onmessage = (e: MessageEvent<WorkerRequest>) => {
+self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
   const req = e.data;
+  await loadLibrary();
   try {
     if (req.kind === 'preview') {
       const r = generate(req.params);

@@ -8,6 +8,7 @@ import { accumulate, diffuse, drain, erode, steadyState, traceRivers, type Drain
 import { layoutMismatch, plateBase, tectonics, type Layout, type Tectonics } from './gen/plates';
 import { crestLines } from './gen/crests';
 import { regionalRelief, type RegionLayout } from './gen/region';
+import { reliefDetail, reliefLibrary } from './reliefDetail';
 import { widthForFlow } from '../model/rivers';
 
 /**
@@ -121,6 +122,8 @@ const ERODE_K = 0.02;
 const UPLIFT = { plain: 20, hills: 110, range: 700, old: 180, arc: 300 };
 /** Concavity of river profiles (Flint's law); 0.45 is the usual reference value. */
 const THETA = 0.45;
+/** How much of the real land's detail a region's land takes (its own valleys being the structure). */
+const DETAIL_WEIGHT = 0;
 /** About 35°: steeper hillslopes fail. */
 const MAX_SLOPE_M_PER_KM = 700;
 
@@ -552,7 +555,8 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   const layout = layoutFor(p);
   const N = mid.w * mid.h;
   // a region at its true size (a flat map up to a few thousand km)
-  if (p.flat?.cellKm && whole && !p.sketch && !p.surface) return generateRegion(p, mid, G(1), progress);
+  // (on the full grid when it is not too big: its valleys as fine as the map can hold)
+  if (p.flat?.cellKm && whole && !p.sketch && !p.surface) return generateRegion(p, p.W * p.H <= 1_100_000 ? G(1) : mid, G(1), progress);
 
   // ---- shape: where land goes
   const s = p.sketch ? sketchShape(p.sketch, mid, p.seed) : whole ? worldShape(p, layout, mid, R, progress) : regionShape(p, mid);
@@ -869,12 +873,45 @@ function generateRegion(p: GenParams, mid: Grid, full: Grid, progress: Progress)
           return { points: r.points, widthKm: 0.0045 * Math.sqrt(q), widthCells: widthForFlow(q, cellKm) };
         });
 
-  // ---- full resolution (the detail finer than the working grid comes later, from real land)
+  // ---- full resolution, and the fine relief of real land over it
   progress('Adding detail', 0);
   const height = midStep === 1 ? h.slice() : resample(h, mid, full, 'catmull');
   for (let k = 0; k < height.length; k++) {
     const wasLand = midStep === 1 ? land[k] : sampleAt(h, mid, full.x0 + (k % full.w) + 0.5, full.y0 + Math.floor(k / full.w) + 0.5) > 0;
     height[k] = wasLand ? Math.max(1, height[k]) : Math.min(-2, height[k]);
+  }
+  const relief = midStep === 1 ? reg.rangeRelief.slice() : resample(reg.rangeRelief, mid, full, 'bspline');
+  // (the real land's detail is drawn when zoomed in past the grid; on the grid itself, the land's
+  // own valleys carved by water read better than patches laid over them)
+  const lib = DETAIL_WEIGHT > 0 ? reliefLibrary() : null;
+  if (lib) {
+    const detail = reliefDetail(lib, { w: full.w, h: full.h, cellM: cellKm * 1000, ox: full.x0, oy: full.y0, base: height, seed: subSeed(p.seed, 90) });
+    const coastF = midStep === 1 ? coastKm : resample(coastKm, mid, full, 'bspline');
+    // valley floors are level: the detail fades towards the rivers (which run in them)
+    const onRiver = new Uint8Array(height.length);
+    for (const r of rivers)
+      for (let q = 1; q < r.points.length; q++) {
+        const [ax, ay] = r.points[q - 1];
+        const [bx, by] = r.points[q];
+        const n = Math.ceil(Math.hypot(bx - ax, by - ay) * 2) + 1;
+        for (let t2 = 0; t2 <= n; t2++) {
+          const i = Math.floor(ax + ((bx - ax) * t2) / n - full.x0);
+          const j = Math.floor(ay + ((by - ay) * t2) / n - full.y0);
+          if (i >= 0 && j >= 0 && i < full.w && j < full.h) onRiver[j * full.w + i] = 1;
+        }
+      }
+    const riverKm = distanceField(full, onRiver, 50).dist;
+    for (let k = 0; k < height.length; k++) {
+      if (height[k] <= 0) continue;
+      // fading out at the shore over a few km (the coast stays where it is) and on valley floors
+      // (a light touch: the land's own valleys, carved by water, are the structure; the real
+      // land adds the texture of its slopes)
+      const d = DETAIL_WEIGHT * detail[k] * smoothstep(0, 4, coastF[k]) * smoothstep(0.3, 3, riverKm[k]);
+      // inside a range, its share of the detail goes with it (reshaped, the range takes it along)
+      const share = relief[k] > 0 ? Math.min(1, relief[k] / height[k]) : 0;
+      height[k] = Math.max(1, height[k] + d);
+      relief[k] = Math.max(0, relief[k] + d * share);
+    }
   }
   carveRivers(full, height, rivers, cellKm);
 
@@ -885,7 +922,6 @@ function generateRegion(p: GenParams, mid: Grid, full: Grid, progress: Progress)
   const maxE = p.maxElevation;
   for (let k = 0; k < height.length; k++) height[k] = clamp(p.seaLevel + height[k], p.minElevation, p.seaLevel + maxE);
 
-  const relief = midStep === 1 ? reg.rangeRelief : resample(reg.rangeRelief, mid, full, 'bspline');
   for (let k = 0; k < relief.length; k++) relief[k] = Math.max(0, Math.min(relief[k], height[k] - p.seaLevel));
   progress('Done', 1);
   return {

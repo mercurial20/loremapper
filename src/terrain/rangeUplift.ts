@@ -54,6 +54,8 @@ export interface RangeJob {
   /** Height of the highest summits, metres. */
   peakM: number;
   seed: number;
+  /** Erosion steps (the default settles the drainage of a drawn range fully). */
+  steps?: number;
 }
 
 /** The uplift of all ranges in the window, 0 … 1. */
@@ -189,7 +191,7 @@ export function rangeRelief(job: RangeJob): { relief: Float32Array; uplift: Floa
     const W = Math.ceil(w / f);
     const H = Math.ceil(h / f);
     const c = fields(scale, W, H, f);
-    const z = upliftRelief({ w: W, h: H, uplift: c.uplift, cellKm: job.cellKm * f, peakM: 1, erodibility: c.erod, initial: c.initial, raw: true });
+    const z = upliftRelief({ w: W, h: H, uplift: c.uplift, cellKm: job.cellKm * f, peakM: 1, erodibility: c.erod, initial: c.initial, raw: true, steps: job.steps });
     const top = R.map(() => 0);
     for (let o = 0; o < W * H; o++) if (c.owner[o] >= 0 && z[o] > top[c.owner[o]]) top[c.owner[o]] = z[o];
     // relief per unit of asked height; ranges that came out short are pushed up harder
@@ -198,6 +200,6 @@ export function rangeRelief(job: RangeJob): { relief: Float32Array; uplift: Floa
     scale = eff.map((e) => (e > 0 ? best / e : 1));
   }
   const c = fields(scale, w, h, 1);
-  const relief = upliftRelief({ w, h, uplift: c.uplift, cellKm: job.cellKm, peakM: job.peakM, erodibility: c.erod, initial: c.initial });
+  const relief = upliftRelief({ w, h, uplift: c.uplift, cellKm: job.cellKm, peakM: job.peakM, erodibility: c.erod, initial: c.initial, steps: job.steps });
   return { relief, uplift: belt };
 }

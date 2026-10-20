@@ -60,7 +60,34 @@ export interface RegionalOptions {
 /** Over this many km from the coast a belt's mountains come down to the shore. */
 const COAST_EASE_KM = 12;
 /** Most cells the erosion of the land works on (it runs coarser on bigger grids). */
-const EROSION_CELLS = 260_000;
+const EROSION_CELLS = 1_100_000;
+/** The same for the land beyond the belts (gentler land, coarser valleys). */
+const HILL_CELLS = 300_000;
+
+/** Box blur in place, three passes (about a Gaussian), edges clamped. */
+function blurGrid(a: Float32Array, w: number, h: number, r: number) {
+  const line = new Float32Array(Math.max(w, h));
+  for (let p = 0; p < 3; p++) {
+    for (let j = 0; j < h; j++) {
+      let s = 0;
+      for (let i = -r; i <= r; i++) s += a[j * w + Math.min(w - 1, Math.max(0, i))];
+      for (let i = 0; i < w; i++) {
+        line[i] = s / (2 * r + 1);
+        s += a[j * w + Math.min(w - 1, i + r + 1)] - a[j * w + Math.max(0, i - r)];
+      }
+      a.set(line.subarray(0, w), j * w);
+    }
+    for (let i = 0; i < w; i++) {
+      let s = 0;
+      for (let j = -r; j <= r; j++) s += a[Math.min(h - 1, Math.max(0, j)) * w + i];
+      for (let j = 0; j < h; j++) {
+        line[j] = s / (2 * r + 1);
+        s += a[Math.min(h - 1, j + r + 1) * w + i] - a[Math.max(0, j - r) * w + i];
+      }
+      for (let j = 0; j < h; j++) a[j * w + i] = line[j];
+    }
+  }
+}
 
 export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   const { w, h } = g;
@@ -177,7 +204,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
     const bend = 0.08 * mapKm;
     const L = 1.6 * mapKm;
     const pts: [number, number][] = [];
-    for (let s = -L; s <= L; s += Math.max(2 * o.cellKm, 4)) {
+    for (let s = -L; s <= L; s += Math.max(2 * o.cellKm, width / 4)) {
       const off = bend * noise.fbm(s / 350, b * 7.3, 3.1, 1, 3);
       const x = px + dx * s - dy * off;
       const y = py + dy * s + dx * off;
@@ -259,8 +286,8 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
       plateau[k] = pl;
       U[k] = 0.06 + hills * (0.1 + 0.55 * rough) + 0.6 * foot[k] * (1 - belt[k]) + 0.25 * pl;
     }
-  // erosion on a grid of at most EROSION_CELLS cells (the valleys it can hold are a few of them across)
-  const f = Math.max(1, Math.ceil(Math.sqrt(N / EROSION_CELLS)));
+  // erosion on a grid of at most HILL_CELLS cells (the valleys it can hold are a few of them across)
+  const f = Math.max(1, Math.ceil(Math.sqrt(N / HILL_CELLS)));
   const ew = Math.ceil(w / f);
   const eh = Math.ceil(h / f);
   const eU = new Float32Array(ew * eh);
@@ -280,6 +307,19 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
     const at = (a: number, b: number) => z[clamp(b, 0, eh - 1) * ew + clamp(a, 0, ew - 1)];
     return (at(ix, iy) * (1 - tx) + at(ix + 1, iy) * tx) * (1 - ty) + (at(ix, iy + 1) * (1 - tx) + at(ix + 1, iy + 1) * tx) * ty;
   };
+  // plains are shaped more by soil creep than by rivers: their rills soften into broad swells,
+  // the valleys of hill country stay (Perron et al. 2009)
+  const zs = new Float32Array(z.length);
+  {
+    const zr = Math.max(1, Math.round(3 / (kmCell * f)));
+    const zb = Float32Array.from(z);
+    blurGrid(zb, ew, eh, zr);
+    for (let q = 0; q < z.length; q++) {
+      const t2 = smoothstep(0.12, 0.45, eU[q]);
+      zs[q] = zb[q] + (z[q] - zb[q]) * t2;
+    }
+  }
+  z.set(zs);
   const height = new Float32Array(N);
   for (let j = 0; j < h; j++)
     for (let i = 0; i < w; i++) {
@@ -319,7 +359,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
         },
       ],
     }));
-    const { relief } = rangeRelief({ w: rw, h: rh, cellKm: kmCell * rf, ox: g.x0, oy: g.y0, scale: g.step * rf, ranges: jobRanges, peakM, seed: 0 });
+    const { relief } = rangeRelief({ w: rw, h: rh, cellKm: kmCell * rf, ox: g.x0, oy: g.y0, scale: g.step * rf, ranges: jobRanges, peakM, seed: 0, steps: 32 });
     for (let j = 0; j < h; j++)
       for (let i = 0; i < w; i++) {
         const k = j * w + i;
