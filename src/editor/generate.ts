@@ -42,6 +42,8 @@ export interface GenerateOptions {
 
 /** Flat maps are generated as a 90°-wide patch of a virtual planet (enough room for several landmasses). */
 const FLAT_SPAN_LON = 90;
+/** Flat maps smaller than this (km) are generated at their true size, as a region. */
+const REGION_KM = 3000;
 
 /** Generator parameters for options on the current map (`size` overrides the grid, for previews). */
 export function genParams(o: GenerateOptions, size?: { W: number; H: number }): GenParams {
@@ -49,7 +51,19 @@ export function genParams(o: GenerateOptions, size?: { W: number; H: number }): 
   const p = model.planet;
   const geo = model.geo;
   // flat maps: the climate band is as tall as the map is on the ground (≈111 km per degree)
-  const flat = geo.flat ? { spanLonDeg: FLAT_SPAN_LON, climateLatDeg: o.climateLat ?? 45, climateSpanDeg: Math.min(60, Math.max(2, (geo.H * geo.cellKm) / 111.2)) } : undefined;
+  // a region (up to a few thousand km) is generated at its true size; bigger flat maps as a patch
+  // of a planet, as wide as FLAT_SPAN_LON
+  const sizeKm = Math.max(geo.W, geo.H) * geo.cellKm;
+  const regional = geo.flat && sizeKm < REGION_KM;
+  const flat = geo.flat
+    ? {
+        spanLonDeg: regional ? (geo.W * geo.cellKm) / ((Math.PI * p.radiusKm) / 180) : FLAT_SPAN_LON,
+        climateLatDeg: o.climateLat ?? 45,
+        climateSpanDeg: Math.min(60, Math.max(2, (geo.H * geo.cellKm) / 111.2)),
+        // (a preview is the same land on a smaller grid: its cells are larger)
+        cellKm: regional ? geo.cellKm * (size ? geo.W / size.W : 1) : undefined,
+      }
+    : undefined;
   const whole = o.type === 'continents' || o.type === 'pangaea' || o.region === 'world';
   let region: GenParams['region'] = null;
   if (!whole && !size) {

@@ -7,6 +7,8 @@ import { blurKm, components, distanceField, dyKm, latOf, lonOf, makeGrid, mercat
 import { accumulate, diffuse, drain, erode, steadyState, traceRivers, type Drainage } from './gen/hydrology';
 import { layoutMismatch, plateBase, tectonics, type Layout, type Tectonics } from './gen/plates';
 import { crestLines } from './gen/crests';
+import { regionalRelief } from './gen/region';
+import { widthForFlow } from '../model/rivers';
 
 /**
  * World generator, version 3: plate tectonics set where land rises and how
@@ -54,7 +56,7 @@ export interface GenParams {
    * `spanLonDeg` wide; climate follows `climateLatDeg` (the map's centre) over a
    * band of `climateSpanDeg` from top to bottom.
    */
-  flat?: { spanLonDeg: number; climateLatDeg: number; climateSpanDeg: number };
+  flat?: { spanLonDeg: number; climateLatDeg: number; climateSpanDeg: number; cellKm?: number };
   /** A drawn layout (built-in worlds): replaces the plate layout; `landFraction` is ignored. */
   sketch?: Sketch;
   /**
@@ -548,6 +550,8 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   const mid = G(midStep);
   const layout = layoutFor(p);
   const N = mid.w * mid.h;
+  // a region at its true size (a flat map up to a few thousand km)
+  if (p.flat?.cellKm && whole && !p.sketch && !p.surface) return generateRegion(p, mid, G(1), progress);
 
   // ---- shape: where land goes
   const s = p.sketch ? sketchShape(p.sketch, mid, p.seed) : whole ? worldShape(p, layout, mid, R, progress) : regionShape(p, mid);
@@ -810,6 +814,83 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
     region: { x0: rx0, y0: ry0, w: rw, h: rh },
     rivers,
     ranges,
+    relief,
+  };
+}
+
+/**
+ * A region at its true size: land, belts and rivers as large as on Earth (see gen/region.ts), then
+ * the same climate, rivers and biomes as a world.
+ */
+function generateRegion(p: GenParams, mid: Grid, full: Grid, progress: Progress): GenResult {
+  const N = mid.w * mid.h;
+  const midStep = mid.step;
+  const reg = regionalRelief(mid, {
+    seed: p.seed,
+    cellKm: p.flat!.cellKm!,
+    landFraction: p.landFraction,
+    mountains: p.mountains,
+    roughness: p.roughness,
+    maxElevation: p.maxElevation,
+    maxDepth: Math.max(200, p.seaLevel - p.minElevation),
+    progress,
+  });
+  const { land, h } = reg;
+  const isCoast = new Uint8Array(N);
+  for (let j = 0; j < mid.h; j++)
+    for (let i = 0; i < mid.w; i++) {
+      const k = j * mid.w + i;
+      if (i + 1 < mid.w && land[k] !== land[k + 1]) isCoast[k] = isCoast[k + 1] = 1;
+      if (j + 1 < mid.h && land[k] !== land[k + mid.w]) isCoast[k] = isCoast[k + mid.w] = 1;
+    }
+  const coastKm = distanceField(mid, isCoast, 4000).dist;
+
+  progress('Simulating climate', 0);
+  const proj = mid.proj!;
+  const climateLat = (lat: number) => ((p.flat!.climateLatDeg + (lat / Math.max(1e-6, proj.lat(0))) * (p.flat!.climateSpanDeg / 2)) * Math.PI) / 180;
+  const clim = climate(mid, h, coastKm, { warmth: p.warmth ?? 0, wetness: p.wetness ?? 0, winds: true, seed: subSeed(p.seed, 50), climateLat });
+
+  // ---- rivers: as wide as the water they carry (about 4.5·√Q metres; 300 mm a year of runoff)
+  progress('Tracing rivers', 0);
+  const drained = drain(mid, h, true);
+  const flow = accumulate(mid, drained, clim.rain);
+  let maxFlow = 1;
+  for (let k = 0; k < N; k++) if (h[k] > 0 && flow[k] > maxFlow) maxFlow = flow[k];
+  const cellKm = dyKm(full);
+  const rivers: GenRiver[] =
+    p.rivers <= 0
+      ? []
+      : traceRivers(mid, drained, flow, h, p.rivers, Math.max(40, maxFlow * 0.004)).map((r) => {
+          const q = 0.01 * r.area;
+          return { points: r.points, widthKm: 0.0045 * Math.sqrt(q), widthCells: widthForFlow(q, cellKm) };
+        });
+
+  // ---- full resolution (the detail finer than the working grid comes later, from real land)
+  progress('Adding detail', 0);
+  const height = midStep === 1 ? h.slice() : resample(h, mid, full, 'catmull');
+  for (let k = 0; k < height.length; k++) {
+    const wasLand = midStep === 1 ? land[k] : sampleAt(h, mid, full.x0 + (k % full.w) + 0.5, full.y0 + Math.floor(k / full.w) + 0.5) > 0;
+    height[k] = wasLand ? Math.max(1, height[k]) : Math.min(-2, height[k]);
+  }
+  carveRivers(full, height, rivers, cellKm);
+
+  progress('Painting biomes', 0);
+  const bw = Math.ceil(full.w / 2);
+  const bh = Math.ceil(full.h / 2);
+  const biome = p.biomes ? paintBiomes(p, mid, h, clim, coastKm, flow, maxFlow, rivers, { x0: 0, y0: 0, w: bw, h: bh }) : null;
+  const maxE = p.maxElevation;
+  for (let k = 0; k < height.length; k++) height[k] = clamp(p.seaLevel + height[k], p.minElevation, p.seaLevel + maxE);
+
+  const relief = midStep === 1 ? reg.rangeRelief : resample(reg.rangeRelief, mid, full, 'bspline');
+  for (let k = 0; k < relief.length; k++) relief[k] = Math.max(0, Math.min(relief[k], height[k] - p.seaLevel));
+  progress('Done', 1);
+  return {
+    height,
+    biome,
+    biomeRegion: { x0: 0, y0: 0, w: bw, h: bh },
+    region: { x0: 0, y0: 0, w: full.w, h: full.h },
+    rivers,
+    ranges: reg.ranges.map((r) => ({ points: r.points, heightM: r.heightM, widthKm: r.widthKm })),
     relief,
   };
 }
