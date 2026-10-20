@@ -46,6 +46,10 @@ It is **not developed for commercial purposes**: there is no paid version, no
 premium features, no ads, no tracking of you or your maps, and no plans to monetise it. The code is
 open under the [MIT License](LICENSE).
 
+The fine relief drawn when you zoom in comes from small patches of real land, cut from the open
+[Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) dataset (SRTM, GMTED2010, ETOPO1 and
+other public elevation sources; see [public/relief/ATTRIBUTION.md](public/relief/ATTRIBUTION.md)).
+
 > **Still in beta.** Loremapper works and has been tested (see [Testing](#-testing-done-for-this-release)), but expect rough edges.
 > Please [back up](#-saving-backups-and-export) maps you care about and [tell us](#-reporting-bugs-and-contributing) what breaks.
 
