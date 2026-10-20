@@ -155,6 +155,64 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
       }
       landness[k] = L;
     }
+  // ---- plates parting and plates sinking: rifts and island arcs
+  // A rift (Red Sea, Rhine graben, East African valleys): where the land is pulled apart it sinks
+  // in a long trough some tens of km wide, a sea if deep enough. An island arc (Kurils, Lesser
+  // Antilles): where a plate sinks under another, a curved chain of volcanic islands stands
+  // offshore. Rarer than collisions, and arcs belong to seas: more of them on island maps.
+  const rift = new Float32Array(N);
+  const cones: { x: number; y: number; r: number; hM: number }[] = [];
+  {
+    const islandy = o.layout === 'archipelago' || o.layout === 'mainland' ? 1 : 0;
+    const nRift = rnd() < 0.25 + 0.15 * (mapKm / 1000) ? 1 : 0;
+    const nArc = rnd() < 0.15 + 0.5 * islandy ? 1 : 0;
+    for (let b = 0; b < nRift; b++) {
+      const cx = (0.25 + 0.5 * rnd()) * g.W * o.cellKm;
+      const cy = (0.25 + 0.5 * rnd()) * g.H * o.cellKm;
+      const ang = rnd() * Math.PI;
+      const half = 15 + 25 * rnd();
+      for (let j = 0; j < h; j++)
+        for (let i = 0; i < w; i++) {
+          const dx = xKm(i) - cx;
+          const dy = yKm(j) - cy;
+          const along = dx * Math.cos(ang) + dy * Math.sin(ang);
+          const off = -dx * Math.sin(ang) + dy * Math.cos(ang) + 0.06 * mapKm * n2(along, b * 31, 300, 2, 9.4);
+          // the trough, fading out at its ends (rifts open from a point)
+          const len = 0.45 * mapKm;
+          const v = Math.exp(-((off / half) ** 2)) * (1 - smoothstep(0.6 * len, len, Math.abs(along)));
+          rift[j * w + i] = Math.max(rift[j * w + i], v);
+        }
+    }
+    for (let b = 0; b < nArc; b++) {
+      // an arc a few hundred km across, its chain of volcanoes 30–80 km apart
+      const R = (0.35 + 0.4 * rnd()) * mapKm;
+      const ccx = (rnd() - 0.5) * g.W * o.cellKm + (rnd() < 0.5 ? -0.3 : 1.3) * g.W * o.cellKm * 0.5;
+      const ccy = (0.3 + 0.4 * rnd()) * g.H * o.cellKm;
+      const a0 = rnd() * Math.PI * 2;
+      for (let a = 0; a < Math.PI * 1.2; a += (22 + 30 * rnd()) / R) {
+        const x = ccx + Math.cos(a0 + a) * R;
+        const y = ccy + Math.sin(a0 + a) * R;
+        if (x < 0 || y < 0 || x > g.W * o.cellKm || y > g.H * o.cellKm) continue;
+        // (a little off the arc's line: chains are not ruled)
+        const j2 = (rnd() - 0.5) * 16;
+        cones.push({ x: x + j2, y: y - j2, r: 3 + 5 * rnd(), hM: 500 + 2000 * rnd() * (0.4 + 0.6 * mountains) });
+      }
+    }
+    for (const c of cones)
+      for (let j = 0; j < h; j++) {
+        const dy = yKm(j) - c.y;
+        if (Math.abs(dy) > c.r * 3) continue;
+        for (let i = 0; i < w; i++) {
+          const dx = xKm(i) - c.x;
+          if (Math.abs(dx) > c.r * 3) continue;
+          const d = Math.hypot(dx, dy) / c.r;
+          const k = j * w + i;
+          landness[k] = Math.max(landness[k], 2 * Math.exp(-d * d) - 0.6 + 0.35 * n2(xKm(i), yKm(j), 6, 3, 13.3));
+        }
+      }
+    for (let k = 0; k < N; k++) landness[k] -= 0.9 * rift[k];
+  }
+
   const t = thresholdForFraction(landness, g, o.landFraction);
   const land = new Uint8Array(N);
   for (let k = 0; k < N; k++) land[k] = landness[k] > t ? 1 : 0;
@@ -328,10 +386,17 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
         // coastal plains rise gently inland (half a metre to a metre a km)
         const rise = 3 + 0.7 * Math.min(coastKm[k], 350);
         height[k] = rise + (zTop > 0 ? (zAt(i, j) / zTop) * hillM : 0) + plateau[k] * plateauH;
+        // a rift's floor is low and level
+        height[k] = Math.max(2, height[k] * (1 - 0.85 * rift[k]));
+        // volcanoes of an arc: steep cones
+        for (const c of cones) {
+          const d = Math.hypot(xKm(i) - c.x, yKm(j) - c.y) / c.r;
+          if (d < 1.6) height[k] = Math.max(height[k], c.hM * Math.max(0, 1 - d / 1.6) ** 1.6 * (1 + 0.25 * n2(xKm(i), yKm(j), 3, 3, 17.1)));
+        }
       } else {
         // shelves: about a metre deeper every km, then down the slope to the deep sea
         const d = coastKm[k];
-        height[k] = -Math.min(o.maxDepth, 3 + 1.1 * Math.min(d, 140) + 18 * Math.max(0, d - 140));
+        height[k] = -Math.min(o.maxDepth, 3 + 1.1 * Math.min(d, 140) + 18 * Math.max(0, d - 140) + 1200 * rift[k]);
       }
     }
 
