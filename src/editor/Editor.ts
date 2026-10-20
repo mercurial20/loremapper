@@ -27,6 +27,7 @@ import { track } from '../analytics';
 import { TerrainModel } from '../terrain/TerrainModel';
 import { i18n, t } from '../i18n';
 import { selectedLake } from './lakes';
+import { parseReliefLibrary, type ReliefLibrary } from '../terrain/reliefDetail';
 
 export interface Layers {
   objects: ObjectLayer;
@@ -212,6 +213,10 @@ class Editor {
     // rivers are drawn by the terrain shader, as water
     this.rivers = new RiverField(model);
     renderer.terrain.setRivers(this.rivers.grid);
+    // the fine relief of real land, drawn when zoomed in (loaded once; the map does without it)
+    void loadReliefLibrary().then((lib) => {
+      if (lib && seq === this.mountSeq) renderer.enableReliefDetail(lib);
+    });
 
     this.syncDoc(useDoc.getState().doc, null);
     this.applyView();
@@ -533,4 +538,13 @@ function fitBrushesToMap(model: TerrainModel) {
     const want = g === 'water' ? (geo.flat ? (geo.W * geo.cellKm) / 900 : 4) : typical;
     if (b.radiusKm < r.min || b.radiusKm > r.max || (geo.flat && b.radiusKm > want * 3)) st.setBrush(g, { radiusKm: Math.min(r.max, Math.max(r.min, want)) });
   }
+}
+
+let reliefLibrary: Promise<ReliefLibrary | null> | null = null;
+/** The library of real relief (public/relief/library.bin), loaded once. */
+function loadReliefLibrary(): Promise<ReliefLibrary | null> {
+  return (reliefLibrary ??= fetch(`${import.meta.env.BASE_URL}relief/library.bin`)
+    .then((r) => (r.ok ? r.arrayBuffer() : null))
+    .then((b) => (b ? parseReliefLibrary(b) : null))
+    .catch(() => null));
 }

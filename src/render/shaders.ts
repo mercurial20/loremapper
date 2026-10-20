@@ -163,6 +163,17 @@ uniform float uHatch;
 uniform float uWaterVis;
 // biome edges: 0 crisp … 1 soft, wide fringes
 uniform float uBiomeSoft;
+// the fine relief of real land (see reliefGPU.ts)
+uniform sampler2D uDetailAtlas;
+uniform sampler2D uDetailInfo;
+uniform sampler2D uDetailField;
+uniform float uDetailOn;
+uniform vec2 uDetailScale;
+uniform float uDetailPatch;
+uniform vec2 uFieldSize;
+uniform vec4 uDetailRuns0;
+uniform vec4 uDetailRuns1;
+uniform vec4 uDetailRuns2;
 
 ${NOISE}
 
@@ -306,6 +317,85 @@ float reliefDetail(vec2 w, float mountain) {
   return s;
 }
 
+// ---------- the fine relief of real land ----------
+/** How much the hillshade exaggerates the detail's slopes, next to the map's broad ones. */
+const float DETAIL_SHADE = 0.12;
+uint hashU(uvec3 v) {
+  v = v * 1664525u + 1013904223u;
+  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+  v ^= v >> 16u;
+  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+  return v.x ^ v.y ^ v.z;
+}
+float hashN(ivec2 n, int k) {
+  return float(hashU(uvec3(uvec2(n + 1000000), uint(k))) & 0xffffffu) / 16777216.0;
+}
+/** The run of the atlas holding the patches of a scale and a kind (0 alpine, 1 hills, 2 plateau): start, count. */
+vec2 detailRun(int s, int kind) {
+  int i = s * 3 + kind;
+  vec4 r = i < 2 ? uDetailRuns0 : (i < 4 ? uDetailRuns1 : uDetailRuns2);
+  return (i % 2 == 0) ? r.xy : r.zw;
+}
+/**
+ * The relief detail (m) of scale s at world point w: patches of real land laid on a jittered
+ * lattice, each of the kind of land where it lies, turned to fall the way the land falls, as
+ * strong next to the land's relief as it was next to its own; blended keeping its strength.
+ */
+float realRelief(vec2 w, int s, float pc, float reliefK, int salt, float cellMy) {
+  float sideM = uDetailPatch * pc;
+  float spacing = 0.5 * sideM / cellMy;
+  // planets: a cell is narrower than it is tall away from the equator
+  float xs = uFlat > 0.5 ? 1.0 : max(0.05, cos((0.5 - w.y / uWorldSize.y) * 3.14159265));
+  ivec2 b = ivec2(floor(w / spacing));
+  float sumWV = 0.0;
+  float sumW2 = 0.0;
+  float atlasSide = 16.0 * uDetailPatch;
+  for (int dj = -1; dj <= 1; dj++)
+    for (int di = -1; di <= 1; di++) {
+      ivec2 n = b + ivec2(di, dj);
+      vec2 c = (vec2(n) + 0.5 + (vec2(hashN(n, salt + 1), hashN(n, salt + 2)) - 0.5) * 0.6) * spacing;
+      vec2 d = w - c;
+      if (uFlat < 0.5) d.x -= uWorldSize.x * floor(d.x / uWorldSize.x + 0.5);
+      vec2 dm = vec2(d.x * xs, d.y) * cellMy;
+      float dist = length(dm) / (0.5 * sideM);
+      if (dist >= 1.0) continue;
+      vec2 fc = floor(c / 4.0);
+      if (uFlat < 0.5) fc.x = mod(fc.x, uFieldSize.x);
+      vec4 f = texelFetch(uDetailField, ivec2(clamp(fc, vec2(0.0), uFieldSize - 1.0)), 0);
+      float relief = (s == 0 ? f.g : f.b) * reliefK;
+      float e = f.a;
+      if (e <= 0.0) continue;
+      float alpine = smoothstep(700.0, 2200.0, e) * smoothstep(120.0, 450.0, relief);
+      float plateau = smoothstep(400.0, 1400.0, e) * (1.0 - smoothstep(60.0, 220.0, relief)) * (1.0 - alpine);
+      float u = hashN(n, salt + 3);
+      int kind = u < alpine ? 0 : (u < alpine + plateau ? 2 : 1);
+      vec2 run = detailRun(s, kind);
+      if (run.y < 0.5) run = detailRun(s, 1);
+      if (run.y < 0.5) continue;
+      float pi = run.x + min(run.y - 1.0, floor(hashN(n, salt + 4) * run.y));
+      vec4 inf = texelFetch(uDetailInfo, ivec2(int(pi), 0), 0);
+      bool mirror = hashN(n, salt + 5) < 0.5;
+      float own = mirror ? -inf.x : inf.x;
+      float ang = f.r - own + (hashN(n, salt + 7) - 0.5) * 0.6;
+      float ca = cos(ang);
+      float sa = sin(ang);
+      vec2 pm = dm / pc;
+      float lx = pm.x * ca + pm.y * sa;
+      float ly = -pm.x * sa + pm.y * ca;
+      if (mirror) lx = -lx;
+      vec2 lp = clamp(vec2(lx, ly) + 0.5 * uDetailPatch, vec2(0.5), vec2(uDetailPatch - 0.5));
+      vec2 tile = vec2(mod(pi, 16.0), floor(pi / 16.0));
+      float v = texture(uDetailAtlas, (tile * uDetailPatch + lp) / atlasSide).r * 255.0 - 128.0;
+      float cw = cos(dist * 1.5707963);
+      float wt = cw * cw;
+      // (plains, of little relief, keep only a little of it: their swells, not a texture of hills)
+      float calm = 0.25 + 0.75 * smoothstep(40.0 * reliefK, 300.0 * reliefK, relief);
+      sumWV += wt * v / 40.0 * inf.y * max(relief, 15.0 * reliefK) * calm;
+      sumW2 += wt * wt;
+    }
+  return sumW2 > 0.0 ? sumWV / sqrt(sumW2) : 0.0;
+}
+
 // symbols kept at a readable screen size: blend two power-of-two densities
 float lodLevel(float targetPx) {
   return log2(max(uZoom, 1e-3) / targetPx);
@@ -337,6 +427,35 @@ void main() {
     vec3 hg = hSmoothGrad(w);
     h = hg.x;
     grad = hg.yz;
+  }
+  // the fine relief of real land, where the screen shows finer than the map's cells hold (it
+  // fades in as each scale's cells grow larger than a pixel); not at the coast or under water
+  if (uDetailOn > 0.5 && uPixel <= 0.0) {
+    float cellMy = uCellKm * 1000.0;
+    float pxm = px * cellMy;
+    float ed = 0.5 * px;
+    float r0 = 0.0;
+    float rx = 0.0;
+    float ry = 0.0;
+    // octaves: the library's 2 km and 250 m patches, then the 250 m patches again at a quarter
+    // and a sixteenth of their size (real relief is self-affine: a hillside's gullies look like a
+    // range's valleys, a quarter the size about a third as deep, H ≈ 0.8)
+    for (int o = 0; o < 4; o++) {
+      int sc = o == 0 ? 1 : 0;
+      float pc = o == 0 ? uDetailScale.y : uDetailScale.x * pow(0.25, float(max(0, o - 1)));
+      float k = pow(0.25, 0.8 * float(max(0, o - 1)));
+      // only what is finer than the map's own cells (coarser, its heights hold it), and only once
+      // a pixel shows it (no shimmer)
+      float fade = (1.0 - smoothstep(pc * 1.5, pc * 4.0, pxm)) * (1.0 - smoothstep(cellMy * 0.5, cellMy * 1.0, pc));
+      if (fade <= 0.0) continue;
+      r0 += fade * realRelief(w, sc, pc, k, o * 16, cellMy);
+      rx += fade * realRelief(w + vec2(ed, 0.0), sc, pc, k, o * 16, cellMy);
+      ry += fade * realRelief(w + vec2(0.0, ed), sc, pc, k, o * 16, cellMy);
+    }
+    // light and shade only (the coast and the colours of height stay the map's own); the hillshade
+    // exaggerates the map's broad slopes many times over, the real slopes of the detail it must not
+    float onLand = smoothstep(5.0, 60.0, h - uSea);
+    grad += vec2(rx - r0, ry - r0) / ed * onLand * DETAIL_SHADE;
   }
   float gmag = length(grad);
   // fractal detail so coastlines and contours stay crisp & organic when zoomed in;

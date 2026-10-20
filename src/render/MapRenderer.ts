@@ -1,3 +1,5 @@
+import { ReliefGPU } from './reliefGPU';
+import type { ReliefLibrary } from '../terrain/reliefDetail';
 import { BufferImageSource, Container, Matrix, UniformGroup, autoDetectRenderer, type Renderer, type RenderSurface } from 'pixi.js';
 import type { TerrainModel } from '../terrain/TerrainModel';
 import type { MapDocument, ProjectMeta } from '../model/types';
@@ -35,6 +37,7 @@ export class MapRenderer {
   readonly layers: WorldLayer[] = [];
   style: StylePreset = STYLE_PRESETS.parchment;
   private styleUniforms!: UniformGroup;
+  private relief: ReliefGPU | null = null;
   private ramp!: BufferImageSource;
   private dirty = true;
   private raf = 0;
@@ -112,6 +115,13 @@ export class MapRenderer {
       uWorldSize: { value: new Float32Array([this.model.W, this.model.H]), type: 'vec2<f32>' },
       uSeed: { value: 0, type: 'f32' },
       uLakeSelLevel: { value: -30000, type: 'f32' },
+      uDetailOn: { value: 0, type: 'f32' },
+      uDetailScale: { value: new Float32Array([250, 2000]), type: 'vec2<f32>' },
+      uDetailPatch: { value: 128, type: 'f32' },
+      uFieldSize: { value: new Float32Array([1, 1]), type: 'vec2<f32>' },
+      uDetailRuns0: { value: new Float32Array(4), type: 'vec4<f32>' },
+      uDetailRuns1: { value: new Float32Array(4), type: 'vec4<f32>' },
+      uDetailRuns2: { value: new Float32Array(4), type: 'vec4<f32>' },
       uLakeSel: { value: new Float32Array(4), type: 'vec4<f32>' },
       // fog
       uPreview: { value: 1, type: 'f32' },
@@ -133,6 +143,7 @@ export class MapRenderer {
     this.fog = new RasterTileLayer(this.model, 'fog', this.styleUniforms, null);
     this.roots.push({ container: this.terrain.container, cull: (a, b, c, d) => this.terrain.cull(a, b, c, d) });
     this.unsub = this.model.subscribe((layer, rect) => {
+      if (layer === 'height') this.relief?.changed();
       this.terrain.onChange(layer, rect);
       this.fog.onChange(layer, rect);
       this.requestRender();
@@ -324,7 +335,16 @@ export class MapRenderer {
     if (first) this.renderer.render({ container: new Container(), clear: true, target });
   }
 
+  /** Draw the fine relief of real land from this library (when zoomed in past the map's cells). */
+  enableReliefDetail(lib: ReliefLibrary) {
+    if (this.destroyed || !this.styleUniforms || this.relief) return;
+    this.relief = new ReliefGPU(lib, this.model, this.styleUniforms, () => this.requestRender());
+    this.terrain.setDetail({ atlas: this.relief.atlas, info: this.relief.info, field: this.relief.field });
+    this.requestRender();
+  }
+
   destroy() {
+    this.relief?.destroy();
     this.destroyed = true;
     cancelAnimationFrame(this.raf);
     this.unsub?.();

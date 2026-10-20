@@ -52,6 +52,9 @@ export class RasterTileLayer {
   /** Texture edge length for the finer water tiles. */
   private readonly Sw: number;
   private readonly tileUniforms = new Map<number, UniformGroup>();
+  /** The fine relief's textures (see reliefGPU.ts), or stand-ins until the library is loaded. */
+  private detail: { atlas: TextureSource; info: TextureSource; field: TextureSource } | null = null;
+  private detailStandIn: BufferImageSource | null = null;
 
   private model: TerrainModel;
   private kind: Kind;
@@ -177,6 +180,9 @@ export class RasterTileLayer {
           uLake: (own.lake ?? this.defaults.lake)!,
           uRiver: (own.river ?? this.defaults.river)!,
           uRamp: this.ramp!,
+          uDetailAtlas: this.detail?.atlas ?? this.standIn(),
+          uDetailInfo: this.detail?.info ?? this.standIn(),
+          uDetailField: this.detail?.field ?? this.standIn(),
           style: this.styleUniforms,
           tile: tu,
         },
@@ -186,6 +192,17 @@ export class RasterTileLayer {
       glProgram: fogProgram!,
       resources: { uFog: (own.fog ?? this.defaults.fog)!, style: this.styleUniforms, tile: tu },
     });
+  }
+
+  private standIn(): BufferImageSource {
+    return (this.detailStandIn ??= new BufferImageSource({ resource: new Float32Array(4), width: 1, height: 1, format: 'rgba32float', scaleMode: 'nearest', addressMode: 'clamp-to-edge', autoGenerateMipmaps: false, alphaMode: 'no-premultiply-alpha' }));
+  }
+
+  /** Draw the fine relief of real land with these textures. */
+  setDetail(d: { atlas: TextureSource; info: TextureSource; field: TextureSource }) {
+    if (this.kind !== 'terrain') return;
+    this.detail = d;
+    for (const [key, t] of this.tiles) t.mesh.shader = this.buildShader(key, t.own);
   }
 
   /** Raster change notification → mark affected tile textures dirty. */
