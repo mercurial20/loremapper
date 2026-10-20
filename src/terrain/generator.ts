@@ -7,7 +7,7 @@ import { blurKm, components, distanceField, dyKm, latOf, lonOf, makeGrid, mercat
 import { accumulate, diffuse, drain, erode, steadyState, traceRivers, type Drainage } from './gen/hydrology';
 import { layoutMismatch, plateBase, tectonics, type Layout, type Tectonics } from './gen/plates';
 import { crestLines } from './gen/crests';
-import { regionalRelief } from './gen/region';
+import { regionalRelief, type RegionLayout } from './gen/region';
 import { widthForFlow } from '../model/rivers';
 
 /**
@@ -22,7 +22,7 @@ export const GENERATOR_VERSION = 3;
 export type GenType = 'continents' | 'pangaea' | 'island' | 'archipelago';
 export type Realism = 'easy' | 'medium' | 'high' | 'ultra';
 /** Whole-world layouts beyond the basic types. */
-export type Template = 'none' | 'twoWorlds' | 'innerSea' | 'polar' | 'shattered' | 'mainland';
+export type Template = 'none' | 'twoWorlds' | 'innerSea' | 'polar' | 'shattered' | 'mainland' | 'part';
 
 export interface GenParams {
   type: GenType;
@@ -103,6 +103,7 @@ export interface GenResult {
 export type Progress = (stage: string, fraction: number) => void;
 
 function layoutFor(p: GenParams): Layout {
+  if (p.template === 'part') return 'continents';
   if (p.template && p.template !== 'none') return p.template;
   if (p.type === 'pangaea') return 'pangaea';
   if (p.type === 'archipelago') return 'archipelago';
@@ -825,7 +826,10 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
 function generateRegion(p: GenParams, mid: Grid, full: Grid, progress: Progress): GenResult {
   const N = mid.w * mid.h;
   const midStep = mid.step;
+  const t = p.template ?? 'none';
+  const layout: RegionLayout = t === 'part' || t === 'innerSea' || t === 'shattered' || t === 'mainland' ? t : p.type === 'pangaea' ? 'pangaea' : p.type === 'archipelago' ? 'archipelago' : 'continents';
   const reg = regionalRelief(mid, {
+    layout,
     seed: p.seed,
     cellKm: p.flat!.cellKm!,
     landFraction: p.landFraction,

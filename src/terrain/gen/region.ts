@@ -37,8 +37,15 @@ export interface RegionalRelief {
   ranges: RegionRange[];
 }
 
+/**
+ * How the land lies on the map: wholly inside it (sea all round the edges) as one or several
+ * landmasses, or running on past its edges as part of a larger land (`part`).
+ */
+export type RegionLayout = 'part' | 'continents' | 'pangaea' | 'mainland' | 'archipelago' | 'innerSea' | 'shattered';
+
 export interface RegionalOptions {
   seed: number;
+  layout: RegionLayout;
   /** km per world cell. */
   cellKm: number;
   landFraction: number;
@@ -72,12 +79,54 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   o.progress?.('Shaping coasts', 0);
   const landness = new Float32Array(N);
   const coastOct = Math.max(3, Math.round(Math.log2((0.18 * mapKm) / (2 * kmCell))));
+  // the middle of the land, a little off the map's middle
+  const cu = 0.5 + (rnd() - 0.5) * 0.16;
+  const cv = 0.5 + (rnd() - 0.5) * 0.16;
   for (let j = 0; j < h; j++)
     for (let i = 0; i < w; i++) {
       const x = xKm(i);
       const y = yKm(j);
       const k = j * w + i;
-      landness[k] = 0.65 * n2(x, y, 0.8 * mapKm, 2, 0.3) + 0.25 * n2(x, y, 0.35 * mapKm, 2, 1.7) + 0.32 * n2(x, y, 0.18 * mapKm, coastOct, 2.9, 0.6);
+      const coast = 0.32 * n2(x, y, 0.18 * mapKm, coastOct, 2.9, 0.6);
+      // where on the map: u, v across it (0 … 1), r from its middle
+      const u = x / (g.W * o.cellKm);
+      const v = y / (g.H * o.cellKm);
+      // (a landmass's outline wanders: bays and peninsulas hundreds of km across, not a disc)
+      const wu = u + 0.12 * n2(x, y, 0.4 * mapKm, 3, 11.1);
+      const wv = v + 0.12 * n2(x, y, 0.4 * mapKm, 3, 12.7);
+      const r = Math.hypot(wu - cu, wv - cv) / 0.5;
+      const edge = Math.min(u, 1 - u, v, 1 - v);
+      const frame = 1 - smoothstep(0.02, 0.14, edge);
+      let L: number;
+      switch (o.layout) {
+        case 'part':
+          L = 0.65 * n2(x, y, 0.8 * mapKm, 2, 0.3) + 0.25 * n2(x, y, 0.35 * mapKm, 2, 1.7) + coast;
+          break;
+        case 'pangaea':
+          // one landmass filling most of the map
+          L = 1.1 * (1 - r * r) + 0.3 * n2(x, y, 0.45 * mapKm, 2, 1.7) + coast - 1.6 * frame;
+          break;
+        case 'mainland':
+          // one large landmass and island chains around it
+          L = 1.2 * (1 - Math.min(1.5, r / 0.65) ** 2) + 0.25 * n2(x, y, 0.4 * mapKm, 2, 1.7) + coast + 1.6 * smoothstep(0.7, 0.85, r) * smoothstep(0.15, 0.5, n2(x, y, 0.06 * mapKm, 3, 4.4)) - 1.6 * (1 - smoothstep(0.01, 0.06, edge));
+          break;
+        case 'archipelago':
+          // many islands, none large
+          L = 0.35 * n2(x, y, 0.5 * mapKm, 2, 0.3) + 0.6 * n2(x, y, 0.09 * mapKm, 4, 6.2, 0.55) + 0.5 * coast - 1.6 * frame;
+          break;
+        case 'innerSea':
+          // lands all round a sea in the middle, running on past the edges
+          L = 0.55 * smoothstep(0.35, 0.8, r) - 0.7 * (1 - smoothstep(0.15, 0.55, r)) + 0.3 * n2(x, y, 0.35 * mapKm, 2, 1.7) + coast;
+          break;
+        case 'shattered':
+          // one land broken apart by narrow seas along rifts
+          L = 1.0 * (1 - r * r) + 0.25 * n2(x, y, 0.45 * mapKm, 2, 1.7) + coast - 1.1 * (1 - smoothstep(0.02, 0.07, Math.abs(n2(x, y, 0.3 * mapKm, 2, 8.8)))) - 1.6 * frame;
+          break;
+        default:
+          // several landmasses, all on the map
+          L = 0.6 * n2(x, y, 0.55 * mapKm, 2, 0.3) + 0.2 * n2(x, y, 0.3 * mapKm, 2, 1.7) + coast - 1.4 * frame;
+      }
+      landness[k] = L;
     }
   const t = thresholdForFraction(landness, g, o.landFraction);
   const land = new Uint8Array(N);

@@ -29,7 +29,7 @@
 const SCHEMA = {
   map_created: { kind: ['planet', 'flat'], start: ['generate', 'builtin', 'empty'] },
   world_generated: {
-    preset: ['continents', 'pangaea', 'twoWorlds', 'innerSea', 'polar', 'shattered', 'mainland', 'oceanWorld', 'island', 'archipelago', 'sand', 'snow', 'builtin'],
+    preset: ['continents', 'pangaea', 'twoWorlds', 'innerSea', 'polar', 'shattered', 'mainland', 'oceanWorld', 'part', 'island', 'archipelago', 'sand', 'snow', 'builtin'],
     realism: ['easy', 'medium', 'high', 'ultra'],
   },
   project_reopened: {},

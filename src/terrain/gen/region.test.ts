@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { makeGrid, mercatorPatch } from './grid';
-import { regionalRelief } from './region';
+import { regionalRelief, type RegionLayout } from './region';
 
 /** A region `km` across on a `cells`-cell grid. */
-function region(km: number, cells: number, seed: number) {
+function region(km: number, cells: number, seed: number, layout: RegionLayout = 'part') {
   const R = 6371;
   const proj = mercatorPatch(cells, cells, R, km / R);
   const g = makeGrid(cells, cells, R, 1, { x0: 0, y0: 0, w: cells, h: cells }, proj);
-  return { g, r: regionalRelief(g, { seed, cellKm: km / cells, landFraction: 0.5, mountains: 0.6, roughness: 0.4, maxElevation: 8000, maxDepth: 4000 }) };
+  return { g, r: regionalRelief(g, { layout, seed, cellKm: km / cells, landFraction: 0.5, mountains: 0.6, roughness: 0.4, maxElevation: 8000, maxDepth: 4000 }) };
 }
 
 describe('regions at their true size', () => {

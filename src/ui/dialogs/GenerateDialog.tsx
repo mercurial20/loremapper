@@ -26,6 +26,8 @@ interface Preset {
   land?: number;
   /** only meaningful on a planet (poles, opposite hemispheres) */
   planetOnly?: boolean;
+  /** only on a flat map */
+  flatOnly?: boolean;
   /** a waterless world of one surface */
   surface?: Surface;
   glyph: Blob[];
@@ -34,6 +36,7 @@ interface Preset {
 const dots = (pts: [number, number, number][]): Blob[] => pts.map(([x, y, r]) => [x, y, r, r * 0.75]);
 
 const PRESETS: Preset[] = [
+  { id: 'part', label: N_('Part of a larger land'), desc: N_('The land runs on past the edges of the map, as a region of a bigger country or continent.'), type: 'continents', template: 'part', flatOnly: true, land: 0.6, glyph: [[30, 30, 34, 22], [80, 10, 26, 12]] },
   { id: 'continents', label: N_('Continents'), desc: N_('Three to six landmasses separated by oceans.'), type: 'continents', template: 'none', glyph: [[20, 17, 13, 8], [52, 31, 11, 9], [82, 16, 11, 7], [80, 39, 6, 4]] },
   { id: 'pangaea', label: N_('Supercontinent'), desc: N_('Almost all land joined in one huge continent.'), type: 'pangaea', template: 'none', glyph: [[46, 25, 31, 15], [88, 40, 3, 2]] },
   { id: 'twoWorlds', label: N_('Old & New World'), desc: N_('Two great landmasses on opposite sides of the planet.'), type: 'continents', template: 'twoWorlds', planetOnly: true, glyph: [[24, 24, 13, 17], [76, 26, 13, 16]] },
@@ -246,7 +249,7 @@ export function GenerateDialog() {
     return s < 60 ? t('≈ {n} s', { n: Math.max(1, Math.round(s)) }) : t('≈ {n} min', { n: Math.round(s / 60) });
   };
   const mapKm2 = planet ? surfaceAreaKm2(planet) : 510e6;
-  const world = PRESETS.filter((p) => !p.view && !(flat && p.planetOnly));
+  const world = PRESETS.filter((p) => !p.view && !(flat && p.planetOnly) && !(!flat && p.flatOnly));
   const aspect = flat && planet ? `${planet.gridWidth} / ${planet.gridHeight}` : '2 / 1';
   const inView = PRESETS.filter((p) => p.view);
   const card = (p: Preset) => (
