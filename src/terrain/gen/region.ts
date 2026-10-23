@@ -60,7 +60,7 @@ export interface RegionalOptions {
 /** Over this many km from the coast a belt's mountains come down to the shore. */
 const COAST_EASE_KM = 12;
 /** Most cells the erosion of the land works on (it runs coarser on bigger grids). */
-const EROSION_CELLS = 1_100_000;
+const EROSION_CELLS = 4_300_000;
 /** The same for the land beyond the belts (gentler land, coarser valleys). */
 const HILL_CELLS = 300_000;
 
@@ -424,7 +424,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
         },
       ],
     }));
-    const { relief } = rangeRelief({ w: rw, h: rh, cellKm: kmCell * rf, ox: g.x0, oy: g.y0, scale: g.step * rf, ranges: jobRanges, peakM, seed: 0, steps: 32 });
+    const { relief } = rangeRelief({ w: rw, h: rh, cellKm: kmCell * rf, ox: g.x0, oy: g.y0, scale: g.step * rf, ranges: jobRanges, peakM, seed: 0, steps: 32, coarseToFine: true, refineSteps: 10 });
     for (let j = 0; j < h; j++)
       for (let i = 0; i < w; i++) {
         const k = j * w + i;

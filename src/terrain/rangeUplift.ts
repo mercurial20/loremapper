@@ -56,6 +56,12 @@ export interface RangeJob {
   seed: number;
   /** Erosion steps (the default settles the drainage of a drawn range fully). */
   steps?: number;
+  /**
+   * Carve coarse to fine: the drainage settles on a grid half as fine, then the full grid takes
+   * that relief and only cuts its small valleys (`refineSteps` steps). Much faster on big grids.
+   */
+  coarseToFine?: boolean;
+  refineSteps?: number;
 }
 
 /** The uplift of all ranges in the window, 0 … 1. */
@@ -200,6 +206,29 @@ export function rangeRelief(job: RangeJob): { relief: Float32Array; uplift: Floa
     scale = eff.map((e) => (e > 0 ? best / e : 1));
   }
   const c = fields(scale, w, h, 1);
+  if (job.coarseToFine && w * h > 40_000) {
+    // the drainage settles on a grid half as fine; scaled up, it is where the full grid starts
+    const W = Math.ceil(w / 2);
+    const H = Math.ceil(h / 2);
+    const cc = fields(scale, W, H, 2);
+    const zc = upliftRelief({ w: W, h: H, uplift: cc.uplift, cellKm: job.cellKm * 2, peakM: 1, erodibility: cc.erod, initial: cc.initial, raw: true, steps: job.steps });
+    const init = new Float32Array(w * h);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const fx = Math.min(W - 1, Math.max(0, (x + 0.5) / 2 - 0.5));
+        const fy = Math.min(H - 1, Math.max(0, (y + 0.5) / 2 - 0.5));
+        const ix = Math.min(W - 2, Math.floor(fx));
+        const iy = Math.min(H - 2, Math.floor(fy));
+        const tx = fx - Math.max(0, ix);
+        const ty = fy - Math.max(0, iy);
+        const at = (a: number, b: number) => zc[Math.max(0, b) * W + Math.max(0, a)];
+        const v = (at(ix, iy) * (1 - tx) + at(ix + 1, iy) * tx) * (1 - ty) + (at(ix, iy + 1) * (1 - tx) + at(ix + 1, iy + 1) * tx) * ty;
+        // (with the full grid's own roughness, so its small channels pick their own ways)
+        init[y * w + x] = c.uplift[y * w + x] > 0 ? v + c.initial[y * w + x] * 0.05 : 0;
+      }
+    const relief = upliftRelief({ w, h, uplift: c.uplift, cellKm: job.cellKm, peakM: job.peakM, erodibility: c.erod, initial: init, steps: job.refineSteps ?? 10 });
+    return { relief, uplift: belt };
+  }
   const relief = upliftRelief({ w, h, uplift: c.uplift, cellKm: job.cellKm, peakM: job.peakM, erodibility: c.erod, initial: c.initial, steps: job.steps });
   return { relief, uplift: belt };
 }
