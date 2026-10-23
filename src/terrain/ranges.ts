@@ -3,7 +3,7 @@ import type { MountainRange, Vec2 } from '../model/types';
 import { sampleSpline } from '../render/vectorGeometry';
 import type { RasterArray } from './TileGrid';
 import type { TerrainModel, TileChange } from './TerrainModel';
-import type { RangeJob, RangeJobRange } from './rangeUplift';
+import { WIDTH_VARIATION, type RangeJob, type RangeJobRange } from './rangeUplift';
 
 /*
  * Mountain ranges drawn as crest lines. Their relief lives in the model's relief
@@ -74,7 +74,8 @@ type Box = { x0: number; y0: number; x1: number; y1: number };
 function rangeBox(model: TerrainModel, r: MountainRange): Box | null {
   const pts = r.lines.flatMap((l) => crestCurve(l.points));
   if (!pts.length) return null;
-  const pad = halfWidthCells(model, r) * (1.6 + 0.4 * r.irregularity) + 4;
+  // (room for a wider stretch, a wandering crest, an asymmetric flank and the foothills)
+  const pad = halfWidthCells(model, r) * Math.exp((r.widthVariation ?? WIDTH_VARIATION) * 1.4) * (1.9 + 0.5 * r.irregularity) * 1.9 + 4;
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
@@ -202,6 +203,7 @@ export async function rebuildRanges(model: TerrainModel, ranges: Record<string, 
       halfWidth: halfWidthCells(model, r) / f,
       irregularity: r.irregularity,
       asymmetry: r.asymmetry,
+      widthVariation: r.widthVariation,
       lines: r.lines.map((l) => {
         const c = crestCurve(l.points);
         const pts = new Float32Array(c.length * 2);

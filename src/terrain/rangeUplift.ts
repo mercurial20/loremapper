@@ -1,4 +1,4 @@
-import { clamp, fbm } from '../core/math';
+import { clamp, fbm, smoothstep } from '../core/math';
 import { cellNoise, upliftRelief } from './upliftErosion';
 
 /*
@@ -17,6 +17,15 @@ import { cellNoise, upliftRelief } from './upliftErosion';
 const EDGE = 0.45;
 /** How much stronger the uplift is on the crest than across the rest of the belt. */
 const CREST = 0.25;
+/** How much a range's width changes along it, by default. */
+export const WIDTH_VARIATION = 0.35;
+/**
+ * Beyond the belt, foothills: the uplift tails off over this many half widths more, so the
+ * range comes down to the plains through hill country instead of ending at a line.
+ */
+const FOOTHILLS = 0.9;
+/** The foothills' uplift, next to the crest's. */
+const FOOT_UPLIFT = 0.16;
 
 export interface RangeJobLine {
   /** Points along the crest, x/y pairs in window cells. */
@@ -38,6 +47,8 @@ export interface RangeJobRange {
   halfWidth: number;
   irregularity: number;
   asymmetry: number;
+  /** 0 … 1: how much the width changes along the range (default WIDTH_VARIATION). */
+  widthVariation?: number;
   lines: RangeJobLine[];
 }
 
@@ -73,8 +84,18 @@ export function rangeUplift(job: RangeJob): Float32Array {
     // smooth fields across the map, a feature every couple of range widths
     const L = hw * 2 * scale;
     const wander = (x: number, y: number) => (fbm((ox + x * scale) / L, (oy + y * scale) / L, job.seed + 11, 3) * 2 - 1) * 0.35 * hw * r.irregularity;
-    const swell = (x: number, y: number) => clamp(1 + (fbm((ox + x * scale) / L, (oy + y * scale) / L, job.seed + 23, 3) * 2 - 1) * 0.9 * r.irregularity, 0.25, 1.4);
-    const reach = hw * (1 + 0.5 * Math.abs(r.asymmetry)) + 0.35 * hw * r.irregularity + 1;
+    // summits higher and lower along the crest, but the main divide runs on (a chain, not a
+    // scatter of peaks)
+    const swell = (x: number, y: number) => clamp(1 + (fbm((ox + x * scale) / L, (oy + y * scale) / L, job.seed + 23, 3) * 2 - 1) * 0.45 * r.irregularity, 0.6, 1.3);
+    const wv = clamp(r.widthVariation ?? WIDTH_VARIATION, 0, 1);
+    // along the range: its width swells and narrows smoothly, a swell every few widths
+    const along0 = (a: number) => fbm(a / (5 * hw * scale), r.seed % 997, job.seed + 41, 3);
+    const widthAt = (a: number) => Math.exp(wv * 1.4 * (along0(a) * 2 - 1));
+    // the edge of the belt is ragged: spurs run out into the land, bays between them
+    const ragged = (x: number, y: number) => (fbm((ox + x * scale) / (0.7 * hw * scale), (oy + y * scale) / (0.7 * hw * scale), job.seed + 53, 3) * 2 - 1) * (0.15 + 0.3 * r.irregularity);
+    // and which side is the steep one wanders along it too
+    const asymAt = (a: number) => clamp(r.asymmetry + (fbm(a / (8 * hw * scale), r.seed % 991, job.seed + 61, 2) * 2 - 1) * 0.5 * r.irregularity, -0.9, 0.9);
+    const reach = hw * Math.exp(wv * 1.4) * (1 + 0.5 * Math.abs(r.asymmetry) + 0.45 * r.irregularity) * (1 + FOOTHILLS) + 0.35 * hw * r.irregularity + 1;
     for (const line of r.lines) {
       const p = line.pts;
       const n = p.length / 2;
@@ -106,19 +127,24 @@ export function rangeUplift(job: RangeJob): Float32Array {
             const side = dx * qy - dy * qx >= 0 ? 1 : -1;
             const sd = side * Math.hypot(qx, qy) - wander(x, y);
             const s = sd >= 0 ? 1 : -1;
-            // the steep side of an asymmetric range is narrower
-            const half = hw * (1 - 0.5 * r.asymmetry * s);
-            const q = Math.abs(sd) / half;
-            if (q >= 1) continue;
             const along = cum[i] + tt * Math.sqrt(len2);
             const a = along / total;
+            // the width here (the wider the lower, so a broad stretch spreads rather than towers);
+            // the steep side of an asymmetric range is narrower
+            const wf = widthAt(ox + along * scale);
+            const half = hw * wf * (1 - 0.5 * asymAt(ox + along * scale) * s);
+            const q = (Math.abs(sd) / half) * (1 + ragged(x, y));
+            if (q >= 1 + FOOTHILLS) continue;
             // uplift is broad across the belt and falls off near its edges, as in real orogens;
             // the rivers, not the uplift, make the crest and the valleys
             const e = clamp((1 - q) / EDGE, 0, 1);
             // a gentle rise towards the drawn crest keeps the main divide on it, and leaves a
-            // lower trough between two chains for a valley along them
-            let u = e * e * (3 - 2 * e) * (1 - CREST + CREST * (1 - q));
-            u *= r.height * (line.h0 + (line.h1 - line.h0) * a) * swell(x, y);
+            // lower trough between two chains for a valley along them; beyond the belt, the
+            // foothills tail off into the land around
+            const qq = Math.min(q, 1);
+            const foot = q > 1 - EDGE ? FOOT_UPLIFT * (1 - smoothstep(1 - EDGE, 1 + FOOTHILLS, q)) : FOOT_UPLIFT;
+            let u = Math.max(e * e * (3 - 2 * e) * (1 - CREST + CREST * (1 - qq)), foot);
+            u *= r.height * (line.h0 + (line.h1 - line.h0) * a) * swell(x, y) / Math.sqrt(wf);
             // free ends round off over about half a width
             const e0 = line.freeStart ? clamp(along / (0.6 * hw), 0, 1) : 1;
             const e1 = line.freeEnd ? clamp((total - along) / (0.6 * hw), 0, 1) : 1;

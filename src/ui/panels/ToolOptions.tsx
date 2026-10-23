@@ -14,6 +14,7 @@ import { useDoc } from '../../store/docStore';
 import { brushGroupOf, TERRAIN_PRESETS, useEditor, type BrushGroup, type TerrainPreset } from '../../store/editorStore';
 import { raiseRate, type BrushParams } from '../../terrain/brushes';
 import { pushTileChange } from '../../tools/ToolController';
+import { WIDTH_VARIATION } from '../../terrain/rangeUplift';
 import { ALL_TOOLS } from '../toolDefs';
 import { SourceControls } from './SourceControls';
 import { AlphaBadge, ColorField, Hint, MeasureField, Segmented, Select, Slider, Toggle } from '../controls/controls';
@@ -104,6 +105,15 @@ function RangeLines() {
             onChange={(x) => change({ asymmetry: Math.abs(x) < 0.05 ? 0 : x })}
             format={(x) => (x > 0 ? t('steep on the left') : x < 0 ? t('steep on the right') : t('even'))}
             hint={t('One flank short and steep, the other long; left and right as you drew the crest')}
+          />
+          <Slider
+            label={t('Width varies')}
+            value={v.widthVariation ?? WIDTH_VARIATION}
+            min={0}
+            max={1}
+            onChange={(x) => change({ widthVariation: x })}
+            format={(x) => `±${Math.round((Math.exp(x * 1.4) - 1) * 100)}%`}
+            hint={t('How much the range widens and narrows along its length; where it is wider it is lower, and comes down to the land around through foothills')}
           />
           <div className="btn-row">
             <button className="btn" onClick={() => updateRange(r.id, { ...draft, seed: Math.floor(Math.random() * 1e9) })} title={t('The same range, carved another way')}>

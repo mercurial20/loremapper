@@ -121,6 +121,8 @@ export interface MountainRange {
   irregularity: number;
   /** −1 … 1: which side is the short, steep one (0 = both alike). */
   asymmetry: number;
+  /** 0 … 1: how much the range's width changes along it (where it is wider, it is lower). */
+  widthVariation?: number;
   /** Picks one of the many ways rivers could carve the same range. */
   seed: number;
   locked: boolean;
