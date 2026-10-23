@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { seedFromString } from '../../core/math';
 import { surfaceAreaKm2 } from '../../core/planet';
 import { formatArea, formatHeight } from '../../core/units';
-import { generateWorld, genParams, PreviewWorker, type GenerateOptions, type RiverAmount } from '../../editor/generate';
+import { generateWorld, genParams, PreviewWorker, REGION_KM, type GenerateOptions, type RiverAmount } from '../../editor/generate';
 import type { GenType, Realism, Surface, Template } from '../../terrain/generator';
 import { useDoc } from '../../store/docStore';
 import { useEditor } from '../../store/editorStore';
@@ -28,6 +28,8 @@ interface Preset {
   planetOnly?: boolean;
   /** only on a flat map */
   flatOnly?: boolean;
+  /** only on a small flat map (a region, made at its true size), or only on bigger maps and planets */
+  size?: 'small' | 'large';
   /** a waterless world of one surface */
   surface?: Surface;
   glyph: Blob[];
@@ -36,7 +38,17 @@ interface Preset {
 const dots = (pts: [number, number, number][]): Blob[] => pts.map(([x, y, r]) => [x, y, r, r * 0.75]);
 
 const PRESETS: Preset[] = [
-  { id: 'part', label: N_('Part of a larger land'), desc: N_('The land runs on past the edges of the map, as a region of a bigger country or continent.'), type: 'continents', template: 'part', flatOnly: true, land: 0.6, glyph: [[30, 30, 34, 22], [80, 10, 26, 12]] },
+  // ---- small flat maps (regions)
+  { id: 'part', label: N_('Part of a continent'), desc: N_('The land runs on past the edges of the map, as a region of a continent; the sea on one side. Its ranges run off the map.'), type: 'continents', template: 'part', size: 'small', land: 0.68, glyph: [[40, 28, 50, 28], [8, 46, 14, 8]] },
+  { id: 'coast', label: N_('Coast'), desc: N_('Land on one side of the map, sea on the other, the coast winding between.'), type: 'continents', template: 'coast', size: 'small', land: 0.5, glyph: [[25, 25, 30, 30]] },
+  { id: 'peninsula', label: N_('Peninsula'), desc: N_('A tongue of land from one side of the map out into the sea, as Italy or Crimea.'), type: 'continents', template: 'peninsula', size: 'small', land: 0.3, glyph: [[50, 8, 14, 12], [50, 26, 9, 14]] },
+  { id: 'inland', label: N_('Inland'), desc: N_('No sea at all: mountains, plains, plateaus and valleys, far from any coast.'), type: 'continents', template: 'inland', size: 'small', land: 1, glyph: [[50, 25, 52, 28]] },
+  { id: 'isle', label: N_('Island'), desc: N_('One island in the sea, with a mountain massif or a volcano.'), type: 'continents', template: 'isle', size: 'small', land: 0.3, glyph: [[50, 25, 22, 14]] },
+  { id: 'smallMainland', label: N_('Island and islets'), desc: N_('A large island with chains of small islands around it.'), type: 'continents', template: 'mainland', size: 'small', land: 0.35, glyph: [[46, 25, 22, 13], ...dots([[78, 12, 2.5], [82, 20, 2], [84, 30, 2.5], [16, 38, 2]])] },
+  { id: 'smallArch', label: N_('Archipelago'), desc: N_('Many islands, large and small, and volcanic chains.'), type: 'archipelago', template: 'none', size: 'small', land: 0.16, glyph: dots([[24, 16, 5], [36, 22, 3.5], [50, 26, 4.5], [62, 30, 3], [72, 34, 4], [30, 32, 2.5], [66, 16, 2.5]]) },
+  { id: 'smallSea', label: N_('Inner sea'), desc: N_('Lands ringing a sea in the middle of the map.'), type: 'continents', template: 'innerSea', size: 'small', land: 0.6, glyph: [[50, 25, 50, 26], [50, 25, 22, 12, true]] },
+  { id: 'crater', label: N_('Meteorite crater'), desc: N_('A land struck by a meteorite long ago: a round crater flooded by the sea, its rim a ring of hills, a peak in its middle.'), type: 'continents', template: 'crater', size: 'small', land: 1, glyph: [[50, 25, 52, 28], [50, 25, 16, 13, true], [50, 25, 2, 2]] },
+
   { id: 'continents', label: N_('Continents'), desc: N_('Three to six landmasses separated by oceans.'), type: 'continents', template: 'none', glyph: [[20, 17, 13, 8], [52, 31, 11, 9], [82, 16, 11, 7], [80, 39, 6, 4]] },
   { id: 'pangaea', label: N_('Supercontinent'), desc: N_('Almost all land joined in one huge continent.'), type: 'pangaea', template: 'none', glyph: [[46, 25, 31, 15], [88, 40, 3, 2]] },
   { id: 'twoWorlds', label: N_('Old & New World'), desc: N_('Two great landmasses on opposite sides of the planet.'), type: 'continents', template: 'twoWorlds', planetOnly: true, glyph: [[24, 24, 13, 17], [76, 26, 13, 16]] },
@@ -149,7 +161,7 @@ export function GenerateDialog() {
   const set = useEditor((s) => s.set);
   const units = useEditor((s) => s.units);
   const planet = useDoc((s) => s.meta?.planet);
-  const [presetId, setPresetId] = useState('continents');
+  const [presetId, setPresetId] = useState(() => (planet?.mapType === 'flat' && Math.max(planet.gridWidth, planet.gridHeight) * (planet.cellKm ?? 1) < REGION_KM ? 'part' : 'continents'));
   const preset = PRESETS.find((p) => p.id === presetId)!;
   const [realism, setRealism] = useState<Realism>('medium');
   const [seed, setSeed] = useState(randomSeed);
@@ -249,7 +261,9 @@ export function GenerateDialog() {
     return s < 60 ? t('≈ {n} s', { n: Math.max(1, Math.round(s)) }) : t('≈ {n} min', { n: Math.round(s / 60) });
   };
   const mapKm2 = planet ? surfaceAreaKm2(planet) : 510e6;
-  const world = PRESETS.filter((p) => !p.view && !(flat && p.planetOnly) && !(!flat && p.flatOnly));
+  // a small flat map is a region: its own kinds of land (no continents fit in it)
+  const small = flat && !!planet && Math.max(planet.gridWidth, planet.gridHeight) * (planet.cellKm ?? 1) < REGION_KM;
+  const world = PRESETS.filter((p) => !p.view && !(flat && p.planetOnly) && !(!flat && p.flatOnly) && (p.size === undefined || (p.size === 'small') === small) && !(small && !p.size && !p.surface));
   const aspect = flat && planet ? `${planet.gridWidth} / ${planet.gridHeight}` : '2 / 1';
   const inView = PRESETS.filter((p) => p.view);
   const card = (p: Preset) => (

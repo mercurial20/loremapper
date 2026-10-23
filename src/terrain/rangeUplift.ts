@@ -83,18 +83,38 @@ export function rangeUplift(job: RangeJob): Float32Array {
     const hw = Math.max(2, r.halfWidth);
     // smooth fields across the map, a feature every couple of range widths
     const L = hw * 2 * scale;
-    const wander = (x: number, y: number) => (fbm((ox + x * scale) / L, (oy + y * scale) / L, job.seed + 11, 3) * 2 - 1) * 0.35 * hw * r.irregularity;
+    // (the smooth fields are worked out once a cell, as they are asked for: the boxes of the
+    // crest's segments overlap, and a cell is visited many times)
+    const cached = (f: (x: number, y: number) => number) => {
+      const a = new Float32Array(w * h).fill(NaN);
+      return (x: number, y: number) => {
+        const k = y * w + x;
+        let v = a[k];
+        if (v !== v) v = a[k] = f(x, y);
+        return v;
+      };
+    };
+    const wander = cached((x, y) => (fbm((ox + x * scale) / L, (oy + y * scale) / L, job.seed + 11, 3) * 2 - 1) * 0.35 * hw * r.irregularity);
     // summits higher and lower along the crest, but the main divide runs on (a chain, not a
     // scatter of peaks)
-    const swell = (x: number, y: number) => clamp(1 + (fbm((ox + x * scale) / L, (oy + y * scale) / L, job.seed + 23, 3) * 2 - 1) * 0.45 * r.irregularity, 0.6, 1.3);
+    const swell = cached((x, y) => clamp(1 + (fbm((ox + x * scale) / L, (oy + y * scale) / L, job.seed + 23, 3) * 2 - 1) * 0.45 * r.irregularity, 0.6, 1.3));
     const wv = clamp(r.widthVariation ?? WIDTH_VARIATION, 0, 1);
     // along the range: its width swells and narrows smoothly, a swell every few widths
-    const along0 = (a: number) => fbm(a / (5 * hw * scale), r.seed % 997, job.seed + 41, 3);
-    const widthAt = (a: number) => Math.exp(wv * 1.4 * (along0(a) * 2 - 1));
+    // (both tabulated along the line, a value a cell)
+    const tab = (f: (a: number) => number) => {
+      const m = new Map<number, number>();
+      return (a: number) => {
+        const k = Math.round(a);
+        let v = m.get(k);
+        if (v === undefined) m.set(k, (v = f(k)));
+        return v;
+      };
+    };
+    const widthAt = tab((a) => Math.exp(wv * 1.4 * (fbm(a / (5 * hw * scale), r.seed % 997, job.seed + 41, 3) * 2 - 1)));
     // the edge of the belt is ragged: spurs run out into the land, bays between them
-    const ragged = (x: number, y: number) => (fbm((ox + x * scale) / (0.7 * hw * scale), (oy + y * scale) / (0.7 * hw * scale), job.seed + 53, 3) * 2 - 1) * (0.15 + 0.3 * r.irregularity);
+    const ragged = cached((x, y) => (fbm((ox + x * scale) / (0.7 * hw * scale), (oy + y * scale) / (0.7 * hw * scale), job.seed + 53, 3) * 2 - 1) * (0.15 + 0.3 * r.irregularity));
     // and which side is the steep one wanders along it too
-    const asymAt = (a: number) => clamp(r.asymmetry + (fbm(a / (8 * hw * scale), r.seed % 991, job.seed + 61, 2) * 2 - 1) * 0.5 * r.irregularity, -0.9, 0.9);
+    const asymAt = tab((a) => clamp(r.asymmetry + (fbm(a / (8 * hw * scale), r.seed % 991, job.seed + 61, 2) * 2 - 1) * 0.5 * r.irregularity, -0.9, 0.9));
     const reach = hw * Math.exp(wv * 1.4) * (1 + 0.5 * Math.abs(r.asymmetry) + 0.45 * r.irregularity) * (1 + FOOTHILLS) + 0.35 * hw * r.irregularity + 1;
     for (const line of r.lines) {
       const p = line.pts;
@@ -184,8 +204,25 @@ export function rangeRelief(job: RangeJob): { relief: Float32Array; uplift: Floa
   const R = job.ranges;
   // each range's own belt, and the land it would make on its own
   const one = R.map((r) => ({ ...job, ranges: [{ ...r, height: 1 }], seed: r.seed }) as RangeJob);
-  const belts = one.map((j) => rangeUplift(j));
-  const rock = one.map((j, i) => rangeErodibility(j, R[i].irregularity, R[i].halfWidth));
+  // a belt and its rock change over many cells: on a big window they are worked out on a grid
+  // twice as coarse and scaled up
+  const sub = n > 1_000_000 ? 2 : 1;
+  const sw = Math.ceil(w / sub);
+  const sh = Math.ceil(h / sub);
+  const coarse = (j: RangeJob): RangeJob =>
+    sub === 1
+      ? j
+      : {
+          ...j,
+          w: sw,
+          h: sh,
+          cellKm: j.cellKm * sub,
+          scale: j.scale * sub,
+          ranges: j.ranges.map((r) => ({ ...r, halfWidth: r.halfWidth / sub, lines: r.lines.map((l) => ({ ...l, pts: l.pts.map((v) => v / sub) })) })),
+        };
+  const up = (a: Float32Array) => (sub === 1 ? a : upsample(a, sw, sh, w, h, sub));
+  const belts = one.map((j) => up(rangeUplift(coarse(j))));
+  const rock = one.map((j, i) => up(rangeErodibility(coarse(j), R[i].irregularity, R[i].halfWidth / sub)));
   const belt = new Float32Array(n);
   for (const b of belts) for (let k = 0; k < n; k++) if (b[k] > belt[k]) belt[k] = b[k];
 
@@ -217,9 +254,11 @@ export function rangeRelief(job: RangeJob): { relief: Float32Array; uplift: Floa
   };
 
   let scale = R.map(() => 1);
+  /** The first pass's relief, each range's part scaled as asked (where a finer pass can start). */
+  let first: { z: Float32Array; W: number; H: number; f: number } | null = null;
   if (R.length > 1) {
     // first pass, coarse: how high does each range come out?
-    const f = n > 40_000 ? 2 : 1;
+    const f = n > 1_000_000 ? 4 : n > 40_000 ? 2 : 1;
     const W = Math.ceil(w / f);
     const H = Math.ceil(h / f);
     const c = fields(scale, W, H, f);
@@ -230,6 +269,8 @@ export function rangeRelief(job: RangeJob): { relief: Float32Array; uplift: Floa
     const eff = top.map((t, i) => t / R[i].height);
     const best = Math.max(...eff);
     scale = eff.map((e) => (e > 0 ? best / e : 1));
+    for (let o = 0; o < W * H; o++) if (c.owner[o] >= 0) z[o] *= scale[c.owner[o]];
+    first = { z, W, H, f };
   }
   const c = fields(scale, w, h, 1);
   if (job.coarseToFine && w * h > 40_000) {
@@ -237,7 +278,16 @@ export function rangeRelief(job: RangeJob): { relief: Float32Array; uplift: Floa
     const W = Math.ceil(w / 2);
     const H = Math.ceil(h / 2);
     const cc = fields(scale, W, H, 2);
-    const zc = upliftRelief({ w: W, h: H, uplift: cc.uplift, cellKm: job.cellKm * 2, peakM: 1, erodibility: cc.erod, initial: cc.initial, raw: true, steps: job.steps });
+    // (from the first pass if it was coarser still: then only its smaller valleys are left to cut)
+    let init0: Float32Array = cc.initial;
+    let steps = job.steps;
+    if (first && first.f === 4) {
+      const zf = upsample(first.z, first.W, first.H, W, H, 2);
+      for (let o = 0; o < W * H; o++) zf[o] = cc.uplift[o] > 0 ? zf[o] + cc.initial[o] * 0.05 : 0;
+      init0 = zf;
+      steps = 12;
+    }
+    const zc = upliftRelief({ w: W, h: H, uplift: cc.uplift, cellKm: job.cellKm * 2, peakM: 1, erodibility: cc.erod, initial: init0, raw: true, steps });
     const init = new Float32Array(w * h);
     for (let y = 0; y < h; y++)
       for (let x = 0; x < w; x++) {
@@ -257,4 +307,25 @@ export function rangeRelief(job: RangeJob): { relief: Float32Array; uplift: Floa
   }
   const relief = upliftRelief({ w, h, uplift: c.uplift, cellKm: job.cellKm, peakM: job.peakM, erodibility: c.erod, initial: c.initial, steps: job.steps });
   return { relief, uplift: belt };
+}
+
+/** A field scaled up `f` times (bilinear), from sw × sh cells to w × h. */
+function upsample(a: Float32Array, sw: number, sh: number, w: number, h: number, f: number): Float32Array {
+  const out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const fy = Math.min(sh - 1, Math.max(0, (y + 0.5) / f - 0.5));
+    const y0 = Math.floor(fy);
+    const y1 = Math.min(sh - 1, y0 + 1);
+    const ty = fy - y0;
+    for (let x = 0; x < w; x++) {
+      const fx = Math.min(sw - 1, Math.max(0, (x + 0.5) / f - 0.5));
+      const x0 = Math.floor(fx);
+      const x1 = Math.min(sw - 1, x0 + 1);
+      const tx = fx - x0;
+      const r0 = a[y0 * sw + x0] * (1 - tx) + a[y0 * sw + x1] * tx;
+      const r1 = a[y1 * sw + x0] * (1 - tx) + a[y1 * sw + x1] * tx;
+      out[y * w + x] = r0 * (1 - ty) + r1 * ty;
+    }
+  }
+  return out;
 }

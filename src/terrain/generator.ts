@@ -22,7 +22,7 @@ export const GENERATOR_VERSION = 3;
 export type GenType = 'continents' | 'pangaea' | 'island' | 'archipelago';
 export type Realism = 'easy' | 'medium' | 'high' | 'ultra';
 /** Whole-world layouts beyond the basic types. */
-export type Template = 'none' | 'twoWorlds' | 'innerSea' | 'polar' | 'shattered' | 'mainland' | 'part';
+export type Template = 'none' | 'twoWorlds' | 'innerSea' | 'polar' | 'shattered' | 'mainland' | 'part' | 'coast' | 'peninsula' | 'inland' | 'isle' | 'crater';
 
 export interface GenParams {
   type: GenType;
@@ -103,7 +103,8 @@ export interface GenResult {
 export type Progress = (stage: string, fraction: number) => void;
 
 function layoutFor(p: GenParams): Layout {
-  if (p.template === 'part') return 'continents';
+  // (the region-only kinds; a planet makes continents of them)
+  if (p.template === 'part' || p.template === 'coast' || p.template === 'peninsula' || p.template === 'inland' || p.template === 'isle' || p.template === 'crater') return p.template === 'inland' ? 'pangaea' : 'continents';
   if (p.template && p.template !== 'none') return p.template;
   if (p.type === 'pangaea') return 'pangaea';
   if (p.type === 'archipelago') return 'archipelago';
@@ -831,7 +832,8 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
 function generateRegion(p: GenParams, rg: Grid, mid: Grid, full: Grid, progress: Progress): GenResult {
   const N = mid.w * mid.h;
   const t = p.template ?? 'none';
-  const layout: RegionLayout = t === 'part' || t === 'innerSea' || t === 'shattered' || t === 'mainland' ? t : p.type === 'pangaea' ? 'pangaea' : p.type === 'archipelago' ? 'archipelago' : 'continents';
+  const regionKinds: Template[] = ['part', 'coast', 'peninsula', 'inland', 'isle', 'crater', 'innerSea', 'shattered', 'mainland'];
+  const layout: RegionLayout = regionKinds.includes(t) ? (t as RegionLayout) : p.type === 'pangaea' ? 'pangaea' : p.type === 'archipelago' ? 'archipelago' : 'continents';
   const reg = regionalRelief(rg, {
     layout,
     seed: p.seed,

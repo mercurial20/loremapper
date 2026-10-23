@@ -43,7 +43,7 @@ export interface GenerateOptions {
 /** Flat maps are generated as a 90°-wide patch of a virtual planet (enough room for several landmasses). */
 const FLAT_SPAN_LON = 90;
 /** Flat maps smaller than this (km) are generated at their true size, as a region. */
-const REGION_KM = 3000;
+export const REGION_KM = 3000;
 
 /** Generator parameters for options on the current map (`size` overrides the grid, for previews). */
 export function genParams(o: GenerateOptions, size?: { W: number; H: number }): GenParams {
