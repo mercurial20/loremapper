@@ -934,6 +934,42 @@ function generateRegion(p: GenParams, rg: Grid, mid: Grid, full: Grid, progress:
     height[k] = wasLand ? Math.max(1, height[k]) : Math.min(-2, height[k]);
   }
   const relief = up(reg.rangeRelief, 'bspline');
+  // a region made on a grid twice as coarse: its ranges, stretched to the map's own cells, would
+  // show smooth facets close up; the water cuts their small valleys again on the map's grid (only
+  // round the ranges, where the cut shows)
+  if (rg.step > 1 && reg.ranges.length) {
+    progress('Carving fine valleys', 0);
+    let x0 = full.w;
+    let y0 = full.h;
+    let x1 = -1;
+    let y1 = -1;
+    for (let k = 0; k < relief.length; k++)
+      if (relief[k] > 30) {
+        const x = k % full.w;
+        const y = (k / full.w) | 0;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    if (x1 > x0 && y1 > y0) {
+      const win = makeGrid(full.W, full.H, full.R, 1, { x0, y0, w: x1 - x0 + 1, h: y1 - y0 + 1 }, full.proj);
+      const hw = new Float32Array(win.w * win.h);
+      for (let j = 0; j < win.h; j++) for (let i = 0; i < win.w; i++) hw[j * win.w + i] = height[(y0 + j) * full.w + x0 + i];
+      const before = hw.slice();
+      erode(win, hw, null, 8, 0.045, (i) => progress('Carving fine valleys', (i + 1) / 8));
+      for (let j = 0; j < win.h; j++)
+        for (let i = 0; i < win.w; i++) {
+          const k = (y0 + j) * full.w + x0 + i;
+          if (height[k] <= 0) continue;
+          // in the ranges, fading out over their foothills
+          const t = smoothstep(30, 400, relief[k]);
+          const cut = (before[j * win.w + i] - hw[j * win.w + i]) * t;
+          height[k] -= cut;
+          relief[k] = Math.max(0, relief[k] - cut);
+        }
+    }
+  }
   carveRivers(full, height, rivers, cellKm);
 
   progress('Painting biomes', 0);
