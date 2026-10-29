@@ -7,7 +7,7 @@ function region(km: number, cells: number, seed: number, layout: RegionLayout = 
   const R = 6371;
   const proj = mercatorPatch(cells, cells, R, km / R);
   const g = makeGrid(cells, cells, R, 1, { x0: 0, y0: 0, w: cells, h: cells }, proj);
-  return { g, r: regionalRelief(g, { layout, seed, cellKm: km / cells, landFraction: 0.5, mountains: 0.6, roughness: 0.4, maxElevation: 8000, maxDepth: 4000 }) };
+  return { g, r: regionalRelief(g, { layout, seed, cellKm: km / cells, landFraction: 0.5, mountains: 0.6, ranges: 0.5, roughness: 0.4, maxElevation: 8000, maxDepth: 4000 }) };
 }
 
 describe('regions at their true size', () => {

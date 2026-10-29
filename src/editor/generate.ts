@@ -24,6 +24,8 @@ export interface GenerateOptions {
   seed: number;
   landFraction: number;
   mountains: number;
+  /** How much of the land mountain ranges cover, 0 … 1 (0.5 if unset: as on Earth). */
+  ranges?: number;
   roughness: number;
   warmth: number;
   wetness: number;
@@ -84,6 +86,7 @@ export function genParams(o: GenerateOptions, size?: { W: number; H: number }): 
     radiusKm: p.radiusKm,
     landFraction: o.landFraction,
     mountains: o.mountains,
+    ranges: o.ranges ?? 0.5,
     roughness: o.roughness,
     warmth: o.warmth,
     wetness: o.wetness,

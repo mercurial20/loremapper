@@ -33,6 +33,8 @@ export interface GenParams {
   landFraction: number;
   /** 0..1 — how much of the maximum elevation mountain ranges reach. */
   mountains: number;
+  /** 0..1 — how much of the land mountain ranges cover (0.5: about a quarter, as on Earth). */
+  ranges?: number;
   /** 0..1 — hills between the plains (0 = flat plains and steppes almost everywhere). */
   roughness: number;
   seaLevel: number;
@@ -613,6 +615,7 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   const seaN = up((x, y, z) => 1.05 + 0.12 * nA.fbm(x, y, z, 2.2, 3) + 0.03 * nB.fbm(x, y, z, 9, 2));
   const maxE = p.maxElevation;
   const rough = clamp(p.roughness, 0, 1);
+  const rangeScale = 0.4 + 1.2 * clamp(p.ranges ?? 0.5, 0, 1);
   const mtnTop = maxE * clamp(p.mountains, 0, 1);
   const abyssBase = Math.max(2500, -p.oceanFloor + p.seaLevel);
   const deepest = Math.max(abyssBase + 500, p.seaLevel - p.minElevation);
@@ -624,7 +627,8 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
       const z = T.sinLat[j];
       const d = coastKm[k];
       if (land[k]) {
-        const o = Math.max(0, s.orogen[k]);
+        // (more or fewer mountains: the belts widen or narrow)
+        const o = Math.min(1.2, Math.max(0, s.orogen[k]) * rangeScale);
         const inland = smoothstep(0, 900, d);
         const base = 6 + 170 * Math.pow(inland, 0.75);
         // broad flat uplands (high plains / plateaus) away from coasts and ranges
@@ -840,6 +844,7 @@ function generateRegion(p: GenParams, rg: Grid, mid: Grid, full: Grid, progress:
     cellKm: p.flat!.cellKm!,
     landFraction: p.landFraction,
     mountains: p.mountains,
+    ranges: p.ranges ?? 0.5,
     roughness: p.roughness,
     maxElevation: p.maxElevation,
     maxDepth: Math.max(200, p.seaLevel - p.minElevation),

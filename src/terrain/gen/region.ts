@@ -66,6 +66,8 @@ export interface RegionalOptions {
   cellKm: number;
   landFraction: number;
   mountains: number;
+  /** 0 … 1: how much of the land the ranges cover (0.5 about a quarter, as on Earth). */
+  ranges: number;
   roughness: number;
   maxElevation: number;
   /** Deepest sea floor, metres below sea level. */
@@ -287,8 +289,20 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   // ---- plate boundaries where plates collide: mountain belts
   o.progress?.('Moving tectonic plates', 0);
   const ranges: RegionRange[] = [];
-  const expected = mountains < 0.05 ? 0 : (0.6 + 1.4 * mountains) * Math.sqrt(mapKm / 600) * style.belts;
-  const count = Math.min(4, Math.floor(expected) + (rnd() < expected % 1 ? 1 : 0));
+  // How many belts: as many as cover the share of the land asked for (a belt with its foothills
+  // covers about 1.4 times its width across a map it crosses). Their width is a real range's
+  // (Pyrenees 80–100 km, Caucasus 100–180, Alps 150–250), whatever the map's size: on a small map
+  // a belt is rarer, not narrower. Their height is the other setting's.
+  const amount = clamp(o.ranges, 0, 1);
+  const cover = 0.5 * amount ** 1.1;
+  const expected = amount < 0.03 || mountains < 0.05 ? 0 : (cover * style.belts * mapKm) / (1.4 * 125);
+  let count = Math.min(4, Math.floor(expected) + (rnd() < expected % 1 ? 1 : 0));
+  // a piece of a continent has its range whenever there are ranges at all (it is why one draws
+  // such a map); its width then gives the share of the land asked for
+  if (!count && amount >= 0.2 && mountains >= 0.05 && style.belts >= 0.8) count = 1;
+  // an island: half of them have a massif (Corsica, Kyushu), the rest a volcano or two
+  if (!count && amount >= 0.2 && mountains >= 0.05 && o.layout === 'isle' && rnd() < 0.5) count = 1;
+  const beltWidth = count ? clamp((cover * style.belts * mapKm) / (1.4 * count), 40, 200) : 0;
   // where the land is (belts rise where continents collide: across land, not along coasts)
   const landAt = (mx: number, my: number) => {
     const i = Math.floor((mx - g.x0) / g.step);
@@ -326,7 +340,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
     }
     const dx = Math.cos(ang);
     const dy = Math.sin(ang);
-    const width = Math.min(0.45 * mapKm, (60 + 160 * rnd()) * (0.8 + 0.4 * mountains));
+    const width = Math.min(0.4 * mapKm, clamp(beltWidth * (0.75 + 0.5 * rnd()), 40, 220));
     const bend = 0.08 * mapKm;
     const L = 1.6 * mapKm;
     const pts: [number, number][] = [];
@@ -377,7 +391,8 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   for (let k = 0; k < N; k++) {
     const q = crestD[k] / crestHalf[k];
     belt[k] = 1 - smoothstep(0.55, 1.05, q);
-    foot[k] = 1 - smoothstep(0.9, 2.2, q);
+    // (the ranges have foothills of their own: this is only the land rising toward them)
+    foot[k] = 1 - smoothstep(0.9, 1.7, q);
   }
   // the belts stand on land: the land widens a little around them (its coast as fractal as any)
   if (ranges.length) {
@@ -433,7 +448,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   // the local relief of the land beyond the belts, metres: low swells on plains, a few hundred
   // metres in hill country, more where it is rugged (the "Hills" setting)
   const hillAmp = 25 + 675 * rough ** 2.2;
-  const footAmp = 100 + 300 * mountains;
+  const footAmp = 60 + 200 * mountains;
   // a crater's rim: hundreds of metres to a couple of km
   const craterRim = (400 + 1600 * rnd()) * (0.5 + 0.5 * mountains);
   /** Volcanoes: steep cones, their foot not a circle (lava flows and spurs run out further on some sides). */

@@ -167,6 +167,7 @@ export function GenerateDialog() {
   const [seed, setSeed] = useState(randomSeed);
   const [land, setLand] = useState(planet?.landFraction ?? 0.29);
   const [mountains, setMountains] = useState(0.75);
+  const [ranges, setRanges] = useState(0.5);
   const [rough, setRough] = useState(0.35);
   const [warmth, setWarmth] = useState(0);
   const [wetness, setWetness] = useState(0);
@@ -202,6 +203,7 @@ export function GenerateDialog() {
     seed: seedNumber(s),
     landFraction: land,
     mountains,
+    ranges,
     roughness: rough,
     warmth,
     wetness,
@@ -218,8 +220,8 @@ export function GenerateDialog() {
     () =>
       preset.view
         ? null
-        : { type: preset.type, template: preset.template, realism: 'easy', seed: seedNumber(seed), landFraction: land, mountains, roughness: rough, warmth, wetness, biomes, rivers: 'none', settlements: false, region: 'world', climateLat: Number(climateLat), surface: preset.surface },
-    [preset, seed, land, mountains, rough, warmth, wetness, biomes, climateLat],
+        : { type: preset.type, template: preset.template, realism: 'easy', seed: seedNumber(seed), landFraction: land, mountains, ranges, roughness: rough, warmth, wetness, biomes, rivers: 'none', settlements: false, region: 'world', climateLat: Number(climateLat), surface: preset.surface },
+    [preset, seed, land, mountains, ranges, rough, warmth, wetness, biomes, climateLat],
   );
   useEffect(() => {
     if (!previewOptions) return;
@@ -362,6 +364,7 @@ export function GenerateDialog() {
             <Slider label={flat ? t('Land') : t('Land (true surface area)')} value={land} min={0.03} max={0.7} onChange={setLand} format={(v) => `${Math.round(v * 100)}% · ${formatArea(v * mapKm2, units)}`} />
           )}
           <Slider label={t('Mountain height')} value={mountains} min={0} max={1} onChange={setMountains} format={(v) => t('up to {h}', { h: formatHeight(v * (planet?.maxElevation ?? 10000) * 0.95, units) })} />
+          <Slider label={t('Mountain ranges')} value={ranges} min={0} max={1} onChange={setRanges} format={(v) => (v < 0.03 ? t('None') : describe(v * 2 - 1, [t('Few'), t('As on Earth'), t('Many'), t('Mostly mountains')]))} />
           <Slider label={t('Hills')} value={rough} min={0} max={1} onChange={setRough} format={(v) => describe(v * 2 - 1, [t('Flat plains'), t('Gentle'), t('Hilly'), t('Rugged')])} />
           <Slider label={t('Temperature')} value={warmth} min={-1} max={1} onChange={setWarmth} format={(v) => describe(v, [t('Ice age'), t('Cool'), t('Earth-like'), t('Earth-like'), t('Warm'), t('Hothouse')])} />
           <Slider label={t('Rainfall')} value={wetness} min={-1} max={1} onChange={setWetness} format={(v) => describe(v, [t('Arid'), t('Dry'), t('Earth-like'), t('Earth-like'), t('Wet'), t('Lush')])} />
