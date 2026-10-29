@@ -207,7 +207,20 @@ function chooseContinents(layout: Layout, plates: Plate[], target: number, rnd: 
       break;
     }
     case 'innerSea': {
-      const centre = order.find((p) => Math.abs(latOf(p)) < 0.7 && plates[p].area > 0.02 && plates[p].area < 0.07) ?? order[0];
+      // the sea's plate: of those away from the poles, the one whose ring of neighbours holds about
+      // the land asked for (a ring much larger is cut to the land's share and breaks open)
+      let centre = order[0];
+      let bestFit = Infinity;
+      for (const p of order) {
+        if (Math.abs(latOf(p)) > 0.7 || plates[p].area < 0.02) continue;
+        let ringArea = 0;
+        for (const q of plates[p].neighbors) ringArea += plates[q].area;
+        const fit = Math.abs(ringArea - target * 0.95);
+        if (fit < bestFit) {
+          bestFit = fit;
+          centre = p;
+        }
+      }
       const ring = new Set<number>();
       for (const q of plates[centre].neighbors) {
         add(q);
@@ -354,9 +367,9 @@ export function tectonics(g: Grid, seed: number, layout: Layout, landFraction: n
     if (c > 0.05) {
       if (ownC && othC) orogen[k] = Math.min(1, 1.6 * c * gauss(d, 430));
       else if (ownC) orogen[k] = Math.min(1, 1.6 * c * gauss(d - 210, 230));
-      else if (othC) trench[k] = c * gauss(d - 50, 75);
+      else if (othC) trench[k] = c * gauss(d - 50, 50);
       else if (own > other) arc[k] = c * gauss(d - 140, 95);
-      else trench[k] = c * gauss(d - 40, 60);
+      else trench[k] = c * gauss(d - 40, 40);
     } else if (c < -0.05) {
       const e = -c;
       if (!ownC) ridge[k] = e * gauss(d, 330);
@@ -381,7 +394,8 @@ export function tectonics(g: Grid, seed: number, layout: Layout, landFraction: n
   for (let k = 0; k < N; k++) {
     const n = base.shapeNoise[k];
     if (layout === 'archipelago') landness[k] = 0.3 * n + 0.5 * arc[k];
-    else landness[k] = crust[k] + 0.34 * n + 0.32 * orogen[k] + 0.35 * arc[k] - 0.75 * rift[k] * crust[k];
+    // (a rift in a continent is a valley, a lake or a narrow sea, not a channel across it)
+    else landness[k] = crust[k] + 0.34 * n + 0.32 * orogen[k] + 0.35 * arc[k] - 0.45 * rift[k] * crust[k];
   }
 
   // hotspot chains trail behind the plate that carries them
@@ -432,8 +446,18 @@ export function layoutMismatch(g: Grid, landness: Float32Array, landFraction: nu
       return under(big, 4) + over(largest, 0.45) * 4;
     case 'polar':
       return under(big, 2);
-    case 'innerSea':
-      return over(big, 3) * 0.5;
+    case 'innerSea': {
+      // a sea the land closes round, away from the poles (not one shut in by polar land): the
+      // largest such but the world's ocean, as a share of the land
+      const sea = new Uint8Array(mask.length);
+      for (let k = 0; k < mask.length; k++) sea[k] = 1 - mask[k];
+      const sc = components(g, sea);
+      let ocean = 0;
+      for (let i = 1; i < sc.count; i++) if (sc.area[i] > sc.area[ocean]) ocean = i;
+      let inner = 0;
+      for (let i = 0; i < sc.count; i++) if (i !== ocean && Math.abs(sc.cy[i] / g.H - 0.5) < 0.28) inner = Math.max(inner, sc.area[i] / land);
+      return over(big, 3) * 0.5 + under(inner, 0.08) * 40;
+    }
     case 'archipelago':
       return over(largest, 0.12) * 4;
   }

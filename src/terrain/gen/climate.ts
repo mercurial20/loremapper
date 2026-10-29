@@ -23,6 +23,107 @@ export interface ClimateOptions {
   seed: number;
   /** Flat maps: the climate latitude (radians) for a latitude on the virtual sphere. */
   climateLat?: (lat: number) => number;
+  /** Flat maps: the prevailing wind, instead of the planet's belts of winds along the parallels. */
+  wind?: Wind;
+  /** How far rainfall is smoothed, km (140 on planets; tens of km on a region). */
+  rainBlurKm?: number;
+  /**
+   * Rain per unit of the air's moisture (1.7 on planets, where air dries out over thousands of km
+   * of land; less on a region a few hundred km across, which its air crosses still moist).
+   */
+  rainScale?: number;
+}
+
+/** A prevailing wind (flat maps). */
+export interface Wind {
+  /** Where it blows from, degrees clockwise from north. */
+  fromDeg: number;
+  /** 0 … 1: how far inland it carries the sea's moisture, and how hard it is lifted over ranges. */
+  strength: number;
+  /** −1 dry … +1 moist air. */
+  humidity: number;
+  /** −1 cold … +1 warm air. */
+  temp: number;
+}
+
+/** The wind's usual quarter at a latitude: trades and polar easterlies from the east, westerlies between. */
+export const defaultWindFrom = (latDeg: number) => (Math.abs(latDeg) < 30 || Math.abs(latDeg) > 62 ? 90 : 270);
+
+/**
+ * Moisture carried by a wind blowing across a flat map from any direction: every cell takes the
+ * air of the point one cell upwind of it (cells are visited from upwind down). Over the sea the air
+ * takes up moisture; over land it rains out a little all the way, and much more where it is lifted
+ * over higher ground than it has already crossed, leaving a rain shadow behind a range.
+ */
+function windRain(g: Grid, h: Float32Array, temp: Float32Array, cur: Float32Array, wind: Wind, rain: Float32Array) {
+  const { w, h: gh } = g;
+  const N = w * gh;
+  const a = (wind.fromDeg * Math.PI) / 180;
+  // the way it blows to (x east, y south)
+  const ux = -Math.sin(a);
+  const uy = Math.cos(a);
+  const order = new Int32Array(N);
+  const key = new Float32Array(N);
+  for (let k = 0; k < N; k++) {
+    order[k] = k;
+    key[k] = (k % w) * ux + Math.floor(k / w) * uy;
+  }
+  order.sort((p, q) => key[p] - key[q]);
+  const m = new Float32Array(N);
+  const lifted = new Float32Array(N);
+  const done = new Uint8Array(N);
+  const hum = wind.humidity;
+  const st = Math.max(0, Math.min(1, wind.strength));
+  // air reaching the map over its edge: moist if it comes off the sea, drier off land
+  const inflow = (k: number) => (h[k] <= 0 ? 1 + 0.3 * hum : 0.65 + 0.3 * hum);
+  const sample = (f: Float32Array, x: number, y: number, k: number, fallback: number) => {
+    const i0 = Math.floor(x);
+    const j0 = Math.floor(y);
+    let sum = 0;
+    let wt = 0;
+    for (let dj = 0; dj <= 1; dj++)
+      for (let di = 0; di <= 1; di++) {
+        const i = i0 + di;
+        const j = j0 + dj;
+        if (i < 0 || j < 0 || i >= w || j >= gh) continue;
+        const q = j * w + i;
+        if (!done[q] || q === k) continue;
+        const ww = (di ? x - i0 : 1 - (x - i0)) * (dj ? y - j0 : 1 - (y - j0));
+        sum += f[q] * ww;
+        wt += ww;
+      }
+    return wt > 1e-3 ? sum / wt : fallback;
+  };
+  for (let n = 0; n < N; n++) {
+    const k = order[n];
+    const i = k % w;
+    const j = (k / w) | 0;
+    const km = dxKm(g, j);
+    const x = i - ux;
+    const y = j - uy;
+    const edge = x < -0.5 || y < -0.5 || x > w - 0.5 || y > gh - 0.5;
+    let mm = edge ? inflow(k) : sample(m, x, y, k, inflow(k));
+    let lift = edge ? 0 : sample(lifted, x, y, k, 0);
+    if (h[k] <= 0) {
+      // cold upwelling water gives the air little moisture; warm currents a lot
+      const evap = (0.04 + 0.1 * smoothstep(-5, 28, temp[k])) * Math.min(1.6, Math.max(0.25, 1 + 1.2 * cur[k]));
+      const full = 1 + 0.3 * hum;
+      mm += (full - mm) * Math.min(1, evap * (km / 25));
+      lift = 0;
+      rain[k] = mm;
+    } else {
+      const rise = Math.max(0, h[k] - lift) / Math.max(0.05, km);
+      lift = Math.max(h[k], lift - 3 * km);
+      // a strong wind carries its moisture further inland, and is lifted harder over ranges
+      const out = mm * Math.min(0.5, ((0.004 * (1.3 - 0.6 * st) + rise * 0.004 * (0.5 + st)) * km) / 25);
+      rain[k] = mm + out * 5;
+      // (a part of what falls comes back to the air from forests and lakes)
+      mm -= out * 0.75;
+    }
+    m[k] = mm;
+    lifted[k] = lift;
+    done[k] = 1;
+  }
 }
 
 /**
@@ -120,7 +221,7 @@ export function climate(g: Grid, h: Float32Array, coastKm: Float32Array, o: Clim
       const land = h[k] > 0;
       // continental interiors swing colder away from the tropics
       const interior = land ? smoothstep(150, 1400, coastKm[k]) * smoothstep(25, 60, Math.abs(lat)) * 2.5 : 0;
-      temp[k] = base - (land ? (h[k] / 1000) * 6.5 : 0) - interior + 1.8 * n.fbm(x, y, z, 3, 3);
+      temp[k] = base + 6 * (o.wind?.temp ?? 0) - (land ? (h[k] / 1000) * 6.5 : 0) - interior + 1.8 * n.fbm(x, y, z, 3, 3);
       if (!o.winds) {
         const inland = land ? Math.exp(-coastKm[k] / 1300) : 1;
         // climate belts wander in latitude so they never form straight bands
@@ -130,7 +231,11 @@ export function climate(g: Grid, h: Float32Array, coastKm: Float32Array, o: Clim
     }
   }
   const latDeg = (j: number) => (rowLat(g, j) * 180) / Math.PI;
-  const { cur, dry } = currentsAndDrySummers(g, h, latDeg);
+  const cs = currentsAndDrySummers(g, h, latDeg);
+  const cur = cs.cur;
+  // (on a flat map with its own wind the dry summers are found along rows: smoothed, they make
+  // no edge across the map)
+  const dry = o.wind ? blurKm(cs.dry, g, 150, 2) : cs.dry;
   // the sea's anomaly as felt nearby: averaged over sea cells only, then fading inland
   const seaMask = new Float32Array(N);
   for (let k = 0; k < N; k++) seaMask[k] = h[k] <= 0 ? 1 : 0;
@@ -145,7 +250,8 @@ export function climate(g: Grid, h: Float32Array, coastKm: Float32Array, o: Clim
     moist[k] = h[k] <= 0 ? cur[k] : c * Math.exp(-coastKm[k] / 1100);
     temp[k] += 4.5 * current[k];
   }
-  if (o.winds) {
+  if (o.winds && o.wind && !g.wrap) windRain(g, h, temp, cur, o.wind, rain);
+  else if (o.winds) {
     // sweep every row downwind: the air picks up moisture over the sea, rains
     // it out over land, and loses most of it climbing mountains
     for (let j = 0; j < g.h; j++) {
@@ -182,7 +288,9 @@ export function climate(g: Grid, h: Float32Array, coastKm: Float32Array, o: Clim
         m -= out;
       }
     }
-    const smooth = blurKm(rain, g, 140, 2);
+  }
+  if (o.winds) {
+    const smooth = blurKm(rain, g, o.rainBlurKm ?? 140, 2);
     for (let j = 0; j < g.h; j++) {
       const lat = (rowLat(g, j) * 180) / Math.PI;
       for (let i = 0; i < g.w; i++) {
@@ -191,7 +299,7 @@ export function climate(g: Grid, h: Float32Array, coastKm: Float32Array, o: Clim
         const y = T.cosLat[j] * T.sinLon[i];
         const z = T.sinLat[j];
         const latJ = lat + 9 * n.fbm(x, y + 4.4, z, 1.6, 3);
-        rain[k] = 1.7 * smooth[k] * latRain(latJ, moist[k]) * (1 + 0.35 * n.fbm(x + 9, y, z, 2.2, 4));
+        rain[k] = (o.rainScale ?? 1.7) * smooth[k] * latRain(latJ, moist[k]) * (1 + 0.35 * n.fbm(x + 9, y, z, 2.2, 4));
       }
     }
   }
@@ -251,14 +359,17 @@ export function biomeWeights(c: BiomeInput, out: Float32Array) {
   const m = c.r * (1.25 - 0.5 * clamp01(t / 30)) * (1 - 0.35 * c.dry);
   const flat = 1 - smoothstep(5, 22, slope);
   // glaciers hold where the mean annual temperature stays below about −6 °C (the Alps: ≈ 2,800 m)
-  const snow = smoothstep(-5, -12, t);
+  // and snow falls enough to feed them; cold, dry plains are tundra (Yakutia: −10 °C, no ice),
+  // only the coldest land is ice whatever falls (Antarctica, Greenland)
+  const snow = Math.max(smoothstep(-14, -20, t), smoothstep(-5, -12, t) * smoothstep(0.3, 0.6, m));
   const tundra = smoothstep(1, -6, t) * (1 - snow);
   const rock = clamp01(smoothstep(2400, 3900, elev) + 0.75 * smoothstep(35, 90, slope) * smoothstep(700, 1600, elev)) * (1 - snow);
   const oasis = c.bigRiver;
   const desert = smoothstep(0.2, 0.08, m) * smoothstep(0, 10, t) * (1 - rock) * (1 - snow) * (1 - 0.95 * oasis);
   const steppe = clamp01(smoothstep(0.07, 0.16, m) * smoothstep(0.34, 0.22, m) * smoothstep(-6, 2, t) * (1 - desert) + 0.6 * tundra) * (1 - rock) * (1 - 0.7 * oasis);
+  // (marshes are rare: only very wet, level lowlands and the floodplains of big rivers)
   const swamp =
-    clamp01(smoothstep(0.9, 1.25, m) * smoothstep(200, 40, elev) + 0.9 * smoothstep(0.6, 0.85, c.flow) * smoothstep(0.45, 0.8, m) * smoothstep(150, 20, elev)) *
+    clamp01(smoothstep(1.0, 1.4, m) * smoothstep(120, 20, elev) + 0.5 * smoothstep(0.75, 0.95, c.flow) * smoothstep(0.55, 0.9, m) * smoothstep(100, 10, elev)) *
     flat *
     smoothstep(4, 12, t) *
     (1 - desert);

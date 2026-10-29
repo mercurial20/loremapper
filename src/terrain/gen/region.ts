@@ -1,8 +1,8 @@
 import { clamp, mulberry32, smoothstep } from '../../core/math';
 import { Simplex3, subSeed } from '../../core/noise3';
 import { rangeRelief, type RangeJobRange } from '../rangeUplift';
-import { upliftRelief } from '../upliftErosion';
 import { distanceField, thresholdForFraction, type Grid } from './grid';
+import { accumulate, drain } from './hydrology';
 
 /*
  * A region's land at its true size (a flat map up to a few thousand km across): every form as
@@ -79,8 +79,6 @@ export interface RegionalOptions {
 const COAST_EASE_KM = 12;
 /** Most cells the erosion of the land works on (it runs coarser on bigger grids). */
 const EROSION_CELLS = 4_300_000;
-/** The same for the land beyond the belts (gentler land, coarser valleys). */
-const HILL_CELLS = 300_000;
 
 /** Box blur in place, three passes (about a Gaussian), edges clamped. */
 function blurGrid(a: Float32Array, w: number, h: number, r: number) {
@@ -232,9 +230,10 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   // Antilles): where a plate sinks under another, a curved chain of volcanic islands stands
   // offshore. Rarer than collisions, and arcs belong to seas: more of them on island maps.
   const rift = new Float32Array(N);
+  const riftShoulder = new Float32Array(N);
   const cones: { x: number; y: number; r: number; hM: number }[] = [];
   {
-    const nRift = rnd() < (0.25 + 0.15 * (mapKm / 1000)) * style.rifts ? 1 : 0;
+    const nRift = rnd() < (0.15 + 0.1 * (mapKm / 1000)) * style.rifts ? 1 : 0;
     const nArc = rnd() < 0.5 * style.arcs + 0.4 * Math.max(0, style.arcs - 0.6) ? (style.arcs >= 1 && rnd() < 0.5 ? 2 : 1) : 0;
     for (let b = 0; b < nRift; b++) {
       const cx = (0.25 + 0.5 * rnd()) * g.W * o.cellKm;
@@ -249,8 +248,13 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
           const off = -dx * Math.sin(ang) + dy * Math.cos(ang) + 0.06 * mapKm * n2(along, b * 31, 300, 2, 9.4);
           // the trough, fading out at its ends (rifts open from a point)
           const len = 0.45 * mapKm;
-          const v = Math.exp(-((off / half) ** 2)) * (1 - smoothstep(0.6 * len, len, Math.abs(along)));
+          // (in segments, each a little off the last: a rift is a chain of basins, not one trench)
+          const seg = smoothstep(-0.25, 0.15, n2(along, b * 17, 90, 2, 9.9));
+          const ends = 1 - smoothstep(0.6 * len, len, Math.abs(along));
+          const v = Math.exp(-((off / half) ** 2)) * ends * seg;
           rift[j * w + i] = Math.max(rift[j * w + i], v);
+          // its shoulders stand a little above the land beside them
+          riftShoulder[j * w + i] = Math.max(riftShoulder[j * w + i], Math.exp(-(((Math.abs(off) - 1.7 * half) / (0.7 * half)) ** 2)) * ends);
         }
     }
     for (let b = 0; b < nArc; b++) {
@@ -280,7 +284,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
           landness[k] = Math.max(landness[k], 2 * Math.exp(-d * d) - 0.6 + 0.35 * n2(xKm(i), yKm(j), 6, 3, 13.3));
         }
       }
-    for (let k = 0; k < N; k++) landness[k] -= 0.9 * rift[k];
+    for (let k = 0; k < N; k++) landness[k] += 0.15 * riftShoulder[k] - 0.55 * rift[k];
   }
 
   const t = fixedShore ? 0 : thresholdForFraction(landness, g, o.landFraction);
@@ -447,7 +451,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   const plateauH = (120 + 380 * rnd()) * (0.4 + 0.6 * rough);
   // the local relief of the land beyond the belts, metres: low swells on plains, a few hundred
   // metres in hill country, more where it is rugged (the "Hills" setting)
-  const hillAmp = 25 + 675 * rough ** 2.2;
+  const hillAmp = 30 + 670 * rough ** 1.8;
   const footAmp = 60 + 200 * mountains;
   // a crater's rim: hundreds of metres to a couple of km
   const craterRim = (400 + 1600 * rnd()) * (0.5 + 0.5 * mountains);
@@ -463,97 +467,6 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
     }
     return v;
   };
-  const cone = new Float32Array(N);
-  const plateau = new Float32Array(N);
-  const U = new Float32Array(N);
-  for (let j = 0; j < h; j++)
-    for (let i = 0; i < w; i++) {
-      const k = j * w + i;
-      if (!land[k]) continue;
-      const x = xKm(i);
-      const y = yKm(j);
-      // hill country here and there, gentler land between
-      const hills = 0.3 + 0.7 * smoothstep(-0.1, 0.45, n2(x, y, 160, 3, 5.1));
-      // tablelands: broad, raised, their margins easing down over tens of km
-      // (no flat top nor clear edge: uplands that rise and fall again across them)
-      const pl = smoothstep(-0.05, 0.6, n2(x, y, 240, 3, 7.7)) * (1 - foot[k]) * smoothstep(5, 60, coastKm[k]);
-      plateau[k] = pl;
-      // (the volcanoes rise with the land and are cut by the same water: gullies down their flanks)
-      cone[k] = cones.length ? coneAt(x, y) : 0;
-      U[k] = 15 + hills * hillAmp + footAmp * foot[k] * (1 - belt[k]) + cone[k];
-    }
-  // erosion on a grid of at most HILL_CELLS cells (the valleys it can hold are a few of them across)
-  const f = Math.max(1, Math.ceil(Math.sqrt(N / HILL_CELLS)));
-  const ew = Math.ceil(w / f);
-  const eh = Math.ceil(h / f);
-  const eU = new Float32Array(ew * eh);
-  const eFoot = new Float32Array(ew * eh);
-  for (let j = 0; j < eh; j++)
-    for (let i = 0; i < ew; i++) {
-      const k = Math.min(h - 1, j * f) * w + Math.min(w - 1, i * f);
-      eU[j * ew + i] = U[k];
-      eFoot[j * ew + i] = Math.max(foot[k] * (1 - belt[k]), cone[k] / (cone[k] + 60));
-    }
-  let uTop = 0;
-  for (let q = 0; q < eU.length; q++) uTop = Math.max(uTop, eU[q]);
-  for (let q = 0; q < eU.length; q++) eU[q] /= Math.max(1, uTop);
-  const z = upliftRelief({ w: ew, h: eh, uplift: eU, cellKm: kmCell * f, peakM: 1, raw: true, seed: subSeed(o.seed, 402), steps: 40, roughness: 0.05 });
-  let zTop = 0;
-  for (let q = 0; q < z.length; q++) zTop = Math.max(zTop, z[q]);
-  // the relief comes out about in proportion to the uplift: the highest, the uplift's metres
-  const hillM = uTop;
-  const zAt = (i: number, j: number) => {
-    const fx = (i + 0.5) / f - 0.5;
-    const fy = (j + 0.5) / f - 0.5;
-    const ix = Math.floor(fx);
-    const iy = Math.floor(fy);
-    const tx = fx - ix;
-    const ty = fy - iy;
-    const at = (a: number, b: number) => z[clamp(b, 0, eh - 1) * ew + clamp(a, 0, ew - 1)];
-    return (at(ix, iy) * (1 - tx) + at(ix + 1, iy) * tx) * (1 - ty) + (at(ix, iy + 1) * (1 - tx) + at(ix + 1, iy + 1) * tx) * ty;
-  };
-  // low land is shaped more by soil creep than by rivers: its rills soften into broad, rounded
-  // swells; the sharp valleys stay in rugged hills and foothills (Perron et al. 2009)
-  const zs = new Float32Array(z.length);
-  {
-    const zr = Math.max(1, Math.round((1.2 + 2.5 * (1 - rough)) / (kmCell * f)));
-    const zb = Float32Array.from(z);
-    blurGrid(zb, ew, eh, zr);
-    const keepHills = 0.25 + 0.7 * rough ** 1.5;
-    for (let q = 0; q < z.length; q++) {
-      const t2 = Math.max(keepHills, 0.85 * eFoot[q]);
-      zs[q] = zb[q] + (z[q] - zb[q]) * t2;
-    }
-  }
-  z.set(zs);
-  // (far from the coast its distance is smoothed: the field's small errors there, steepened by the
-  // slope down to the deep sea, would draw steps across the sea floor)
-  const seaKm = Float32Array.from(coastKm);
-  blurGrid(seaKm, w, h, Math.max(1, Math.round(12 / kmCell)));
-  const height = new Float32Array(N);
-  for (let j = 0; j < h; j++)
-    for (let i = 0; i < w; i++) {
-      const k = j * w + i;
-      if (land[k]) {
-        // coastal plains rise gently inland (half a metre to a metre a km)
-        const rise = 3 + 0.7 * Math.min(coastKm[k], 350);
-        height[k] = rise + (zTop > 0 ? (zAt(i, j) / zTop) * hillM : 0) + plateau[k] * plateauH;
-        // a rift's floor is low and level
-        height[k] = Math.max(2, height[k] * (1 - 0.85 * rift[k]));
-        if (o.layout === 'crater') {
-          // the rim a ring of steep hills, the ejecta thinning outward; the central peak
-          const d = craterD(xKm(i), yKm(j));
-          const rim = Math.exp(-(((d - 0.93) / 0.12) ** 2)) + (d > 0.93 ? 0.35 * Math.exp(-(d - 0.93) / 0.5) : 0);
-          height[k] += craterRim * rim * (0.75 + 0.5 * smoothstep(-0.4, 0.4, n2(xKm(i), yKm(j), 0.3 * craterR, 3, 23.3))) * (1 + 0.25 * n2(xKm(i), yKm(j), 6, 3, 25.9));
-          if (d < 0.14) height[k] += craterRim * 0.8 * (1 - d / 0.14) ** 1.5;
-        }
-      } else {
-        // shelves: about a metre deeper every km, then down the slope to the deep sea
-        const d = coastKm[k] < 20 ? coastKm[k] : coastKm[k] + (seaKm[k] - coastKm[k]) * smoothstep(20, 60, coastKm[k]);
-        height[k] = -Math.min(o.maxDepth, 3 + 1.1 * Math.min(d, 140) + 18 * Math.max(0, d - 140) + 1200 * rift[k]);
-      }
-    }
-
   // ---- the belts: ranges carved by rivers, as drawn ranges are
   const rangeRel = new Float32Array(N);
   if (ranges.length) {
@@ -603,8 +516,232 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
     for (let k = 0; k < N; k++) {
       const t2 = Math.max(keepFoot, smoothstep(0.2, 0.7, belt[k]));
       rangeRel[k] = soft[k] + (rangeRel[k] - soft[k]) * t2;
-      height[k] += rangeRel[k];
     }
   }
+
+  // ---- the land beyond the belts: a smooth surface with valleys cut into it
+  // Real plains and hill country are not bumps: they are uplands, smooth between the valleys,
+  // with a branching network of valleys cut into them, deeper and wider the more water they carry
+  // (the balkas of the steppe, the dales of a plateau); big rivers have flat floors. The surface:
+  // the coastal plain rising inland, tablelands, broad swells, the land rising toward the ranges,
+  // volcanoes and a crater's rim, and the ranges themselves (their rivers run on into the plains).
+  const cone = new Float32Array(N);
+  const surf = new Float32Array(N);
+  // how deep the valleys may cut here, metres
+  const cutM = new Float32Array(N);
+  const headAt = new Float32Array(N);
+  const isles = o.layout === 'isle' || o.layout === 'archipelago';
+  for (let j = 0; j < h; j++)
+    for (let i = 0; i < w; i++) {
+      const k = j * w + i;
+      if (!land[k]) continue;
+      const x = xKm(i);
+      const y = yKm(j);
+      // hill country here and there, gentler land between
+      const hills = 0.3 + 0.7 * smoothstep(-0.1, 0.45, n2(x, y, 160, 3, 5.1));
+      // tablelands: broad, raised, their margins easing down over tens of km
+      const pl = smoothstep(-0.05, 0.6, n2(x, y, 240, 3, 7.7)) * (1 - foot[k]) * smoothstep(5, 60, coastKm[k]);
+      // swells between the valleys, tens of km across, and a little unevenness that lets the
+      // drainage branch instead of running in parallel lines
+      const swell = hillAmp * hills * (0.35 * (0.5 + 0.5 * n2(x, y, 30, 3, 41.3)) + 0.18 * n2(x, y, 10, 2, 45.1) + 0.1 * n2(x, y, 3, 2, 43.9));
+      cone[k] = cones.length ? coneAt(x, y) : 0;
+      // coastal plains rise gently inland (half a metre to a metre a km); islands rise steeply
+      // from their shores (an island is the top of a high block, or a volcano's)
+      const rise = isles ? 3 + 8 * Math.min(coastKm[k], 50) * (1 + 0.35 * n2(x, y, 25, 2, 47.7)) : 3 + 0.7 * Math.min(coastKm[k], 350);
+      // (steep ground is uneven in proportion: water on it branches instead of running straight down)
+      const wobble = (isles ? 0.08 * rise : 0) + 0.08 * cone[k];
+      let v = rise + pl * plateauH + swell + footAmp * foot[k] * (1 - belt[k]) + cone[k] + wobble * n2(x, y, 3, 3, 49.3);
+      if (o.layout === 'crater') {
+        // the rim a ring of steep hills, the ejecta thinning outward; the central peak
+        const d = craterD(x, y);
+        const rim = Math.exp(-(((d - 0.93) / 0.12) ** 2)) + (d > 0.93 ? 0.35 * Math.exp(-(d - 0.93) / 0.5) : 0);
+        v += craterRim * rim * (0.75 + 0.5 * smoothstep(-0.4, 0.4, n2(x, y, 0.3 * craterR, 3, 23.3))) * (1 + 0.25 * n2(x, y, 6, 3, 25.9));
+        if (d < 0.14) v += craterRim * 0.8 * (1 - d / 0.14) ** 1.5;
+      }
+      // a rift's floor is low and level
+      v = Math.max(2, v * (1 - 0.6 * rift[k]) + 150 * riftShoulder[k] * (1 - rift[k]));
+      surf[k] = v + rangeRel[k];
+      // (the ranges have their own valleys; the land rising toward them and the volcanoes are cut deeper)
+      cutM[k] = (hillAmp * hills + 0.6 * footAmp * foot[k] + 0.5 * cone[k] + (isles ? 0.4 * rise : 0)) * (1 - belt[k]);
+      // (on a volcano's flanks gullies start high up)
+      headAt[k] = cone[k] > 50 ? 0.25 : 1;
+    }
+  // The valley network: drained on a grid of about a kilometre (the smallest valleys it draws are
+  // a few km apart), its channels then smoothed into curves and drawn on the map's own grid, so the
+  // valleys follow curves, not the grid's eight directions.
+  const fc = Math.max(1, Math.round(1 / kmCell));
+  const fcKm = fc * kmCell;
+  const cw = Math.ceil(w / fc);
+  const ch = Math.ceil(h / fc);
+  const gc: Grid = { ...g, w: cw, h: ch, step: g.step * fc };
+  const NC = cw * ch;
+  const sc = new Float32Array(NC);
+  const cutC = new Float32Array(NC);
+  const headC = new Float32Array(NC);
+  for (let jc = 0; jc < ch; jc++)
+    for (let ic = 0; ic < cw; ic++) {
+      let sum = 0;
+      let cut = 0;
+      let head = 0;
+      let nl = 0;
+      let n = 0;
+      for (let j = jc * fc; j < Math.min(h, (jc + 1) * fc); j++)
+        for (let i = ic * fc; i < Math.min(w, (ic + 1) * fc); i++) {
+          const k = j * w + i;
+          n++;
+          if (!land[k]) continue;
+          nl++;
+          sum += surf[k];
+          cut += cutM[k];
+          head += headAt[k];
+        }
+      const kc = jc * cw + ic;
+      if (nl * 2 < n) {
+        sc[kc] = -1;
+        continue;
+      }
+      sc[kc] = Math.max(0.5, sum / nl);
+      cutC[kc] = cut / nl;
+      headC[kc] = head / nl;
+    }
+  // ground uneven in proportion to its slope: on an even slope water would run down in parallel
+  // lines; here it gathers into branching valleys
+  {
+    const at = (i: number, j: number) => sc[clamp(j, 0, ch - 1) * cw + clamp(i, 0, cw - 1)];
+    const add = new Float32Array(NC);
+    for (let jc = 0; jc < ch; jc++)
+      for (let ic = 0; ic < cw; ic++) {
+        const kc = jc * cw + ic;
+        if (sc[kc] <= 0) continue;
+        const gx = Math.max(0, at(ic + 1, jc)) - Math.max(0, at(ic - 1, jc));
+        const gy = Math.max(0, at(ic, jc + 1)) - Math.max(0, at(ic, jc - 1));
+        const slopeCell = Math.hypot(gx, gy) / 2;
+        const x = xKm(ic * fc + fc / 2);
+        const y = yKm(jc * fc + fc / 2);
+        add[kc] = slopeCell * (2.5 * n2(x, y, 5 * fcKm, 3, 51.7) + 1.2 * n2(x, y, 12 * fcKm, 2, 57.1));
+      }
+    for (let kc = 0; kc < NC; kc++) if (sc[kc] > 0) sc[kc] = Math.max(0.5, sc[kc] + add[kc]);
+  }
+  const routed = Float32Array.from(sc);
+  const dr = drain(gc, routed, true);
+  const area = accumulate(gc, dr, null);
+  // a valley begins where this much land drains to it, km²: a few on rugged land, tens on gentle
+  const headKm2 = 2 + 22 * (1 - rough) ** 2;
+  // the slope of the valley sides: a few degrees on gentle land, steep in rugged hills
+  // (balkas of the steppe: 3–6°; dales of hill country: 10–20°)
+  const sideTan = Math.tan(((2.5 + 18 * rough ** 1.5) * Math.PI) / 180);
+  // the bed, from the mouths up: cut in by the depth the water carries, never rising downstream
+  const bed = new Float32Array(NC);
+  const depth = new Float32Array(NC);
+  const chan = new Uint8Array(NC);
+  for (let n = 0; n < dr.count; n++) {
+    const k = dr.order[n];
+    if (routed[k] <= 0) continue;
+    const A = area[k];
+    const head = headKm2 * headC[k];
+    const cut = A < head ? 0 : cutC[k] * Math.min(1, Math.log(A / head) / Math.log(400)) ** 0.6;
+    const r = dr.rcv[k];
+    const below = r >= 0 && routed[r] > 0 ? bed[r] + 0.05 * fcKm : 1;
+    bed[k] = Math.min(routed[k], Math.max(below, routed[k] - cut));
+    depth[k] = routed[k] - bed[k];
+    if (A >= head) chan[k] = 1;
+  }
+  // channel points: the coarse cells' middles a little off the grid, then smoothed along the
+  // streams (each point toward its neighbours up and down the stream)
+  const px = new Float32Array(NC);
+  const py = new Float32Array(NC);
+  const main = new Int32Array(NC).fill(-1);
+  for (let kc = 0; kc < NC; kc++) {
+    const ic = kc % cw;
+    const jc = (kc / cw) | 0;
+    const x = xKm(ic * fc + fc / 2);
+    const y = yKm(jc * fc + fc / 2);
+    px[kc] = (ic + 0.5) * fc + 0.35 * fc * n2(x, y, 2 * fcKm, 1, 53.3);
+    py[kc] = (jc + 0.5) * fc + 0.35 * fc * n2(x, y, 2 * fcKm, 1, 55.9);
+  }
+  for (let n = 0; n < dr.count; n++) {
+    const k = dr.order[n];
+    const r = dr.rcv[k];
+    if (!chan[k] || r < 0) continue;
+    if (main[r] < 0 || area[k] > area[main[r]]) main[r] = k;
+  }
+  for (let pass = 0; pass < 3; pass++) {
+    const qx = Float32Array.from(px);
+    const qy = Float32Array.from(py);
+    for (let kc = 0; kc < NC; kc++) {
+      const r = dr.rcv[kc];
+      const u = main[kc];
+      if (!chan[kc] || r < 0 || u < 0) continue;
+      qx[kc] = 0.5 * px[kc] + 0.25 * (px[r] + px[u]);
+      qy[kc] = 0.5 * py[kc] + 0.25 * (py[r] + py[u]);
+    }
+    px.set(qx);
+    py.set(qy);
+  }
+  // drawn on the map's grid: the bed, depth and water of the stream at each cell it crosses
+  const onChan = new Uint8Array(N);
+  const cBed = new Float32Array(N);
+  const cDepth = new Float32Array(N);
+  const cArea = new Float32Array(N);
+  for (let kc = 0; kc < NC; kc++) {
+    if (!chan[kc]) continue;
+    const r = dr.rcv[kc];
+    const to = r >= 0 ? r : kc;
+    const toLand = r >= 0 && routed[r] > 0;
+    const len = Math.hypot(px[to] - px[kc], py[to] - py[kc]);
+    const steps = Math.max(1, Math.ceil(len / 0.5));
+    for (let st = 0; st <= steps; st++) {
+      const tt = st / steps;
+      const i = Math.floor(px[kc] + (px[to] - px[kc]) * tt);
+      const j = Math.floor(py[kc] + (py[to] - py[kc]) * tt);
+      if (i < 0 || j < 0 || i >= w || j >= h) continue;
+      const k = j * w + i;
+      if (!land[k] || (onChan[k] && cArea[k] >= area[kc])) continue;
+      onChan[k] = 1;
+      cBed[k] = toLand ? bed[kc] + (bed[to] - bed[kc]) * tt : bed[kc];
+      cDepth[k] = toLand ? depth[kc] + (depth[to] - depth[kc]) * tt : depth[kc];
+      cArea[k] = area[kc];
+    }
+  }
+  // every cell falls toward its nearest valley: its sides, and the flat floor of a big river
+  const near = distanceField(g, onChan);
+  const height = new Float32Array(N);
+  const cutBy = new Float32Array(N);
+  // (far from the coast its distance is smoothed: the field's small errors there, steepened by the
+  // slope down to the deep sea, would draw steps across the sea floor)
+  const seaKm = Float32Array.from(coastKm);
+  blurGrid(seaKm, w, h, Math.max(1, Math.round(12 / kmCell)));
+  for (let k = 0; k < N; k++) {
+    if (!land[k]) {
+      // shelves: about a metre deeper every km, then down the slope to the deep sea
+      const d = coastKm[k] < 20 ? coastKm[k] : coastKm[k] + (seaKm[k] - coastKm[k]) * smoothstep(20, 60, coastKm[k]);
+      height[k] = -Math.min(o.maxDepth, 3 + 1.1 * Math.min(d, 140) + 18 * Math.max(0, d - 140) );
+      continue;
+    }
+    let v = surf[k];
+    const c = near.near[k];
+    if (c >= 0) {
+      const dKm = near.dist[k];
+      const b = cBed[c];
+      const D = cDepth[c];
+      // a flat floor where a big river wanders (its width grows as the root of the water it carries)
+      const floorKm = 0.045 * Math.sqrt(cArea[c]);
+      const sideKm = Math.max(0.6 * fcKm, D / 1000 / sideTan);
+      const t = Math.max(0, dKm - floorKm) / sideKm;
+      if (t < 1 && v > b) {
+        const carved = b + (v - b) * smoothstep(0, 1, t);
+        // only land that lies in this valley, fading out with height above its bed (not across
+        // a ridge into the next one); in the ranges only the floors of big rivers
+        let wgt = 1 - smoothstep(1, 1.8, (v - b) / (D + 30));
+        if (belt[k] > 0.5) wgt *= smoothstep(150, 1500, cArea[c]);
+        v += (carved - v) * wgt;
+      }
+    }
+    cutBy[k] = surf[k] - v;
+  }
+  // (the cut softened over a cell or two: a valley's edge follows its curve, not the cells of the
+  // channel it was measured from)
+  blurGrid(cutBy, w, h, 1);
+  for (let k = 0; k < N; k++) if (land[k]) height[k] = Math.max(1, surf[k] - cutBy[k]);
   return { land, h: height, rangeRelief: rangeRel, ranges };
 }

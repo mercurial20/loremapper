@@ -4,6 +4,7 @@ import { history } from '../model/history';
 import type { MapDocument, MapObject, PathFeature } from '../model/types';
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
+import type { Wind } from '../terrain/gen/climate';
 import type { Sketch } from '../terrain/gen/sketch';
 import type { GenParams, GenResult, GenType, Realism, Surface, Template } from '../terrain/generator';
 import type { WorkerReply, WorkerRequest } from '../terrain/generator.worker';
@@ -40,6 +41,8 @@ export interface GenerateOptions {
   sketch?: Sketch;
   /** A waterless world of one surface (sand or snow). */
   surface?: Surface;
+  /** Flat maps: the prevailing wind. */
+  wind?: Wind;
 }
 
 /** Flat maps are generated as a 90°-wide patch of a virtual planet (enough room for several landmasses). */
@@ -101,6 +104,7 @@ export function genParams(o: GenerateOptions, size?: { W: number; H: number }): 
     flat,
     sketch: whole ? o.sketch : undefined,
     surface: whole ? o.surface : undefined,
+    wind: geo.flat ? o.wind : undefined,
   };
 }
 

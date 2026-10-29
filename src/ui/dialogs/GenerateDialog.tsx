@@ -5,6 +5,7 @@ import { surfaceAreaKm2 } from '../../core/planet';
 import { formatArea, formatHeight } from '../../core/units';
 import { generateWorld, genParams, PreviewWorker, REGION_KM, type GenerateOptions, type RiverAmount } from '../../editor/generate';
 import type { GenType, Realism, Surface, Template } from '../../terrain/generator';
+import { defaultWindFrom } from '../../terrain/gen/climate';
 import { useDoc } from '../../store/docStore';
 import { useEditor } from '../../store/editorStore';
 import { Segmented, Slider, TextField, Toggle } from '../controls/controls';
@@ -170,6 +171,11 @@ export function GenerateDialog() {
   const [ranges, setRanges] = useState(0.5);
   const [rough, setRough] = useState(0.35);
   const [warmth, setWarmth] = useState(0);
+  // flat maps: the prevailing wind (its quarter follows the climate belt until it is set)
+  const [windFrom, setWindFrom] = useState<number | null>(null);
+  const [windStrength, setWindStrength] = useState(0.5);
+  const [windHumidity, setWindHumidity] = useState(0);
+  const [windTemp, setWindTemp] = useState(0);
   const [wetness, setWetness] = useState(0);
   const [rivers, setRivers] = useState<RiverAmount>('normal');
   const [biomes, setBiomes] = useState(true);
@@ -177,6 +183,8 @@ export function GenerateDialog() {
   const [advanced, setAdvanced] = useState(false);
   const flat = planet?.mapType === 'flat';
   const [climateLat, setClimateLat] = useState('45');
+  const windFromNow = windFrom ?? defaultWindFrom(Number(climateLat));
+  const wind = flat ? { fromDeg: windFromNow, strength: windStrength, humidity: windHumidity, temp: windTemp } : undefined;
   const [variants, setVariants] = useState<{ seed: string; image: ImageData | null }[] | null>(null);
   const [preview, setPreview] = useState<ImageData | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
@@ -213,6 +221,7 @@ export function GenerateDialog() {
     region: preset.view ? 'view' : 'world',
     climateLat: Number(climateLat),
     surface: preset.surface,
+    wind,
   });
 
   // live preview of exactly this seed and these settings (shape and climate; rivers and erosion are added on generate)
@@ -220,8 +229,8 @@ export function GenerateDialog() {
     () =>
       preset.view
         ? null
-        : { type: preset.type, template: preset.template, realism: 'easy', seed: seedNumber(seed), landFraction: land, mountains, ranges, roughness: rough, warmth, wetness, biomes, rivers: 'none', settlements: false, region: 'world', climateLat: Number(climateLat), surface: preset.surface },
-    [preset, seed, land, mountains, ranges, rough, warmth, wetness, biomes, climateLat],
+        : { type: preset.type, template: preset.template, realism: 'easy', seed: seedNumber(seed), landFraction: land, mountains, ranges, roughness: rough, warmth, wetness, biomes, rivers: 'none', settlements: false, region: 'world', climateLat: Number(climateLat), surface: preset.surface, wind },
+    [preset, seed, land, mountains, ranges, rough, warmth, wetness, biomes, climateLat, windFromNow, windStrength, windHumidity, windTemp],
   );
   useEffect(() => {
     if (!previewOptions) return;
@@ -368,6 +377,14 @@ export function GenerateDialog() {
           <Slider label={t('Hills')} value={rough} min={0} max={1} onChange={setRough} format={(v) => describe(v * 2 - 1, [t('Flat plains'), t('Gentle'), t('Hilly'), t('Rugged')])} />
           <Slider label={t('Temperature')} value={warmth} min={-1} max={1} onChange={setWarmth} format={(v) => describe(v, [t('Ice age'), t('Cool'), t('Earth-like'), t('Earth-like'), t('Warm'), t('Hothouse')])} />
           <Slider label={t('Rainfall')} value={wetness} min={-1} max={1} onChange={setWetness} format={(v) => describe(v, [t('Arid'), t('Dry'), t('Earth-like'), t('Earth-like'), t('Wet'), t('Lush')])} />
+          {flat && !preset.surface && (
+            <>
+              <Slider label={t('Wind from')} value={windFromNow} min={0} max={345} step={15} onChange={setWindFrom} format={(v) => [t('North'), t('Northeast'), t('East'), t('Southeast'), t('South'), t('Southwest'), t('West'), t('Northwest')][Math.round(v / 45) % 8]} />
+              <Slider label={t('Wind strength')} value={windStrength} min={0} max={1} onChange={setWindStrength} format={(v) => describe(v * 2 - 1, [t('Calm'), t('Moderate'), t('Strong'), t('Gale')])} />
+              <Slider label={t('Wind humidity')} value={windHumidity} min={-1} max={1} onChange={setWindHumidity} format={(v) => describe(v, [t('Dry air'), t('Usual'), t('Moist air')])} />
+              <Slider label={t('Wind temperature')} value={windTemp} min={-1} max={1} onChange={setWindTemp} format={(v) => describe(v, [t('Cold air'), t('Usual'), t('Warm air')])} />
+            </>
+          )}
           <Segmented
             label={t('Rivers')}
             value={rivers}

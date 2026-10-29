@@ -1,9 +1,9 @@
 import { clamp, mulberry32, smoothstep } from '../core/math';
 import { Simplex3, subSeed } from '../core/noise3';
 import { BIOME_CHANNELS } from '../core/planet';
-import { BIOME_DESERT, BIOME_ROCK, BIOME_SNOW, biomeWeights, climate, type Climate } from './gen/climate';
+import { BIOME_DESERT, BIOME_ROCK, BIOME_SNOW, biomeWeights, climate, type Climate, type Wind } from './gen/climate';
 import { sketchClimate, sketchShape, type Shape, type Sketch } from './gen/sketch';
-import { blurKm, components, distanceField, dyKm, latOf, lonOf, makeGrid, mercatorPatch, radPerCell, resample, resampleFromSphere, sampleAt, sphereTables, thresholdForFraction, type Grid } from './gen/grid';
+import { blurKm, components, distanceField, dxKm, dyKm, latOf, lonOf, makeGrid, mercatorPatch, radPerCell, resample, resampleFromSphere, sampleAt, sphereTables, thresholdForFraction, type Grid } from './gen/grid';
 import { accumulate, diffuse, drain, erode, steadyState, traceRivers, type Drainage } from './gen/hydrology';
 import { layoutMismatch, plateBase, tectonics, type Layout, type Tectonics } from './gen/plates';
 import { crestLines } from './gen/crests';
@@ -59,6 +59,8 @@ export interface GenParams {
    * band of `climateSpanDeg` from top to bottom.
    */
   flat?: { spanLonDeg: number; climateLatDeg: number; climateSpanDeg: number; cellKm?: number };
+  /** Flat maps: the prevailing wind (else the planet's belts of winds at the map's latitude). */
+  wind?: Wind;
   /** A drawn layout (built-in worlds): replaces the plate layout; `landFraction` is ignored. */
   sketch?: Sketch;
   /**
@@ -180,14 +182,20 @@ function splatHotspots(g: Grid, t: Tectonics): Float32Array {
   return out;
 }
 
-/** Flat maps: land fades out toward the map's edges, so the world sits in a sea instead of being cut off. */
-function flatEdges(g: Grid, landness: Float32Array): Float32Array {
+/**
+ * Flat maps: land fades out toward the map's edges, so the world sits in a sea instead of being
+ * cut off. The sea round the map is a frame between a circle and the map's rectangle, its width
+ * wandering, so coasts near the edges are their own and do not follow the map's sides.
+ */
+function flatEdges(g: Grid, landness: Float32Array, seed: number): Float32Array {
+  const n = new Simplex3(subSeed(seed, 61));
   for (let j = 0; j < g.h; j++)
     for (let i = 0; i < g.w; i++) {
       const u = (g.x0 + (i + 0.5) * g.step) / g.W;
       const v = (g.y0 + (j + 0.5) * g.step) / g.H;
-      const edge = Math.min(u, 1 - u, v, 1 - v);
-      landness[j * g.w + i] -= 3 * (1 - smoothstep(0.01, 0.09, edge));
+      const se = ((Math.abs(u - 0.5) / 0.5) ** 6 + (Math.abs(v - 0.5) / 0.5) ** 6) ** (1 / 6);
+      const out = se - 0.92 + 0.07 * n.fbm(u * 5, v * 5, 0.5, 1, 3);
+      landness[j * g.w + i] -= 3 * smoothstep(-0.06, 0.05, out);
     }
   return landness;
 }
@@ -205,7 +213,7 @@ function worldShape(p: GenParams, layout: Layout, mid: Grid, R: number, progress
     progress('Moving tectonic plates', (a + 1) / 9);
     // a flat map sees a few plates of a whole planet: more, smaller plates put several landmasses on it
     const t = tectonics(coarse, subSeed(p.seed, 100 + a), layout, p.landFraction, base, mid.proj ? 2.5 : 1);
-    const s = layoutMismatch(check, check === coarse ? t.landness : flatEdges(check, resampleFromSphere(t.landness, coarse, check)), p.landFraction, layout);
+    const s = layoutMismatch(check, check === coarse ? t.landness : flatEdges(check, resampleFromSphere(t.landness, coarse, check), p.seed), p.landFraction, layout);
     if (s < bestScore) {
       best = t;
       bestScore = s;
@@ -248,7 +256,7 @@ function worldShape(p: GenParams, layout: Layout, mid: Grid, R: number, progress
       else if (Math.abs(L - t0) < 0.5) L += 0.4 * n.fbm(x + 2.7, y, z, 5.5, coastOctaves, 0.62);
       shape.landness[k] = L;
     }
-  if (mid.proj) flatEdges(mid, shape.landness);
+  if (mid.proj) flatEdges(mid, shape.landness, p.seed);
   return shape;
 }
 
@@ -402,9 +410,10 @@ function paintBiomes(
   const N = mid.w * mid.h;
   // slope (m per km) on the working grid
   const slope = new Float32Array(N);
-  const dy = (mid.step * Math.PI * mid.R) / mid.H;
   for (let j = 0; j < mid.h; j++) {
-    const dx = Math.max(1, ((mid.step * 2 * Math.PI * mid.R) / mid.W) * Math.cos(Math.PI / 2 - ((mid.y0 + (j + 0.5) * mid.step) / mid.H) * Math.PI));
+    // (a cell's true size: on a flat map's region it is a fraction of a km)
+    const dy = dyKm(mid, j);
+    const dx = dxKm(mid, j);
     for (let i = 0; i < mid.w; i++) {
       const k = j * mid.w + i;
       const l = mid.wrap ? j * mid.w + ((i - 1 + mid.w) % mid.w) : j * mid.w + Math.max(0, i - 1);
@@ -429,6 +438,13 @@ function paintBiomes(
     }
   const riv = distanceField(mid, onRiver, 2000);
   const patchN = new Simplex3(subSeed(p.seed, 70));
+  // on a region a few hundred km across: fields and the reach of rivers and the sea at their own
+  // size (a planet's cells are 11 km; there, they are the size of a few of them)
+  const regional = !!p.flat?.cellKm;
+  const riverKm = regional ? 12 : 110;
+  const bigRiverKm = regional ? 8 : 75;
+  const coastReachKm = regional ? 20 : 90;
+  const patchF = regional ? 1600 : 40;
   const out = new Uint8Array(bg.w * bg.h * BIOME_CHANNELS);
   const wts = new Float32Array(BIOME_CHANNELS);
   const logMax = Math.log(maxFlow);
@@ -456,10 +472,11 @@ function paintBiomes(
           elev: e,
           slope: slope[mk],
           flow: flow[mk] > 1 ? Math.max(0, Math.log(flow[mk]) / logMax) : 0,
-          river: Math.exp(-dRiver / 110),
-          bigRiver: Math.exp(-dRiver / 75) * bigness,
-          coast: coastKm[mk],
-          patch: 0.5 + 0.5 * patchN.fbm(Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat), 40, 2),
+          river: Math.exp(-dRiver / riverKm),
+          bigRiver: Math.exp(-dRiver / bigRiverKm) * bigness,
+          // (as far, for the farmland a coast draws, as 90 km on a planet)
+          coast: coastKm[mk] * (90 / coastReachKm),
+          patch: 0.5 + 0.5 * patchN.fbm(Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat), patchF, 2),
           dry: sampleAt(clim.dry, mid, wx, wy),
         },
         wts,
@@ -576,9 +593,17 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
     let biggest = 0;
     for (let c = 1; c < wc.count; c++) if (wc.area[c] > wc.area[biggest]) biggest = c;
     const minSea = 4 * Math.PI * R * R * 1.5e-3;
+    // and an inland sea is broad (the Caspian, the Black Sea), not a winding channel through the
+    // land: one whose middle lies less than 120 km from its shores is land too
+    const fromLand = distanceField(mid, land, 400).dist;
+    const broad = new Float32Array(wc.count);
     for (let k = 0; k < N; k++) {
       const c = wc.label[k];
-      if (c >= 0 && c !== biggest && wc.area[c] < minSea) land[k] = 1;
+      if (c >= 0 && fromLand[k] > broad[c]) broad[c] = fromLand[k];
+    }
+    for (let k = 0; k < N; k++) {
+      const c = wc.label[k];
+      if (c >= 0 && c !== biggest && (wc.area[c] < minSea || broad[c] < 120)) land[k] = 1;
     }
   }
   for (let j = 0; j < mid.h; j++)
@@ -640,7 +665,9 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
         const hills = r * (120 + 520 * rough) * (0.5 + 0.5 * nB.fbm(x, y, z, 16, 4));
         const wx = 0.08 * nC.fbm(x, y, z, 5, 2);
         const ridges = o > 0.01 ? nB.ridged(x + wx, y - wx, z + wx, 11, 5) : 0;
-        const mtn = mtnTop * Math.pow(Math.min(1, o), 1.15) * (0.28 + 0.8 * ridges);
+        // a range is a raised massif with ridges on it (the Andes, the Himalaya and Tibet), not
+        // ridges alone on low ground
+        const mtn = mtnTop * Math.pow(Math.min(1, o), 1.15) * (0.5 + 0.6 * ridges);
         const oldM = s.old[k] > 0.01 ? 1700 * clamp(p.mountains, 0, 1) * s.old[k] * (0.3 + 0.7 * nB.ridged(x - 3, y, z, 13, 4)) : 0;
         const volc = (s.arc[k] > 0.01 ? 2400 * s.arc[k] * (0.35 + 0.65 * smoothstep(-0.2, 0.6, nC.fbm(x, y, z, 20, 2))) : 0) + 3600 * Math.pow(s.hot[k], 1.6);
         const coastSoft = 0.45 + 0.55 * smoothstep(0, 60, d);
@@ -673,7 +700,7 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
     proj && p.flat
       ? (lat: number) => ((p.flat!.climateLatDeg + (lat / Math.max(1e-6, proj.lat(0))) * (p.flat!.climateSpanDeg / 2)) * Math.PI) / 180
       : undefined;
-  const climOpts = { warmth: p.warmth ?? 0, wetness: p.wetness ?? 0, winds: true, seed: subSeed(p.seed, 50), climateLat };
+  const climOpts = { warmth: p.warmth ?? 0, wetness: p.wetness ?? 0, winds: true, seed: subSeed(p.seed, 50), climateLat, wind: p.flat ? p.wind : undefined, rainBlurKm: p.flat ? 60 : 140 };
   let clim = climate(mid, h, coastKm, climOpts);
   if (p.sketch) sketchClimate(p.sketch, mid, clim.temp, clim.rain);
 
@@ -878,7 +905,10 @@ function generateRegion(p: GenParams, rg: Grid, mid: Grid, full: Grid, progress:
   progress('Simulating climate', 0);
   const proj = mid.proj!;
   const climateLat = (lat: number) => ((p.flat!.climateLatDeg + (lat / Math.max(1e-6, proj.lat(0))) * (p.flat!.climateSpanDeg / 2)) * Math.PI) / 180;
-  const clim = climate(mid, h, coastKm, { warmth: p.warmth ?? 0, wetness: p.wetness ?? 0, winds: true, seed: subSeed(p.seed, 50), climateLat });
+  // (a region's rain is smoothed over tens of km, not a planet's hundred and more: a range's rain
+  // shadow shows)
+  const regionKm = Math.max(full.W, full.H) * p.flat!.cellKm!;
+  const clim = climate(mid, h, coastKm, { warmth: p.warmth ?? 0, wetness: p.wetness ?? 0, winds: true, seed: subSeed(p.seed, 50), climateLat, wind: p.wind, rainBlurKm: Math.min(60, Math.max(12, regionKm * 0.03)), rainScale: 0.95 + 0.5 * smoothstep(500, 3000, regionKm) });
 
   // ---- rivers: as wide as the water they carry (about 4.5·√Q metres; 300 mm a year of runoff)
   progress('Tracing rivers', 0);
