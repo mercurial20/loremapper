@@ -3,7 +3,7 @@ import { Simplex3, subSeed } from '../core/noise3';
 import { BIOME_CHANNELS } from '../core/planet';
 import { BIOME_DESERT, BIOME_ROCK, BIOME_SNOW, biomeWeights, climate, type Climate, type Wind } from './gen/climate';
 import { sketchClimate, sketchShape, type Shape, type Sketch } from './gen/sketch';
-import { blurKm, components, distanceField, dxKm, dyKm, latOf, lonOf, makeGrid, mercatorPatch, radPerCell, resample, resampleFromSphere, sampleAt, sphereTables, thresholdForFraction, type Grid } from './gen/grid';
+import { blurKm, cellAreaKm2, components, distanceField, dxKm, dyKm, latOf, lonOf, makeGrid, mercatorPatch, radPerCell, resample, resampleFromSphere, sampleAt, sphereTables, thresholdForFraction, type Grid } from './gen/grid';
 import { accumulate, diffuse, drain, erode, steadyState, traceRivers, type Drainage } from './gen/hydrology';
 import { layoutMismatch, plateBase, tectonics, type Layout, type Tectonics } from './gen/plates';
 import { crestLines } from './gen/crests';
@@ -601,9 +601,19 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
       const c = wc.label[k];
       if (c >= 0 && fromLand[k] > broad[c]) broad[c] = fromLand[k];
     }
+    // and few of them: on Earth enclosed seas are about 1 % of the land (the Caspian, the Black
+    // Sea); outside the inner-sea layout one is kept at most, and only one no larger than a few per
+    // cent of the land, the rest are land
+    const inner = layout === 'innerSea';
+    let landKm2 = 0;
+    for (let k = 0; k < N; k++) if (land[k]) landKm2 += cellAreaKm2(mid, (k / mid.w) | 0);
+    const ranked = [...Array(wc.count).keys()]
+      .filter((c) => c !== biggest && wc.area[c] >= minSea && broad[c] >= (inner ? 120 : 200) && (inner || wc.area[c] <= 0.04 * landKm2))
+      .sort((a, b) => wc.area[b] - wc.area[a]);
+    const keep = new Set(ranked.slice(0, inner ? Infinity : 1));
     for (let k = 0; k < N; k++) {
       const c = wc.label[k];
-      if (c >= 0 && c !== biggest && (wc.area[c] < minSea || broad[c] < 120)) land[k] = 1;
+      if (c >= 0 && c !== biggest && !keep.has(c)) land[k] = 1;
     }
   }
   for (let j = 0; j < mid.h; j++)
@@ -681,10 +691,14 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
         built[k] = 6 + plateau + 0.45 * volc * coastSoft;
       } else {
         const crust = s.crust[k];
-        const shelfW = 45 + 190 * crust * (1 - 0.6 * Math.min(1, s.orogen[k] * 2));
+        // a continent's shelf is wide and its slope long; an oceanic island's flanks drop to the deep
+        // sea within tens of km (Hawaii, the Azores), so it stands alone, not in a broad halo; both
+        // widths wander along the coast
+        const wob = 0.6 + 0.8 * clamp((seaN[k] - 0.93) / 0.24, 0, 1);
+        const shelfW = (12 + 220 * crust * (1 - 0.6 * Math.min(1, s.orogen[k] * 2))) * wob;
         const shelf = 20 + 130 * smoothstep(0, shelfW, d);
         const abyss = abyssBase * seaN[k];
-        let depth = shelf + (abyss - shelf) * smoothstep(shelfW, shelfW + 420, d);
+        let depth = shelf + (abyss - shelf) * smoothstep(shelfW, shelfW + (70 + 350 * crust) * wob, d);
         depth -= 2300 * s.ridge[k] + 2400 * s.hot[k] + 1800 * Math.max(0, s.arc[k]);
         depth += (deepest - abyss) * 0.92 * s.trench[k];
         // seamounts and ridges stay submerged away from the coast (no almost-islands awash at the surface)

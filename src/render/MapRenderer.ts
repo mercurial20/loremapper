@@ -211,7 +211,10 @@ export class MapRenderer {
     u.uMinElev = p.minElevation;
     u.uCellKm = this.model.geo.kmPerCellY;
     u.uHillshade = style.hillshade * doc.view.hillshade;
-    u.uExaggeration = style.exaggeration;
+    // the hillshade's vertical exaggeration is a planet's (cells of about 10 km, where real slopes
+    // are faint); a flat map's finer cells show real slopes, exaggerated less, as cartographers do
+    // (a few times on a km grid, not a hundred): else the gullies of a plain read as mountains
+    u.uExaggeration = style.exaggeration * (this.model.geo.flat ? Math.min(1, (this.model.geo.kmPerCellY / 10) ** 0.6) : 1);
     u.uContours = doc.view.contours ? 1 : 0;
     u.uContourInterval = doc.view.contourInterval;
     u.uOverlay = doc.view.heightOverlay ? 0.82 : 0;

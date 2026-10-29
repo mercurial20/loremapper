@@ -1031,12 +1031,12 @@
   "Calm": "Calm",
   "Moderate": "Moderate",
   "Strong": "Strong",
-  "Gale": "Gale",
   "Wind humidity": "Wind humidity",
   "Dry air": "Dry air",
   "Usual": "Usual",
   "Moist air": "Moist air",
   "Wind temperature": "Wind temperature",
   "Cold air": "Cold air",
-  "Warm air": "Warm air"
+  "Warm air": "Warm air",
+  "Some": "Some"
 }

@@ -245,13 +245,15 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
           const dx = xKm(i) - cx;
           const dy = yKm(j) - cy;
           const along = dx * Math.cos(ang) + dy * Math.sin(ang);
-          const off = -dx * Math.sin(ang) + dy * Math.cos(ang) + 0.06 * mapKm * n2(along, b * 31, 300, 2, 9.4);
+          // (rifts are nearly straight, bending gently over hundreds of km)
+          const off = -dx * Math.sin(ang) + dy * Math.cos(ang) + Math.min(0.06 * mapKm, 40) * n2(along, b * 31, 320, 2, 9.4);
           // the trough, fading out at its ends (rifts open from a point)
           const len = 0.45 * mapKm;
           // (in segments, each a little off the last: a rift is a chain of basins, not one trench)
           const seg = smoothstep(-0.25, 0.15, n2(along, b * 17, 90, 2, 9.9));
           const ends = 1 - smoothstep(0.6 * len, len, Math.abs(along));
-          const v = Math.exp(-((off / half) ** 2)) * ends * seg;
+          // (each basin narrowing to its ends: lenses, not rectangles)
+          const v = Math.exp(-((off / (half * (0.25 + 0.75 * seg))) ** 2)) * ends * seg;
           rift[j * w + i] = Math.max(rift[j * w + i], v);
           // its shoulders stand a little above the land beside them
           riftShoulder[j * w + i] = Math.max(riftShoulder[j * w + i], Math.exp(-(((Math.abs(off) - 1.7 * half) / (0.7 * half)) ** 2)) * ends);
@@ -342,11 +344,18 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
         ang = ca;
       }
     }
+    // an island's mountains are a massif in its middle (Corsica, Kyushu), not a wall from coast
+    // to coast
+    const isleLike = o.layout === 'isle' || o.layout === 'mainland';
+    if (isleLike && b === 0) {
+      px = cu * g.W * o.cellKm;
+      py = cv * g.H * o.cellKm;
+    }
     const dx = Math.cos(ang);
     const dy = Math.sin(ang);
-    const width = Math.min(0.4 * mapKm, clamp(beltWidth * (0.75 + 0.5 * rnd()), 40, 220));
+    const width = Math.min(0.4 * mapKm, clamp(beltWidth * (0.75 + 0.5 * rnd()) * (isleLike ? 1.25 : 1), 40, 220));
     const bend = 0.08 * mapKm;
-    const L = 1.6 * mapKm;
+    const L = isleLike ? (0.16 + 0.08 * rnd()) * mapKm : 1.6 * mapKm;
     const pts: [number, number][] = [];
     for (let s = -L; s <= L; s += Math.max(2 * o.cellKm, width / 4)) {
       const off = bend * noise.fbm(s / 350, b * 7.3, 3.1, 1, 3);
@@ -559,7 +568,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
         if (d < 0.14) v += craterRim * 0.8 * (1 - d / 0.14) ** 1.5;
       }
       // a rift's floor is low and level
-      v = Math.max(2, v * (1 - 0.6 * rift[k]) + 150 * riftShoulder[k] * (1 - rift[k]));
+      v = Math.max(2, v * (1 - 0.6 * rift[k]));
       surf[k] = v + rangeRel[k];
       // (the ranges have their own valleys; the land rising toward them and the volcanoes are cut deeper)
       cutM[k] = (hillAmp * hills + 0.6 * footAmp * foot[k] + 0.5 * cone[k] + (isles ? 0.4 * rise : 0)) * (1 - belt[k]);
@@ -710,12 +719,14 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   // (far from the coast its distance is smoothed: the field's small errors there, steepened by the
   // slope down to the deep sea, would draw steps across the sea floor)
   const seaKm = Float32Array.from(coastKm);
-  blurGrid(seaKm, w, h, Math.max(1, Math.round(12 / kmCell)));
+  blurGrid(seaKm, w, h, Math.max(1, Math.round(30 / kmCell)));
+  // an inland sea is shallower than the ocean (the Black Sea 2.2 km, the Caspian 1 km)
+  const seaFloor = o.layout === 'innerSea' || o.layout === 'crater' ? Math.min(o.maxDepth, 2200) : o.maxDepth;
   for (let k = 0; k < N; k++) {
     if (!land[k]) {
       // shelves: about a metre deeper every km, then down the slope to the deep sea
       const d = coastKm[k] < 20 ? coastKm[k] : coastKm[k] + (seaKm[k] - coastKm[k]) * smoothstep(20, 60, coastKm[k]);
-      height[k] = -Math.min(o.maxDepth, 3 + 1.1 * Math.min(d, 140) + 18 * Math.max(0, d - 140) );
+      height[k] = -Math.min(seaFloor, 3 + 1.1 * Math.min(d, 140) + 18 * Math.max(0, d - 140));
       continue;
     }
     let v = surf[k];

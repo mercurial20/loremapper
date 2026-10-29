@@ -162,14 +162,20 @@ export function GenerateDialog() {
   const set = useEditor((s) => s.set);
   const units = useEditor((s) => s.units);
   const planet = useDoc((s) => s.meta?.planet);
-  const [presetId, setPresetId] = useState(() => (planet?.mapType === 'flat' && Math.max(planet.gridWidth, planet.gridHeight) * (planet.cellKm ?? 1) < REGION_KM ? 'part' : 'continents'));
+  // a small flat map (a region at its true size)
+  const smallMap = planet?.mapType === 'flat' && Math.max(planet.gridWidth, planet.gridHeight) * (planet.cellKm ?? 1) < REGION_KM;
+  const [presetId, setPresetId] = useState(() => (smallMap ? 'part' : 'continents'));
   const preset = PRESETS.find((p) => p.id === presetId)!;
   const [realism, setRealism] = useState<Realism>('medium');
   const [seed, setSeed] = useState(randomSeed);
-  const [land, setLand] = useState(planet?.landFraction ?? 0.29);
-  const [mountains, setMountains] = useState(0.75);
+  // (the land share of the preset chosen at first, as when a preset is picked)
+  const [land, setLand] = useState(() => PRESETS.find((p) => p.id === presetId)?.land ?? planet?.landFraction ?? 0.29);
+  // (a region's highest peaks as an average range's, a few km; a whole world's, its highest range's)
+  const [mountains, setMountains] = useState(smallMap ? 0.4 : 0.75);
   const [ranges, setRanges] = useState(0.5);
-  const [rough, setRough] = useState(0.35);
+  // the middle of the "Hills" setting is land as on Earth (its value for the generator: 0.35)
+  const [hills, setHills] = useState(0.5);
+  const rough = hills < 0.5 ? hills * 0.7 : 0.35 + (hills - 0.5) * 1.3;
   const [warmth, setWarmth] = useState(0);
   // flat maps: the prevailing wind (its quarter follows the climate belt until it is set)
   const [windFrom, setWindFrom] = useState<number | null>(null);
@@ -373,14 +379,14 @@ export function GenerateDialog() {
             <Slider label={flat ? t('Land') : t('Land (true surface area)')} value={land} min={0.03} max={0.7} onChange={setLand} format={(v) => `${Math.round(v * 100)}% · ${formatArea(v * mapKm2, units)}`} />
           )}
           <Slider label={t('Mountain height')} value={mountains} min={0} max={1} onChange={setMountains} format={(v) => t('up to {h}', { h: formatHeight(v * (planet?.maxElevation ?? 10000) * 0.95, units) })} />
-          <Slider label={t('Mountain ranges')} value={ranges} min={0} max={1} onChange={setRanges} format={(v) => (v < 0.03 ? t('None') : describe(v * 2 - 1, [t('Few'), t('As on Earth'), t('Many'), t('Mostly mountains')]))} />
-          <Slider label={t('Hills')} value={rough} min={0} max={1} onChange={setRough} format={(v) => describe(v * 2 - 1, [t('Flat plains'), t('Gentle'), t('Hilly'), t('Rugged')])} />
+          <Slider label={t('Mountain ranges')} value={ranges} min={0} max={1} onChange={setRanges} format={(v) => (v < 0.03 ? t('None') : describe(v * 2 - 1, [t('Few'), t('Some'), t('As on Earth'), t('Many'), t('Mostly mountains')]))} />
+          <Slider label={t('Hills')} value={hills} min={0} max={1} onChange={setHills} format={(v) => describe(v * 2 - 1, [t('Flat plains'), t('Gentle'), t('As on Earth'), t('Hilly'), t('Rugged')])} />
           <Slider label={t('Temperature')} value={warmth} min={-1} max={1} onChange={setWarmth} format={(v) => describe(v, [t('Ice age'), t('Cool'), t('Earth-like'), t('Earth-like'), t('Warm'), t('Hothouse')])} />
           <Slider label={t('Rainfall')} value={wetness} min={-1} max={1} onChange={setWetness} format={(v) => describe(v, [t('Arid'), t('Dry'), t('Earth-like'), t('Earth-like'), t('Wet'), t('Lush')])} />
           {flat && !preset.surface && (
             <>
               <Slider label={t('Wind from')} value={windFromNow} min={0} max={345} step={15} onChange={setWindFrom} format={(v) => [t('North'), t('Northeast'), t('East'), t('Southeast'), t('South'), t('Southwest'), t('West'), t('Northwest')][Math.round(v / 45) % 8]} />
-              <Slider label={t('Wind strength')} value={windStrength} min={0} max={1} onChange={setWindStrength} format={(v) => describe(v * 2 - 1, [t('Calm'), t('Moderate'), t('Strong'), t('Gale')])} />
+              <Slider label={t('Wind strength')} value={windStrength} min={0} max={1} onChange={setWindStrength} format={(v) => describe(v * 2 - 1, [t('Calm'), t('Moderate'), t('Strong')])} />
               <Slider label={t('Wind humidity')} value={windHumidity} min={-1} max={1} onChange={setWindHumidity} format={(v) => describe(v, [t('Dry air'), t('Usual'), t('Moist air')])} />
               <Slider label={t('Wind temperature')} value={windTemp} min={-1} max={1} onChange={setWindTemp} format={(v) => describe(v, [t('Cold air'), t('Usual'), t('Warm air')])} />
             </>
