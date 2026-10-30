@@ -922,9 +922,10 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
       // shelves: about a metre deeper every km, then down the slope to the deep sea
       const d = coastKm[k] < 20 ? coastKm[k] : coastKm[k] + (seaKm[k] - coastKm[k]) * smoothstep(20, 60, coastKm[k]);
       if (shelfKm) {
-        // (the shelf ends at about 140 m; the slope below falls about 2.5 % to the deep floor)
         const sw = shelfKm[k];
-        height[k] = -Math.min(seaFloor, 3 + (137 * Math.min(d, sw)) / sw + 25 * Math.max(0, d - sw) * smoothstep(0, 30, d - sw));
+        // (the shelf's break a bend over tens of km, not a ledge; the slope about 1.5 %)
+        const e = Math.max(0, d - sw);
+        height[k] = -Math.min(seaFloor, 3 + 137 * smoothstep(0, 1, Math.min(d, sw) / sw) * 0.6 + (82 * Math.min(d, sw)) / sw + (15 * e * e) / (e + 60));
       } else height[k] = -Math.min(seaFloor, 3 + 1.1 * Math.min(d, 140) + 18 * Math.max(0, d - 140));
       continue;
     }
