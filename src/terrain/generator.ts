@@ -946,8 +946,19 @@ function generateRegion(p: GenParams, rg: Grid, mid: Grid, full: Grid, progress:
   progress('Adding detail', 0);
   const up = (a: Float32Array, kind: 'catmull' | 'bspline') => (rg.step === 1 ? a.slice() : resample(a, rg, full, kind));
   const height = up(reg.h, 'catmull');
+  // the coast: on the full grid it follows the land's signed distance to it, interpolated
+  // smoothly and a little uneven at the scale of the coarser cells (not their staircase)
+  const coastF = rg.step === 1 ? null : resample(reg.coastSigned, rg, full, 'bspline');
+  const coastN = new Simplex3(subSeed(p.seed, 63));
+  const rgKm = p.flat!.cellKm! * rg.step;
   for (let k = 0; k < height.length; k++) {
-    const wasLand = rg.step === 1 ? reg.land[k] : sampleAt(reg.h, rg, full.x0 + (k % full.w) + 0.5, full.y0 + Math.floor(k / full.w) + 0.5) > 0;
+    let wasLand: boolean;
+    if (!coastF) wasLand = !!reg.land[k];
+    else {
+      const x = k % full.w;
+      const y = (k / full.w) | 0;
+      wasLand = coastF[k] + 0.45 * rgKm * coastN.fbm(x / 3.1, y / 3.1, 0.5, 1, 2) > 0;
+    }
     height[k] = wasLand ? Math.max(1, height[k]) : Math.min(-2, height[k]);
   }
   const relief = up(reg.rangeRelief, 'bspline');

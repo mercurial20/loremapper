@@ -35,6 +35,8 @@ export interface RegionalRelief {
   /** The ranges' share of `h`. */
   rangeRelief: Float32Array;
   ranges: RegionRange[];
+  /** Distance to the coast, km: positive on land, negative at sea (smooth across the coast). */
+  coastSigned: Float32Array;
 }
 
 /**
@@ -755,5 +757,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   // channel it was measured from)
   blurGrid(cutBy, w, h, 1);
   for (let k = 0; k < N; k++) if (land[k]) height[k] = Math.max(1, surf[k] - cutBy[k]);
-  return { land, h: height, rangeRelief: rangeRel, ranges };
+  const coastSigned = new Float32Array(N);
+  for (let k = 0; k < N; k++) coastSigned[k] = (land[k] ? 1 : -1) * (coastKm[k] + 0.5 * kmCell);
+  return { land, h: height, rangeRelief: rangeRel, ranges, coastSigned };
 }
