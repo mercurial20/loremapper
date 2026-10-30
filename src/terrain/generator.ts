@@ -615,6 +615,14 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
       const c = wc.label[k];
       if (c >= 0 && c !== biggest && !keep.has(c)) land[k] = 1;
     }
+    // inlets of the ocean reaching deep into a continent through a narrow neck read as blotches
+    // of shallow water: sea within ~220 km of land where land holds most of the 500 km around
+    // is land too (not where narrow seas are the point: archipelagos, broken continents)
+    if (!inner && layout !== 'archipelago' && layout !== 'shattered' && !p.sketch) {
+      const lf = blurKm(Float32Array.from(land), mid, 500, 2);
+      const near = distanceField(mid, land, 300).dist;
+      for (let k = 0; k < N; k++) if (!land[k] && near[k] < 220 && lf[k] > 0.72) land[k] = 1;
+    }
   }
   for (let j = 0; j < mid.h; j++)
     for (let i = 0; i < mid.w; i++) {
