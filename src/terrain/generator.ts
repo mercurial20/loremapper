@@ -736,6 +736,26 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
         rug[k] = 0.15;
       }
     }
+  // the sea floor smoothed (over the sea alone): its depths come from the distance to the
+  // nearest coast cell, whose rays and arcs would show as ribs, scallops and a sharp ledge at the
+  // shelf's edge; the water by the shore keeps its own depth
+  {
+    const seaM = new Float32Array(N);
+    const dep = new Float32Array(N);
+    for (let k = 0; k < N; k++)
+      if (!land[k]) {
+        seaM[k] = 1;
+        dep[k] = h[k];
+      }
+    const r = Math.max(35, 2.2 * dyKm(mid));
+    const sd = blurKm(dep, mid, r, 3);
+    const sm = blurKm(seaM, mid, r, 3);
+    for (let k = 0; k < N; k++) {
+      if (land[k] || sm[k] < 1e-3) continue;
+      const t = smoothstep(4, 40, coastKm[k]);
+      h[k] = Math.min(-3, h[k] + (sd[k] / sm[k] - h[k]) * t);
+    }
+  }
 
   // ---- climate: prevailing winds and rain shadows at every realism level, so previews match the result
   progress('Simulating climate', 0);
