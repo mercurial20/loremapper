@@ -922,7 +922,7 @@ function generateRegion(p: GenParams, rg: Grid, mid: Grid, full: Grid, progress:
   // (a region's rain is smoothed over tens of km, not a planet's hundred and more: a range's rain
   // shadow shows)
   const regionKm = Math.max(full.W, full.H) * p.flat!.cellKm!;
-  const clim = climate(mid, h, coastKm, { warmth: p.warmth ?? 0, wetness: p.wetness ?? 0, winds: true, seed: subSeed(p.seed, 50), climateLat, wind: p.wind, rainBlurKm: Math.min(60, Math.max(12, regionKm * 0.03)), rainScale: 0.95 + 0.5 * smoothstep(500, 3000, regionKm) });
+  const clim = climate(mid, h, coastKm, { warmth: p.warmth ?? 0, wetness: p.wetness ?? 0, winds: true, seed: subSeed(p.seed, 50), climateLat, wind: p.wind, rainBlurKm: Math.min(80, Math.max(25, regionKm * 0.08)), rainScale: 0.95 + 0.5 * smoothstep(500, 3000, regionKm) });
 
   // ---- rivers: as wide as the water they carry (about 4.5·√Q metres; 300 mm a year of runoff)
   progress('Tracing rivers', 0);

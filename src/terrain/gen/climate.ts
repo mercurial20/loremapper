@@ -74,8 +74,9 @@ function windRain(g: Grid, h: Float32Array, temp: Float32Array, cur: Float32Arra
   const done = new Uint8Array(N);
   const hum = wind.humidity;
   const st = Math.max(0, Math.min(1, wind.strength));
-  // air reaching the map over its edge: moist if it comes off the sea, drier off land
-  const inflow = (k: number) => (h[k] <= 0 ? 1 + 0.3 * hum : 0.65 + 0.3 * hum);
+  // air reaching the map over its edge has the wind's own humidity (what lies beyond the edge is
+  // not known: a sea cell at the edge must not saturate the air of its whole row)
+  const inflow = (_k: number) => 0.7 + 0.35 * hum;
   const sample = (f: Float32Array, x: number, y: number, k: number, fallback: number) => {
     const i0 = Math.floor(x);
     const j0 = Math.floor(y);
@@ -103,7 +104,8 @@ function windRain(g: Grid, h: Float32Array, temp: Float32Array, cur: Float32Arra
     const y = j - uy;
     const edge = x < -0.5 || y < -0.5 || x > w - 0.5 || y > gh - 0.5;
     let mm = edge ? inflow(k) : sample(m, x, y, k, inflow(k));
-    let lift = edge ? 0 : sample(lifted, x, y, k, 0);
+    // (air arriving over the map's edge comes at the height of the land there, not up from the sea)
+    let lift = edge ? Math.max(0, h[k]) : sample(lifted, x, y, k, Math.max(0, h[k]));
     if (h[k] <= 0) {
       // cold upwelling water gives the air little moisture; warm currents a lot
       const evap = (0.04 + 0.1 * smoothstep(-5, 28, temp[k])) * Math.min(1.6, Math.max(0.25, 1 + 1.2 * cur[k]));
@@ -115,10 +117,14 @@ function windRain(g: Grid, h: Float32Array, temp: Float32Array, cur: Float32Arra
       const rise = Math.max(0, h[k] - lift) / Math.max(0.05, km);
       lift = Math.max(h[k], lift - 3 * km);
       // a strong wind carries its moisture further inland, and is lifted harder over ranges
-      const out = mm * Math.min(0.5, ((0.004 * (1.3 - 0.6 * st) + rise * 0.004 * (0.5 + st)) * km) / 25);
-      rain[k] = mm + out * 5;
-      // (a part of what falls comes back to the air from forests and lakes)
-      mm -= out * 0.75;
+      // (a range of 3 km wrings out about two thirds of the air's water: the lee gets a half to a
+      // third of the windward rain, as behind the Cascades or the Caucasus)
+      const base = mm * ((0.004 * (1.3 - 0.6 * st) * km) / 25);
+      const oro = mm * Math.min(0.5, (rise * 0.011 * (0.5 + st) * km) / 25);
+      rain[k] = mm + (base + oro) * 5;
+      // (a part of the plains' rain comes back to the air from forests and lakes; what a range
+      // wrings out runs off in its rivers)
+      mm -= base * 0.75 + oro;
     }
     m[k] = mm;
     lifted[k] = lift;
@@ -299,7 +305,9 @@ export function climate(g: Grid, h: Float32Array, coastKm: Float32Array, o: Clim
         const y = T.cosLat[j] * T.sinLon[i];
         const z = T.sinLat[j];
         const latJ = lat + 9 * n.fbm(x, y + 4.4, z, 1.6, 3);
-        rain[k] = (o.rainScale ?? 1.7) * smooth[k] * latRain(latJ, moist[k]) * (1 + 0.35 * n.fbm(x + 9, y, z, 2.2, 4));
+        // (on a flat map with its own wind, rain also varies locally, every hundred km or two)
+        const local = o.wind ? 1 + 0.18 * n.fbm(x + 3, y, z, (g.R / 150) * 1, 3) : 1;
+        rain[k] = (o.rainScale ?? 1.7) * smooth[k] * latRain(latJ, moist[k]) * (1 + 0.35 * n.fbm(x + 9, y, z, 2.2, 4)) * local;
       }
     }
   }
