@@ -13,6 +13,7 @@ import { PlanetDialog } from './ui/dialogs/PlanetDialog';
 import { ProjectsDialog } from './ui/dialogs/ProjectsDialog';
 import { ShareDialog } from './ui/dialogs/ShareDialog';
 import { ShortcutsDialog } from './ui/dialogs/ShortcutsDialog';
+import { WhatsNewDialog } from './ui/dialogs/WhatsNewDialog';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { CompassRose } from './ui/icons';
 import { MapView } from './ui/MapView';
@@ -170,6 +171,8 @@ function Dialogs() {
       return <NewMapDialog />;
     case 'share':
       return <ShareDialog />;
+    case 'whatsNew':
+      return <WhatsNewDialog />;
     default:
       return null;
   }

@@ -47,6 +47,7 @@ const SCHEMA = {
     tool: ['select', 'info', 'pan', 'raise', 'lower', 'ridge', 'smooth', 'flatten', 'paint', 'erase', 'river', 'lake', 'road', 'object', 'label', 'territory', 'fog', 'peak', 'measure'],
   },
   operation_failed: { op: ['generate', 'export', 'import'] },
+  whats_new: { action: ['shown', 'close', 'generate', 'wind', 'sources', 'ranges'] },
 } as const;
 
 type Schema = typeof SCHEMA;

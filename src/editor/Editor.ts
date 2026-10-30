@@ -1,4 +1,5 @@
 import { assetLibrary } from '../assets/library';
+import { ANNOUNCEMENT, ANNOUNCEMENT_KEY } from '../announcement';
 import { refreshGeographyIfShown, resetGeography } from './geography';
 import { brushRange } from '../ui/format';
 import { defaultPlanet, surfaceAreaKm2, type GridPreset } from '../core/planet';
@@ -83,7 +84,16 @@ class Editor {
     if (target) {
       await this.openProject(target.id);
       track('project_reopened');
-    } else useEditor.getState().set({ welcome: true });
+      // someone who used Loremapper before: what is new since, once (not to a shared map's viewers)
+      if (!useEditor.getState().readOnly && (await getSetting<string | null>(ANNOUNCEMENT_KEY, null)) !== ANNOUNCEMENT && !useEditor.getState().dialog) {
+        useEditor.getState().set({ dialog: 'whatsNew' });
+        track('whats_new', { action: 'shown' });
+      }
+    } else {
+      useEditor.getState().set({ welcome: true });
+      // a first visit: everything is new, there is nothing to announce
+      void setSetting(ANNOUNCEMENT_KEY, ANNOUNCEMENT);
+    }
     useEditor.getState().set({ busy: null });
     window.addEventListener('pagehide', () => void this.saveNow());
     // warn before closing while the last edits are still being written

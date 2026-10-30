@@ -2622,3 +2622,70 @@ input[type='range']::-moz-range-thumb {
   align-items: center;
   grid-template-columns: none;
 }
+
+/* ---------- what's new ---------- */
+.whats-new {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 720px) {
+  .whats-new {
+    grid-template-columns: 1fr;
+  }
+}
+.whats-new-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.whats-new-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  object-fit: cover;
+  background: var(--panel-3);
+}
+.whats-new-text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  flex: 1;
+}
+.whats-new-text h3 {
+  margin: 0;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.whats-new-text p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+  flex: 1;
+}
+.whats-new-text .btn {
+  align-self: flex-start;
+}
+.alpha-badge.static {
+  cursor: default;
+}
+.alpha-badge.static:hover::after {
+  display: none;
+}
+.whats-new-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.whats-new-foot a {
+  color: var(--accent-2);
+}

@@ -1,20 +1,4 @@
-import {
-  Check,
-  ChevronDown,
-  CircleAlert,
-  CloudFog,
-  Download,
-  Eye,
-  EyeOff,
-  Globe,
-  Keyboard,
-  LoaderCircle,
-  MessageSquarePlus,
-  Redo2,
-  SlidersHorizontal,
-  Undo2,
-  WandSparkles,
-} from 'lucide-react';
+import { Check, ChevronDown, CircleAlert, CloudFog, Download, Eye, EyeOff, Globe, Keyboard, LoaderCircle, MessageSquarePlus, Redo2, SlidersHorizontal, Sparkles, Undo2, WandSparkles } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { history } from '../model/history';
 import type { StylePresetId } from '../model/types';
@@ -357,6 +341,9 @@ export function TopBar() {
           </button>
           <button className="icon-btn" onClick={() => set({ dialog: 'shortcuts' })} title={t('Keyboard shortcuts (?)')}>
             <Keyboard size={18} />
+          </button>
+          <button className="icon-btn" onClick={() => set({ dialog: 'whatsNew' })} title={t("What's new")}>
+            <Sparkles size={18} />
           </button>
           <button className="btn primary" onClick={() => set({ dialog: 'export' })}>
             <Download size={16} /> {t('Export')}

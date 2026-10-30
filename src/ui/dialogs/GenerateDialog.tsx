@@ -192,7 +192,7 @@ export function GenerateDialog() {
   const flat = planet?.mapType === 'flat';
   const [climateLat, setClimateLat] = useState('45');
   const windFromNow = windFrom ?? defaultWindFrom(Number(climateLat));
-  const wind = flat ? { fromDeg: windFromNow, strength: windStrength, humidity: windHumidity, temp: windTemp } : undefined;
+  const wind = useMemo(() => (flat ? { fromDeg: windFromNow, strength: windStrength, humidity: windHumidity, temp: windTemp } : undefined), [flat, windFromNow, windStrength, windHumidity, windTemp]);
   const [variants, setVariants] = useState<{ seed: string; image: ImageData | null }[] | null>(null);
   const [preview, setPreview] = useState<ImageData | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
@@ -238,7 +238,7 @@ export function GenerateDialog() {
       preset.view
         ? null
         : { type: preset.type, template: preset.template, realism: 'easy', seed: seedNumber(seed), landFraction: land, mountains, ranges, roughness: rough, warmth, wetness, biomes, rivers: 'none', settlements: false, region: 'world', climateLat: Number(climateLat), surface: preset.surface, wind },
-    [preset, seed, land, mountains, ranges, rough, warmth, wetness, biomes, climateLat, windFromNow, windStrength, windHumidity, windTemp],
+    [preset, seed, land, mountains, ranges, rough, warmth, wetness, biomes, climateLat, wind],
   );
   useEffect(() => {
     if (!previewOptions) return;

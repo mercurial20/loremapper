@@ -68,7 +68,7 @@ export interface CursorInfo {
   lake: number | null;
 }
 
-export type DialogId = null | 'projects' | 'export' | 'generate' | 'planet' | 'shortcuts' | 'newProject' | 'share';
+export type DialogId = null | 'projects' | 'export' | 'generate' | 'planet' | 'shortcuts' | 'newProject' | 'share' | 'whatsNew';
 
 export type SaveStatus = 'saved' | 'saving' | 'pending' | 'error';
 
