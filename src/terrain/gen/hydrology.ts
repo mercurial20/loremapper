@@ -398,23 +398,56 @@ export function traceRivers(g: Grid, d: Drainage, A: Float32Array, h: Float32Arr
   const { w } = g;
   const N = w * g.h;
   // children lists
-  const head = new Int32Array(N).fill(-1);
+  const kids = new Int32Array(N).fill(-1);
   const next = new Int32Array(N).fill(-1);
   for (let n = 0; n < d.count; n++) {
     const k = d.order[n];
     const r = d.rcv[k];
     if (r >= 0) {
-      next[k] = head[r];
-      head[r] = k;
+      next[k] = kids[r];
+      kids[r] = k;
     }
   }
   const used = new Uint8Array(N);
-  // candidates: [area, start cell, junction cell or -1]
+  // (cells the drainage lists: the rest are the sea and the cells on a regional grid's rim, where
+  // the water leaves the map)
+  const listed = new Uint8Array(N);
+  for (let n = 0; n < d.count; n++) listed[d.order[n]] = 1;
+  // candidates: [area, start cell, junction cell or -1]: rivers reaching the sea, and rivers
+  // leaving the map over its edge (a region's land runs on past it)
   const cand: [number, number, number][] = [];
   for (let n = 0; n < d.count; n++) {
     const k = d.order[n];
-    if (h[k] > 0 && (d.rcv[k] < 0 || h[d.rcv[k]] <= 0) && A[k] >= minArea) cand.push([A[k], k, d.rcv[k]]);
+    const r = d.rcv[k];
+    if (h[k] > 0 && (r < 0 || h[r] <= 0 || !listed[r]) && A[k] >= minArea) cand.push([A[k], k, r]);
   }
+  // Where a river begins: where the land draining to it has grown to this (a few km² at least,
+  // and a few cells): in the upper part of its basin, its hills or its watershed, not at an
+  // arbitrary share of its mouth's water somewhere out on a plain.
+  const cellKm2 = cellAreaKm2(g, g.h >> 1);
+  const head = Math.max(6 * cellKm2, Math.min(minArea, 40));
+  // and no nearer than this to another river (several rivers springing from one point read as
+  // one spring feeding them all); cells
+  // (about 2 % of the map across: a hundred km or more on a planet, ten on a region)
+  const sep = Math.max(3, Math.min(24, Math.round(0.02 * Math.max(g.w, g.h))));
+  const near = new Uint8Array(N);
+  const stamp = (k: number) => {
+    const j0 = (k / w) | 0;
+    const i0 = k - j0 * w;
+    for (let dj = -sep; dj <= sep; dj++) {
+      const j = j0 + dj;
+      if (j < 0 || j >= g.h) continue;
+      for (let di = -sep; di <= sep; di++) {
+        if (di * di + dj * dj > sep * sep) continue;
+        let i = i0 + di;
+        if (i < 0 || i >= w) {
+          if (!g.wrap) continue;
+          i = (i + w) % w;
+        }
+        near[j * w + i] = 1;
+      }
+    }
+  };
   const rivers: River[] = [];
   const world = (k: number): [number, number] => {
     const j = (k / w) | 0;
@@ -428,17 +461,22 @@ export function traceRivers(g: Grid, d: Drainage, A: Float32Array, h: Float32Arr
     // walk upstream along the largest child, queueing big side branches
     const cells: number[] = [];
     let k = start;
-    const stop = Math.max(minArea, area * 0.015);
+    const stop = Math.max(head, area * 0.002);
     for (;;) {
       cells.push(k);
       used[k] = 1;
       let best = -1;
-      for (let c = head[k]; c >= 0; c = next[c]) if (!used[c] && (best < 0 || A[c] > A[best])) best = c;
+      for (let c = kids[k]; c >= 0; c = next[c]) if (!used[c] && (best < 0 || A[c] > A[best])) best = c;
       if (best < 0 || A[best] < stop) break;
-      for (let c = head[k]; c >= 0; c = next[c]) if (c !== best && !used[c] && A[c] >= Math.max(minArea * 2, area * 0.06)) cand.push([A[c], c, k]);
+      for (let c = kids[k]; c >= 0; c = next[c]) if (c !== best && !used[c] && A[c] >= Math.max(minArea * 2, area * 0.06)) cand.push([A[c], c, k]);
       k = best;
     }
+    // its head no nearer another river than `sep` (it starts a little lower down instead)
+    let cut = cells.length;
+    while (cut > 0 && near[cells[cut - 1]]) cut--;
+    cells.length = cut;
     if (cells.length < 4) continue;
+    for (const c of cells) stamp(c);
     cells.reverse();
     if (join >= 0) cells.push(join);
     // unwrap x so the polyline is continuous

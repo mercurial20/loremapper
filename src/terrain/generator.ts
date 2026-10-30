@@ -760,8 +760,11 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   for (let k = 0; k < N; k++) if (h[k] > 0 && flow[k] > maxFlow) maxFlow = flow[k];
   const trace = (g: Grid, d: Drainage, A: Float32Array, hh: Float32Array, maxA: number): GenRiver[] =>
     traceRivers(g, d, A, hh, p.rivers, Math.max(minRiverArea, maxA * 0.004)).map((r) => {
-      const widthKm = 2.5 + 16 * Math.sqrt(r.area / maxA);
-      return { points: r.points, widthKm, widthCells: widthKm / dyKm(mid) * midStep };
+      // as wide as it truly is (about 4.5·√Q metres; Q from its basin, 300 mm a year of runoff), but
+      // drawn as a map draws rivers on cells of km: a fine line, a little wider the more it carries
+      // (true widths, under a km, would vanish; a width scaled to the cell made 15 km wedges)
+      const widthKm = 0.0045 * Math.sqrt(0.01 * r.area);
+      return { points: r.points, widthKm, widthCells: 0.5 + 1.6 * Math.sqrt(r.area / maxA) };
     });
   let rivers: GenRiver[] = realism === 'ultra' || p.rivers <= 0 ? [] : trace(mid, drained, flow, h, maxFlow);
 
