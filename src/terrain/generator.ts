@@ -587,8 +587,21 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   for (let k = 0; k < N; k++) land[k] = s.landness[k] > t ? 1 : 0;
   // pockets of sea inside the land read as noise, not lakes: keep only real inland seas
   {
+    // Seas are told apart with the land's necks closed: a bay of the ocean behind a strait
+    // narrower than about 2·NECK_KM counts as a sea of its own (else a ring of land broken by
+    // straits leaves its whole inside as blotches of shelf "ocean")
+    const inner = layout === 'innerSea';
+    const narrowSeas = layout === 'archipelago' || layout === 'shattered' || !!p.sketch;
+    const NECK_KM = narrowSeas ? 0 : 90;
+    let closedLand = land;
+    if (NECK_KM > 0) {
+      const toLand = distanceField(mid, land, NECK_KM * 2).dist;
+      const grown = Uint8Array.from(toLand, (d) => (d <= NECK_KM ? 1 : 0));
+      const toSea = distanceField(mid, Uint8Array.from(grown, (v) => 1 - v), NECK_KM * 2).dist;
+      closedLand = Uint8Array.from(toSea, (d, k) => (land[k] || d > NECK_KM ? 1 : 0));
+    }
     const water = new Uint8Array(N);
-    for (let k = 0; k < N; k++) water[k] = land[k] ? 0 : 1;
+    for (let k = 0; k < N; k++) water[k] = closedLand[k] ? 0 : 1;
     const wc = components(mid, water);
     let biggest = 0;
     for (let c = 1; c < wc.count; c++) if (wc.area[c] > wc.area[biggest]) biggest = c;
@@ -602,26 +615,29 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
       if (c >= 0 && fromLand[k] > broad[c]) broad[c] = fromLand[k];
     }
     // and few of them: on Earth enclosed seas are about 1 % of the land (the Caspian, the Black
-    // Sea); outside the inner-sea layout one is kept at most, and only one no larger than a few per
-    // cent of the land, the rest are land
-    const inner = layout === 'innerSea';
+    // Sea); one is kept at most (an inner-sea world: its sea and one more), and outside the
+    // inner-sea layout only one no larger than a few per cent of the land; the rest are land
     let landKm2 = 0;
     for (let k = 0; k < N; k++) if (land[k]) landKm2 += cellAreaKm2(mid, (k / mid.w) | 0);
     const ranked = [...Array(wc.count).keys()]
       .filter((c) => c !== biggest && wc.area[c] >= minSea && broad[c] >= (inner ? 120 : 200) && (inner || wc.area[c] <= 0.04 * landKm2))
       .sort((a, b) => wc.area[b] - wc.area[a]);
-    const keep = new Set(ranked.slice(0, inner ? Infinity : 1));
+    const keep = new Set(ranked.slice(0, inner ? 2 : 1));
+    // the water the closing took (necks, and narrow bays all along the coasts) goes with the
+    // nearer of the seas it lies between: kept with the ocean or a kept sea, land with a dropped one
+    const dropped = new Uint8Array(N);
+    const open = new Uint8Array(N);
     for (let k = 0; k < N; k++) {
       const c = wc.label[k];
-      if (c >= 0 && c !== biggest && !keep.has(c)) land[k] = 1;
+      if (c < 0) continue;
+      if (c === biggest || keep.has(c)) open[k] = 1;
+      else dropped[k] = 1;
     }
-    // inlets of the ocean reaching deep into a continent through a narrow neck read as blotches
-    // of shallow water: sea within ~220 km of land where land holds most of the 500 km around
-    // is land too (not where narrow seas are the point: archipelagos, broken continents)
-    if (!inner && layout !== 'archipelago' && layout !== 'shattered' && !p.sketch) {
-      const lf = blurKm(Float32Array.from(land), mid, 500, 2);
-      const near = distanceField(mid, land, 300).dist;
-      for (let k = 0; k < N; k++) if (!land[k] && near[k] < 220 && lf[k] > 0.72) land[k] = 1;
+    const dDrop = distanceField(mid, dropped, NECK_KM * 3 + 1).dist;
+    const dOpen = distanceField(mid, open, NECK_KM * 3 + 1).dist;
+    for (let k = 0; k < N; k++) {
+      if (land[k]) continue;
+      if (dropped[k] || (wc.label[k] < 0 && dDrop[k] < dOpen[k])) land[k] = 1;
     }
   }
   for (let j = 0; j < mid.h; j++)
