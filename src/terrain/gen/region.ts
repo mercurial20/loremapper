@@ -429,7 +429,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   // (Tenerife, Etna, Hawaii's), the islands of an archipelago each their own cone
   if (o.layout === 'isle' || o.layout === 'archipelago') {
     const many = o.layout === 'archipelago';
-    const want = many ? 3 + Math.floor(5 * rnd()) : ranges.length ? (rnd() < 0.4 ? 1 : 0) : 1 + (rnd() < 0.5 ? 1 : 0);
+    const want = many ? 6 + Math.floor(7 * rnd()) : ranges.length ? (rnd() < 0.4 ? 1 : 0) : 1 + (rnd() < 0.5 ? 1 : 0);
     const placed: { x: number; y: number }[] = [];
     for (let v = 0; v < want; v++) {
       // of some land cells tried, the one farthest from the coast (and from cones already there)
@@ -559,7 +559,13 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
       cone[k] = cones.length ? coneAt(x, y) : 0;
       // coastal plains rise gently inland (half a metre to a metre a km); islands rise steeply
       // from their shores (an island is the top of a high block, or a volcano's)
-      const rise = isles ? 3 + 8 * Math.min(coastKm[k], 50) * (1 + 0.35 * n2(x, y, 25, 2, 47.7)) : 3 + 0.7 * Math.min(coastKm[k], 350);
+      // (the islands of an archipelago are the tops of drowned hills and blocks: small, but steep,
+      // hundreds of metres high a few km in, as in the Aegean or the Philippines)
+      const rise = o.layout === 'archipelago'
+        ? 3 + 28 * Math.min(coastKm[k], 20) * (1 + 0.45 * n2(x, y, 12, 2, 47.7))
+        : isles
+          ? 3 + 8 * Math.min(coastKm[k], 50) * (1 + 0.35 * n2(x, y, 25, 2, 47.7))
+          : 3 + 0.7 * Math.min(coastKm[k], 350);
       // (steep ground is uneven in proportion: water on it branches instead of running straight down)
       const wobble = (isles ? 0.08 * rise : 0) + 0.08 * cone[k];
       let v = rise + pl * plateauH + swell + footAmp * foot[k] * (1 - belt[k]) + cone[k] + wobble * n2(x, y, 3, 3, 49.3);
