@@ -232,6 +232,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   // Antilles): where a plate sinks under another, a curved chain of volcanic islands stands
   // offshore. Rarer than collisions, and arcs belong to seas: more of them on island maps.
   const rift = new Float32Array(N);
+  /** The rift's deepest basins (its lakes). */
   const riftShoulder = new Float32Array(N);
   const cones: { x: number; y: number; r: number; hM: number }[] = [];
   {
@@ -241,7 +242,8 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
       const cx = (0.25 + 0.5 * rnd()) * g.W * o.cellKm;
       const cy = (0.25 + 0.5 * rnd()) * g.H * o.cellKm;
       const ang = rnd() * Math.PI;
-      const half = 15 + 25 * rnd();
+      // a graben 20–60 km wide (the Rhine graben 35 km, the Baikal rift 50)
+      const half = 10 + 20 * rnd();
       for (let j = 0; j < h; j++)
         for (let i = 0; i < w; i++) {
           const dx = xKm(i) - cx;
@@ -251,14 +253,18 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
           const off = -dx * Math.sin(ang) + dy * Math.cos(ang) + Math.min(0.06 * mapKm, 40) * n2(along, b * 31, 320, 2, 9.4);
           // the trough, fading out at its ends (rifts open from a point)
           const len = 0.45 * mapKm;
-          // (in segments, each a little off the last: a rift is a chain of basins, not one trench)
-          const seg = smoothstep(-0.25, 0.15, n2(along, b * 17, 90, 2, 9.9));
+          // (in segments, each a little off the last: a rift is a chain of basins, not one trench;
+          // each basin narrowing to its ends)
+          const seg = smoothstep(-0.3, 0.2, n2(along, b * 17, 120, 2, 9.9));
           const ends = 1 - smoothstep(0.6 * len, len, Math.abs(along));
-          // (each basin narrowing to its ends: lenses, not rectangles)
-          const v = Math.exp(-((off / (half * (0.25 + 0.75 * seg))) ** 2)) * ends * seg;
+          const step = 0.25 * half * n2(along, b * 29, 60, 1, 13.9);
+          // a graben: a level floor between steep fault scarps, not a smooth dip; its walls
+          // a little ragged
+          const e = Math.abs(off + step) / (half * (0.35 + 0.65 * seg)) + 0.08 * n2(xKm(i), yKm(j), 6, 2, 19.7);
+          const v = (1 - smoothstep(0.75, 1.0, e)) * ends * seg;
           rift[j * w + i] = Math.max(rift[j * w + i], v);
-          // its shoulders stand a little above the land beside them
-          riftShoulder[j * w + i] = Math.max(riftShoulder[j * w + i], Math.exp(-(((Math.abs(off) - 1.7 * half) / (0.7 * half)) ** 2)) * ends);
+          // its deepest basins, where its lakes lie (Baikal, Tanganyika): long and narrow
+          riftShoulder[j * w + i] = Math.max(riftShoulder[j * w + i], (1 - smoothstep(0.25, 0.5, e)) * smoothstep(0.6, 0.95, seg) * ends);
         }
     }
     for (let b = 0; b < nArc; b++) {
@@ -288,7 +294,6 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
           landness[k] = Math.max(landness[k], 2 * Math.exp(-d * d) - 0.6 + 0.35 * n2(xKm(i), yKm(j), 6, 3, 13.3));
         }
       }
-    for (let k = 0; k < N; k++) landness[k] += 0.15 * riftShoulder[k] - 0.55 * rift[k];
   }
 
   const t = fixedShore ? 0 : thresholdForFraction(landness, g, o.landFraction);
@@ -414,6 +419,13 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
     for (let k = 0; k < N; k++) landness[k] += 0.3 * (1 - smoothstep(0.6, 3, crestD[k] / crestHalf[k]));
     const t2 = fixedShore ? 0.15 : thresholdForFraction(landness, g, Math.min(0.9, o.landFraction * 1.08));
     for (let k = 0; k < N; k++) land[k] = landness[k] > t2 ? 1 : 0;
+  }
+  // a rift dies out against a mountain belt (it does not cut through one): its lakes lie in its
+  // deepest basins away from the belts
+  for (let k = 0; k < N; k++) {
+    const away = 1 - smoothstep(0.05, 0.4, foot[k]);
+    rift[k] *= away;
+    if (land[k] && riftShoulder[k] * away > 0.5) land[k] = 0;
   }
 
   const isCoast = new Uint8Array(N);
@@ -576,8 +588,8 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
         v += craterRim * rim * (0.75 + 0.5 * smoothstep(-0.4, 0.4, n2(x, y, 0.3 * craterR, 3, 23.3))) * (1 + 0.25 * n2(x, y, 6, 3, 25.9));
         if (d < 0.14) v += craterRim * 0.8 * (1 - d / 0.14) ** 1.5;
       }
-      // a rift's floor is low and level
-      v = Math.max(2, v * (1 - 0.6 * rift[k]));
+      // a rift's floor is low and level: the land's own swells and hills dropped away
+      v = Math.max(2, v * (1 - 0.55 * rift[k]) - (pl * plateauH + swell) * 0.8 * rift[k]);
       surf[k] = v + rangeRel[k];
       // (the ranges have their own valleys; the land rising toward them and the volcanoes are cut deeper)
       cutM[k] = (hillAmp * hills + 0.6 * footAmp * foot[k] + 0.5 * cone[k] + (isles ? 0.4 * rise : 0)) * (1 - belt[k]);
@@ -728,7 +740,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   // (far from the coast its distance is smoothed: the field's small errors there, steepened by the
   // slope down to the deep sea, would draw steps across the sea floor)
   const seaKm = Float32Array.from(coastKm);
-  blurGrid(seaKm, w, h, Math.max(1, Math.round(30 / kmCell)));
+  blurGrid(seaKm, w, h, Math.max(1, Math.round(Math.max(30, 0.04 * mapKm) / kmCell)));
   // an inland sea is shallower than the ocean (the Black Sea 2.2 km, the Caspian 1 km)
   const seaFloor = o.layout === 'innerSea' || o.layout === 'crater' ? Math.min(o.maxDepth, 2200) : o.maxDepth;
   for (let k = 0; k < N; k++) {
