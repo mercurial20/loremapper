@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { seedFromString } from '../../core/math';
 import { surfaceAreaKm2 } from '../../core/planet';
 import { formatArea, formatHeight } from '../../core/units';
-import { generateWorld, genParams, PreviewWorker, REGION_KM, type GenerateOptions, type RiverAmount } from '../../editor/generate';
+import { generateWorld, genParams, PreviewWorker, SMALL_MAP_KM, type GenerateOptions, type RiverAmount } from '../../editor/generate';
 import type { GenType, Realism, Surface, Template } from '../../terrain/generator';
 import { defaultWindFrom } from '../../terrain/gen/climate';
 import { useDoc } from '../../store/docStore';
@@ -163,13 +163,15 @@ export function GenerateDialog() {
   const units = useEditor((s) => s.units);
   const planet = useDoc((s) => s.meta?.planet);
   // a small flat map (a region at its true size)
-  const smallMap = planet?.mapType === 'flat' && Math.max(planet.gridWidth, planet.gridHeight) * (planet.cellKm ?? 1) < REGION_KM;
+  const smallMap = planet?.mapType === 'flat' && Math.max(planet.gridWidth, planet.gridHeight) * (planet.cellKm ?? 1) < SMALL_MAP_KM;
   const [presetId, setPresetId] = useState(() => (smallMap ? 'part' : 'continents'));
   const preset = PRESETS.find((p) => p.id === presetId)!;
   const [realism, setRealism] = useState<Realism>('medium');
   const [seed, setSeed] = useState(randomSeed);
   // (the land share of the preset chosen at first, as when a preset is picked)
-  const [land, setLand] = useState(() => PRESETS.find((p) => p.id === presetId)?.land ?? planet?.landFraction ?? 0.29);
+  // (a big flat map's land as on Earth, 29 %; a planet's own setting otherwise)
+  const defaultLand = planet?.mapType === 'flat' && !smallMap ? 0.3 : (planet?.landFraction ?? 0.29);
+  const [land, setLand] = useState(() => PRESETS.find((p) => p.id === presetId)?.land ?? defaultLand);
   // (a region's highest peaks as an average range's, a few km; a whole world's, its highest range's)
   const [mountains, setMountains] = useState(smallMap ? 0.4 : 0.75);
   const [ranges, setRanges] = useState(0.5);
@@ -206,7 +208,7 @@ export function GenerateDialog() {
     setPresetId(p.id);
     // every visit to a waterless planet is a new one
     if (p.surface) setSeed(randomSeed());
-    setLand(p.land ?? planet?.landFraction ?? 0.29);
+    setLand(p.land ?? defaultLand);
     setVariants(null);
   };
 
@@ -279,7 +281,7 @@ export function GenerateDialog() {
   };
   const mapKm2 = planet ? surfaceAreaKm2(planet) : 510e6;
   // a small flat map is a region: its own kinds of land (no continents fit in it)
-  const small = flat && !!planet && Math.max(planet.gridWidth, planet.gridHeight) * (planet.cellKm ?? 1) < REGION_KM;
+  const small = flat && !!planet && Math.max(planet.gridWidth, planet.gridHeight) * (planet.cellKm ?? 1) < SMALL_MAP_KM;
   const world = PRESETS.filter((p) => !p.view && !(flat && p.planetOnly) && !(!flat && p.flatOnly) && (p.size === undefined || (p.size === 'small') === small) && !(small && !p.size && !p.surface));
   const aspect = flat && planet ? `${planet.gridWidth} / ${planet.gridHeight}` : '2 / 1';
   const inView = PRESETS.filter((p) => p.view);

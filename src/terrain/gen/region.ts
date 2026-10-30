@@ -1,7 +1,7 @@
 import { clamp, mulberry32, smoothstep } from '../../core/math';
 import { Simplex3, subSeed } from '../../core/noise3';
 import { rangeRelief, type RangeJobRange } from '../rangeUplift';
-import { distanceField, thresholdForFraction, type Grid } from './grid';
+import { components, distanceField, thresholdForFraction, type Grid } from './grid';
 import { accumulate, drain, steepest } from './hydrology';
 
 /*
@@ -112,6 +112,11 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   const N = w * h;
   const kmCell = o.cellKm * g.step;
   const mapKm = Math.max(g.W, g.H) * o.cellKm;
+  // The size of the land's forms, km: the map's own size up to 3000 km (a region's continent,
+  // its bays and islands scale with it), no more beyond: a bigger map shows more continents, each
+  // of its true size, not one continent blown up.
+  const fk = Math.min(mapKm, 3000);
+  const big = mapKm >= 3000;
   const rnd = mulberry32(subSeed(o.seed, 400));
   const noise = new Simplex3(subSeed(o.seed, 401));
   const n2 = (xKm: number, yKm: number, lambdaKm: number, octaves: number, z: number, gain = 0.5) => noise.fbm(xKm / lambdaKm, yKm / lambdaKm, z, 1, octaves, gain);
@@ -123,7 +128,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   // ---- land and sea: fields as large as the region, a fractal coast down to the cell
   o.progress?.('Shaping coasts', 0);
   const landness = new Float32Array(N);
-  const coastOct = Math.max(3, Math.round(Math.log2((0.18 * mapKm) / (2 * kmCell))));
+  const coastOct = Math.max(3, Math.round(Math.log2((0.18 * fk) / (2 * kmCell))));
   // the middle of the land, a little off the map's middle
   // (an island stays nearer the middle: off it, the sea round the map would cut its side straight)
   const off = o.layout === 'isle' || o.layout === 'mainland' ? 0.07 : 0.16;
@@ -142,44 +147,161 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   const craterD = (x: number, y: number) => Math.hypot(x - craterX, y - craterY) / craterR + 0.07 * n2(x, y, 0.35 * craterR, 3, 24.1);
   // inland and crater maps are land wherever their own shape says (no share of sea to meet)
   const fixedShore = o.layout === 'inland' || o.layout === 'crater';
+  // ---- big maps (over 3000 km): the land placed as bodies of their true size: continents of
+  // their own (or a supercontinent split by rifts, or groups of islands), set apart across the map
+  type Body = { x: number; y: number; r: number; e: number; a: number; group: number };
+  const bodies: Body[] = [];
+  const splits: { x: number; y: number; a: number; w: number; len: number }[] = [];
+  const mains: { x: number; y: number; r: number }[] = [];
+  const bigLayout = big && (o.layout === 'continents' || o.layout === 'shattered' || o.layout === 'archipelago');
+  if (bigLayout) {
+    const Wkm = g.W * o.cellKm;
+    const Hkm = g.H * o.cellKm;
+    const arch = o.layout === 'archipelago';
+    const n = o.layout === 'shattered' ? 1 : arch ? 4 + Math.floor(4 * rnd()) : 3 + Math.floor(3 * rnd()) + (mapKm > 7000 ? 1 : 0);
+    // their area: the land asked for (groups of islands hold as much sea as land)
+    const area = o.landFraction * Wkm * Hkm * (arch ? 2.4 : 1.15);
+    const wts = Array.from({ length: n }, () => 0.35 + rnd());
+    const sum = wts.reduce((a, b) => a + b, 0);
+    for (let b = 0; b < n; b++) {
+      const rb = Math.sqrt((area * wts[b]) / sum / Math.PI);
+      // of some places tried, the one farthest from the landmasses already set (by their sizes):
+      // oceans between them, not one land of touching blobs
+      let best = { x: Wkm / 2, y: Hkm / 2, s: -Infinity };
+      for (let t = 0; t < 60; t++) {
+        const x = (0.12 + 0.76 * rnd()) * Wkm;
+        const y = (0.12 + 0.76 * rnd()) * Hkm;
+        // (and clear of the map's edges, where the frame of sea would cut it straight)
+        let sc = Math.min(x, Wkm - x, y, Hkm - y) / (1.5 * rb);
+        for (const q of mains) sc = Math.min(sc, Math.hypot(q.x - x, q.y - y) / (q.r + rb));
+        if (sc > best.s) best = { x, y, s: sc };
+      }
+      mains.push({ x: best.x, y: best.y, r: rb });
+      // a continent of a main body and two or three lobes off it: its outline its own, with
+      // peninsulas and gulfs, not an ellipse
+      const lobes = arch ? 1 : 3 + Math.floor(3 * rnd());
+      for (let l = 0; l < lobes; l++) {
+        const main = l === 0;
+        const rr = main ? rb * (arch ? 1 : 0.72) : rb * (0.22 + 0.33 * rnd());
+        const ang = rnd() * 2 * Math.PI;
+        const off = main ? 0 : rb * (0.45 + 0.5 * rnd());
+        bodies.push({ x: best.x + Math.cos(ang) * off, y: best.y + Math.sin(ang) * off, r: rr, e: 0.45 + 0.55 * rnd(), a: rnd() * Math.PI, group: b });
+      }
+    }
+    if (o.layout === 'shattered') {
+      // narrow seas along rifts across the land, 60–200 km wide, nearly straight, crossing it
+      // here and there (not all through one point)
+      const m = 3 + Math.floor(3 * rnd());
+      const q = mains[0];
+      for (let b = 0; b < m; b++) {
+        const a = rnd() * Math.PI;
+        const c = (rnd() - 0.5) * 1.2 * q.r;
+        splits.push({ x: q.x - Math.sin(a) * c, y: q.y + Math.cos(a) * c, a, w: 30 + 70 * rnd(), len: (0.35 + 0.45 * rnd()) * fk });
+      }
+    }
+  }
+  /**
+   * 1 in the middle of the nearest body, 0 at its edge (its outline wandering), below beyond; and
+   * how near another landmass comes (the second highest of the landmasses' values), where a strait
+   * keeps them apart.
+   */
+  const groupV = new Float32Array(16);
+  let second = -1;
+  let topV = -1;
+  const bodyAt = (x: number, y: number) => {
+    let v = -3;
+    groupV.fill(-3);
+    for (const [gi, m] of mains.entries()) {
+      // (a landmass far from here adds nothing: skipped, its noise not worked out)
+      if (Math.hypot(x - m.x, y - m.y) > 2.7 * m.r) continue;
+      // its outline bent by a few hundred km: peninsulas and gulfs, not a round blob (one bend for
+      // all its lobes)
+      const wx = x + 0.45 * m.r * n2(x, y, 0.55 * m.r, 3, 70.1 + gi) + 0.15 * m.r * n2(x, y, 0.17 * m.r, 2, 74.1 + gi);
+      const wy = y + 0.45 * m.r * n2(x, y, 0.55 * m.r, 3, 72.3 + gi) + 0.15 * m.r * n2(x, y, 0.17 * m.r, 2, 76.7 + gi);
+      for (const q of bodies) {
+        if (q.group !== gi) continue;
+        const dx = wx - q.x;
+        const dy = wy - q.y;
+        const along = dx * Math.cos(q.a) + dy * Math.sin(q.a);
+        const across = (-dx * Math.sin(q.a) + dy * Math.cos(q.a)) / q.e;
+        const d = Math.hypot(along, across) / (q.r / Math.sqrt(q.e));
+        const b = 1 - d * d;
+        v = Math.max(v, b);
+        if (gi < 16 && b > groupV[gi]) groupV[gi] = b;
+      }
+    }
+    let top = -3;
+    second = -3;
+    for (const gv of groupV)
+      if (gv > top) {
+        second = top;
+        top = gv;
+      } else if (gv > second) second = gv;
+    topV = top;
+    return v;
+  };
   for (let j = 0; j < h; j++)
     for (let i = 0; i < w; i++) {
       const x = xKm(i);
       const y = yKm(j);
       const k = j * w + i;
-      const coast = 0.32 * n2(x, y, 0.18 * mapKm, coastOct, 2.9, 0.6);
+      const coast = 0.32 * n2(x, y, 0.18 * fk, coastOct, 2.9, 0.6);
       // where on the map: u, v across it (0 … 1), r from its middle
       const u = x / (g.W * o.cellKm);
       const v = y / (g.H * o.cellKm);
       // (a landmass's outline wanders: bays and peninsulas hundreds of km across, not a disc)
-      const wu = u + 0.12 * n2(x, y, 0.4 * mapKm, 3, 11.1);
-      const wv = v + 0.12 * n2(x, y, 0.4 * mapKm, 3, 12.7);
+      const wu = u + 0.12 * n2(x, y, 0.4 * fk, 3, 11.1);
+      const wv = v + 0.12 * n2(x, y, 0.4 * fk, 3, 12.7);
       const r0 = Math.hypot(wu - cu, wv - cv) / 0.5;
       // (an island's outline has lobes and bays: capes and gulfs tens of km deep)
-      const r = o.layout === 'isle' || o.layout === 'mainland' ? r0 * (1 + 0.32 * n2(x, y, 0.22 * mapKm, 2, 33.3)) : r0;
+      const r = o.layout === 'isle' || o.layout === 'mainland' ? r0 * (1 + 0.32 * n2(x, y, 0.22 * fk, 2, 33.3)) : r0;
       // the sea round the map's edges: a frame between a circle and the map's square (1 at the
       // middle of each edge), its width wandering, so the land's outline is its own and not the
       // map's square with its sides and corners
       const se = ((Math.abs(u - 0.5) / 0.5) ** 3 + (Math.abs(v - 0.5) / 0.5) ** 3) ** (1 / 3);
-      const out = se - 0.88 + 0.1 * n2(x, y, 0.25 * mapKm, 3, 15.5);
-      const frame = smoothstep(-0.15, 0.05, out);
+      const out = se - 0.88 + 0.1 * n2(x, y, 0.25 * fk, 3, 15.5);
+      // (a big map's continents are set clear of it: its edge softer and more wandering)
+      const frame = bigLayout ? smoothstep(-0.3, 0.08, out + 0.08 * n2(x, y, 450, 2, 15.9)) : smoothstep(-0.15, 0.05, out);
       // which way the land lies, for layouts open to one side: 0 … 1 across the map
       const toward = (u - 0.5) * dirX + (v - 0.5) * dirY + 0.5;
       let L: number;
-      switch (o.layout) {
+      if (bigLayout) {
+        const body = bodyAt(x, y);
+        if (o.layout === 'archipelago') {
+          // islands of tens to a hundred or two km in each group, sea between them
+          L = 0.55 * Math.max(-0.6, body) + 0.8 * n2(x, y, 180, 4, 6.2, 0.55) + 0.4 * coast - 0.45 - 1.6 * frame;
+        } else {
+          // (its coast as fractal as a region's: bays and capes at every scale down to the cell)
+          // (falling on past the body's edge: the ocean between continents stays ocean, however the
+          // coast's noise wanders)
+          L = 1.1 * Math.max(-2.5, body) + 0.3 * n2(x, y, 700, 3, 1.7) + 0.3 * n2(x, y, 300, 3, 3.3) + 1.6 * coast - 1.4 * frame;
+          // a sea between any two continents that come near each other: along the line where they
+          // are equally near, hundreds of km wide (not a strait closing as the coast is drawn)
+          if (o.layout === 'continents' && second > -2.5) L -= 2 * (1 - smoothstep(0.2, 1.7, topV - second)) * smoothstep(-2.5, -1.2, second);
+          for (const sp of splits) {
+            const dx = x - sp.x;
+            const dy = y - sp.y;
+            const along = dx * Math.cos(sp.a) + dy * Math.sin(sp.a);
+            // (wandering, wider and narrower along its length, dying out at its ends)
+            const off = Math.abs(-dx * Math.sin(sp.a) + dy * Math.cos(sp.a) + 260 * n2(along, sp.w, 1100, 3, 77.7));
+            const wd = sp.w * (0.45 + 0.9 * smoothstep(-0.5, 0.5, n2(along, sp.w, 400, 2, 79.9)));
+            L -= 2.2 * (1 - smoothstep(0.5 * wd, wd, off)) * (1 - smoothstep(0.6 * sp.len, sp.len, Math.abs(along)));
+          }
+        }
+      } else switch (o.layout) {
         case 'part':
           // a region of a bigger land: land runs off the map on most sides, the sea on one
-          L = 0.55 * n2(x, y, 0.8 * mapKm, 2, 0.3) + 0.25 * n2(x, y, 0.35 * mapKm, 2, 1.7) + coast + 0.9 * smoothstep(0, 0.45, toward);
+          L = 0.55 * n2(x, y, 0.8 * fk, 2, 0.3) + 0.25 * n2(x, y, 0.35 * fk, 2, 1.7) + coast + 0.9 * smoothstep(0, 0.45, toward);
           break;
         case 'coast':
           // land on one side, sea on the other, the coast winding between
-          L = 2.2 * (toward - 0.5) + 0.35 * n2(x, y, 0.35 * mapKm, 3, 1.7) + coast;
+          L = 2.2 * (toward - 0.5) + 0.35 * n2(x, y, 0.35 * fk, 3, 1.7) + coast;
           break;
         case 'peninsula': {
           // a tongue of land from one side of the map out into the sea, narrowing to its tip
-          const across = (u - 0.5) * -dirY + (v - 0.5) * dirX + 0.07 * n2(x, y, 0.3 * mapKm, 2, 19.3);
+          const across = (u - 0.5) * -dirY + (v - 0.5) * dirX + 0.07 * n2(x, y, 0.3 * fk, 2, 19.3);
           const half = 0.07 + 0.2 * smoothstep(0.2, 0.95, toward);
-          L = 1 - Math.abs(across) / half + 0.25 * n2(x, y, 0.3 * mapKm, 2, 1.7) + coast - 2.5 * (1 - smoothstep(0.12, 0.32, toward));
+          L = 1 - Math.abs(across) / half + 0.25 * n2(x, y, 0.3 * fk, 2, 1.7) + coast - 2.5 * (1 - smoothstep(0.12, 0.32, toward));
           break;
         }
         case 'inland':
@@ -188,7 +310,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
           break;
         case 'isle':
           // one island
-          L = 1.2 * (1 - Math.min(1.6, r / 0.7) ** 2) + 0.3 * n2(x, y, 0.3 * mapKm, 3, 1.7) + coast - 2 * frame;
+          L = 1.2 * (1 - Math.min(1.6, r / 0.7) ** 2) + 0.3 * n2(x, y, 0.3 * fk, 3, 1.7) + coast - 2 * frame;
           break;
         case 'crater':
           // a land struck by a meteorite: the crater a lake or a bay of the sea, its rim standing
@@ -196,32 +318,38 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
           break;
         case 'pangaea':
           // one landmass filling most of the map
-          L = 1.1 * (1 - r * r) + 0.3 * n2(x, y, 0.45 * mapKm, 2, 1.7) + coast - 1.6 * frame;
+          L = 1.1 * (1 - r * r) + 0.3 * n2(x, y, 0.45 * fk, 2, 1.7) + coast - 1.6 * frame;
           break;
         case 'mainland':
           // one large landmass and island chains around it
-          L = 1.2 * (1 - Math.min(1.5, r / 0.65) ** 2) + 0.25 * n2(x, y, 0.4 * mapKm, 2, 1.7) + coast + 1.6 * smoothstep(0.7, 0.85, r) * smoothstep(0.15, 0.5, n2(x, y, 0.06 * mapKm, 3, 4.4)) - 1.6 * frame;
+          // (on a big map its islands in groups of their own sizes, not a ring of beads)
+          L = big
+            ? 1.2 * (1 - Math.min(1.5, r / 0.65) ** 2) + 0.25 * n2(x, y, 0.4 * fk, 2, 1.7) + 1.6 * coast + 1.8 * smoothstep(0.62, 0.9, r) * smoothstep(0.1, 0.45, n2(x, y, 600, 2, 4.9)) * smoothstep(0.05, 0.5, n2(x, y, 90, 4, 4.4, 0.55)) - 1.6 * frame
+            : 1.2 * (1 - Math.min(1.5, r / 0.65) ** 2) + 0.25 * n2(x, y, 0.4 * fk, 2, 1.7) + coast + 1.6 * smoothstep(0.7, 0.85, r) * smoothstep(0.15, 0.5, n2(x, y, 0.06 * fk, 3, 4.4)) - 1.6 * frame;
           break;
         case 'archipelago':
           // many islands, none large
-          L = 0.35 * n2(x, y, 0.5 * mapKm, 2, 0.3) + 0.6 * n2(x, y, 0.09 * mapKm, 4, 6.2, 0.55) + 0.5 * coast - 1.6 * frame;
+          L = 0.35 * n2(x, y, 0.5 * fk, 2, 0.3) + 0.6 * n2(x, y, 0.09 * fk, 4, 6.2, 0.55) + 0.5 * coast - 1.6 * frame;
           break;
         case 'innerSea':
-          // lands all round a sea in the middle, running on past the edges
-          L = 0.55 * smoothstep(0.35, 0.8, r) - 0.7 * (1 - smoothstep(0.15, 0.55, r)) + 0.3 * n2(x, y, 0.35 * mapKm, 2, 1.7) + coast;
+          // lands all round a sea in the middle, running on past the edges (on a big map: a broad
+          // ring of land of its own size, the noise not breaking it into blotches)
+          L = big
+            ? 1.1 * (1 - ((r - 0.7) / 0.34) ** 2) + 0.3 * n2(x, y, 700, 3, 1.7) + 1.6 * coast
+            : 0.55 * smoothstep(0.35, 0.8, r) - 0.7 * (1 - smoothstep(0.15, 0.55, r)) + 0.3 * n2(x, y, 0.35 * fk, 2, 1.7) + coast;
           break;
         case 'shattered':
           // one land broken apart by narrow seas along rifts
-          L = 1.0 * (1 - r * r) + 0.25 * n2(x, y, 0.45 * mapKm, 2, 1.7) + coast - 1.1 * (1 - smoothstep(0.02, 0.07, Math.abs(n2(x, y, 0.3 * mapKm, 2, 8.8)))) - 1.6 * frame;
+          L = 1.0 * (1 - r * r) + 0.25 * n2(x, y, 0.45 * fk, 2, 1.7) + coast - 1.1 * (1 - smoothstep(0.02, 0.07, Math.abs(n2(x, y, 0.3 * fk, 2, 8.8)))) - 1.6 * frame;
           break;
         default:
           // several landmasses, all on the map
-          L = 0.6 * n2(x, y, 0.55 * mapKm, 2, 0.3) + 0.2 * n2(x, y, 0.3 * mapKm, 2, 1.7) + coast - 1.4 * frame;
+          L = 0.6 * n2(x, y, 0.55 * fk, 2, 0.3) + 0.2 * n2(x, y, 0.3 * fk, 2, 1.7) + coast - 1.4 * frame;
       }
       if (o.layout === 'crater') {
         // the crater: its floor flooded, its rim a ring of hills, a peak in its middle
         const d = craterD(x, y);
-        L = d < 0.82 + 0.04 * n2(x, y, 0.1 * mapKm, 2, 21.1) ? -1 : 1;
+        L = d < 0.82 + 0.04 * n2(x, y, 0.1 * fk, 2, 21.1) ? -1 : 1;
         if (d < 0.12) L = 1;
       }
       landness[k] = L;
@@ -236,7 +364,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   const riftShoulder = new Float32Array(N);
   const cones: { x: number; y: number; r: number; hM: number }[] = [];
   {
-    const nRift = rnd() < (0.15 + 0.1 * (mapKm / 1000)) * style.rifts ? 1 : 0;
+    const nRift = rnd() < (0.15 + 0.1 * (fk / 1000)) * style.rifts ? (big && rnd() < 0.4 ? 2 : 1) : 0;
     const nArc = rnd() < 0.5 * style.arcs + 0.4 * Math.max(0, style.arcs - 0.6) ? (style.arcs >= 1 && rnd() < 0.5 ? 2 : 1) : 0;
     for (let b = 0; b < nRift; b++) {
       const cx = (0.25 + 0.5 * rnd()) * g.W * o.cellKm;
@@ -250,9 +378,9 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
           const dy = yKm(j) - cy;
           const along = dx * Math.cos(ang) + dy * Math.sin(ang);
           // (rifts are nearly straight, bending gently over hundreds of km)
-          const off = -dx * Math.sin(ang) + dy * Math.cos(ang) + Math.min(0.06 * mapKm, 40) * n2(along, b * 31, 320, 2, 9.4);
+          const off = -dx * Math.sin(ang) + dy * Math.cos(ang) + Math.min(0.06 * fk, 40) * n2(along, b * 31, 320, 2, 9.4);
           // the trough, fading out at its ends (rifts open from a point)
-          const len = 0.45 * mapKm;
+          const len = 0.45 * fk;
           // (in segments, each a little off the last: a rift is a chain of basins, not one trench;
           // each basin narrowing to its ends)
           const seg = smoothstep(-0.3, 0.2, n2(along, b * 17, 120, 2, 9.9));
@@ -269,17 +397,20 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
     }
     for (let b = 0; b < nArc; b++) {
       // an arc a few hundred km across, its chain of volcanoes 30–80 km apart
-      const R = (0.35 + 0.4 * rnd()) * mapKm;
+      const R = (0.35 + 0.4 * rnd()) * fk;
       const ccx = (rnd() - 0.5) * g.W * o.cellKm + (rnd() < 0.5 ? -0.3 : 1.3) * g.W * o.cellKm * 0.5;
       const ccy = (0.3 + 0.4 * rnd()) * g.H * o.cellKm;
       const a0 = rnd() * Math.PI * 2;
-      for (let a = 0; a < Math.PI * 1.2; a += (22 + 30 * rnd()) / R) {
+      // (on a big map an arc is seen whole: its islands tens of km across, 60–150 km apart, as the
+      // Kurils or the Lesser Antilles, not a ribbon of islets)
+      const gap = big ? 60 + 90 * rnd() : 0;
+      for (let a = 0; a < Math.PI * 1.2; a += (big ? 60 + 90 * rnd() : 22 + 30 * rnd()) / R) {
         const x = ccx + Math.cos(a0 + a) * R;
         const y = ccy + Math.sin(a0 + a) * R;
         if (x < 0 || y < 0 || x > g.W * o.cellKm || y > g.H * o.cellKm) continue;
         // (a little off the arc's line: chains are not ruled)
-        const j2 = (rnd() - 0.5) * 16;
-        cones.push({ x: x + j2, y: y - j2, r: 3 + 5 * rnd(), hM: 500 + 2000 * rnd() * (0.4 + 0.6 * mountains) });
+        const j2 = (rnd() - 0.5) * (big ? 0.5 * gap : 16);
+        cones.push({ x: x + j2, y: y - j2, r: big ? 6 + 10 * rnd() : 3 + 5 * rnd(), hM: 500 + 2000 * rnd() * (0.4 + 0.6 * mountains) });
       }
     }
     for (const c of cones)
@@ -308,14 +439,18 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   // a belt is rarer, not narrower. Their height is the other setting's.
   const amount = clamp(o.ranges, 0, 1);
   const cover = 0.5 * amount ** 1.1;
-  const expected = amount < 0.03 || mountains < 0.05 ? 0 : (cover * style.belts * mapKm) / (1.4 * 125);
-  let count = Math.min(4, Math.floor(expected) + (rnd() < expected % 1 ? 1 : 0));
+  // (on a region a belt crosses the whole map; on a big map it is about 0.95·fk long and as many
+  // are raised as cover the share of its land)
+  const beltLen = 0.95 * fk;
+  const expected =
+    amount < 0.03 || mountains < 0.05 ? 0 : big ? (cover * style.belts * o.landFraction * mapKm * mapKm) / (1.4 * 125 * beltLen) : (cover * style.belts * mapKm) / (1.4 * 125);
+  let count = Math.min(big ? Math.round(mapKm / 800) : 4, Math.floor(expected) + (rnd() < expected % 1 ? 1 : 0));
   // a piece of a continent has its range whenever there are ranges at all (it is why one draws
   // such a map); its width then gives the share of the land asked for
   if (!count && amount >= 0.2 && mountains >= 0.05 && style.belts >= 0.8) count = 1;
   // an island: half of them have a massif (Corsica, Kyushu), the rest a volcano or two
   if (!count && amount >= 0.2 && mountains >= 0.05 && o.layout === 'isle' && rnd() < 0.5) count = 1;
-  const beltWidth = count ? clamp((cover * style.belts * mapKm) / (1.4 * count), 40, 200) : 0;
+  const beltWidth = !count ? 0 : big ? clamp((cover * style.belts * o.landFraction * mapKm * mapKm) / (1.4 * count * beltLen), 40, 200) : clamp((cover * style.belts * mapKm) / (1.4 * count), 40, 200);
   // where the land is (belts rise where continents collide: across land, not along coasts)
   const landAt = (mx: number, my: number) => {
     const i = Math.floor((mx - g.x0) / g.step);
@@ -335,7 +470,8 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
       const ca = rnd() * Math.PI;
       let on = 0;
       let all = 0;
-      for (let s2 = -mapKm; s2 <= mapKm; s2 += mapKm / 40) {
+      const reach = big ? beltLen / 2 : mapKm;
+      for (let s2 = -reach; s2 <= reach; s2 += reach / 40) {
         const mx = (cx + Math.cos(ca) * s2) / o.cellKm;
         const my = (cy + Math.sin(ca) * s2) / o.cellKm;
         if (mx < 0 || my < 0 || mx >= g.W || my >= g.H) continue;
@@ -361,8 +497,8 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
     const dx = Math.cos(ang);
     const dy = Math.sin(ang);
     const width = Math.min(0.4 * mapKm, clamp(beltWidth * (0.75 + 0.5 * rnd()) * (isleLike ? 1.25 : 1), 40, 220));
-    const bend = 0.08 * mapKm;
-    const L = isleLike ? (0.16 + 0.08 * rnd()) * mapKm : 1.6 * mapKm;
+    const bend = 0.08 * fk;
+    const L = isleLike ? (0.16 + 0.08 * rnd()) * mapKm : big ? (0.35 + 0.25 * rnd()) * fk : 1.6 * mapKm;
     const pts: [number, number][] = [];
     for (let s = -L; s <= L; s += Math.max(2 * o.cellKm, width / 4)) {
       const off = bend * noise.fbm(s / 350, b * 7.3, 3.1, 1, 3);
@@ -416,7 +552,9 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   }
   // the belts stand on land: the land widens a little around them (its coast as fractal as any)
   if (ranges.length) {
-    for (let k = 0; k < N; k++) landness[k] += 0.3 * (1 - smoothstep(0.6, 3, crestD[k] / crestHalf[k]));
+    // (on a big map only where there is land already: a range does not bridge the strait between
+    // two continents)
+    for (let k = 0; k < N; k++) landness[k] += 0.3 * (1 - smoothstep(0.6, 3, crestD[k] / crestHalf[k])) * (big ? smoothstep(t - 0.2, t + 0.1, landness[k]) : 1);
     const t2 = fixedShore ? 0.15 : thresholdForFraction(landness, g, Math.min(0.9, o.landFraction * 1.08));
     for (let k = 0; k < N; k++) land[k] = landness[k] > t2 ? 1 : 0;
   }
@@ -426,6 +564,30 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
     const away = 1 - smoothstep(0.05, 0.4, foot[k]);
     rift[k] *= away;
     if (land[k] && riftShoulder[k] * away > 0.5) land[k] = 0;
+  }
+  // a big map's land has few seas shut in by it (Earth: about 1 % of the land, the Caspian, the
+  // Black Sea): of those not open to the ocean round the map, the largest is kept if broad and not
+  // too big (an inner-sea map: its sea); the rest, and every hole the noise left, are land; rift
+  // lakes stay
+  if (big && !fixedShore) {
+    const water = Uint8Array.from(land, (v) => 1 - v);
+    const wc = components(g, water);
+    const open = new Uint8Array(wc.count);
+    for (let i = 0; i < w; i++) {
+      for (const k of [i, (h - 1) * w + i]) if (wc.label[k] >= 0) open[wc.label[k]] = 1;
+    }
+    for (let j = 0; j < h; j++) for (const k of [j * w, j * w + w - 1]) if (wc.label[k] >= 0) open[wc.label[k]] = 1;
+    let landKm2 = 0;
+    for (let k = 0; k < N; k++) if (land[k]) landKm2 += kmCell * kmCell;
+    const lake = new Uint8Array(wc.count);
+    for (let k = 0; k < N; k++) if (wc.label[k] >= 0 && riftShoulder[k] > 0.5) lake[wc.label[k]] = 1;
+    const shut = [...Array(wc.count).keys()].filter((c) => !open[c] && !lake[c]).sort((a, b) => wc.area[b] - wc.area[a]);
+    const keep = new Set<number>();
+    if (shut.length && (o.layout === 'innerSea' || wc.area[shut[0]] <= 0.03 * landKm2) && wc.area[shut[0]] >= 0.004 * landKm2) keep.add(shut[0]);
+    for (let k = 0; k < N; k++) {
+      const c = wc.label[k];
+      if (c >= 0 && !open[c] && !lake[c] && !keep.has(c)) land[k] = 1;
+    }
   }
 
   const isCoast = new Uint8Array(N);
@@ -463,7 +625,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
       const x = xKm(bestK % w);
       const y = yKm((bestK / w) | 0);
       placed.push({ x, y });
-      const r = clamp(coastKm[bestK] * 0.55, 3, many ? 0.02 * mapKm : 0.05 * mapKm) * (0.7 + 0.3 * rnd());
+      const r = clamp(coastKm[bestK] * 0.55, 3, many ? 0.02 * fk : 0.05 * fk) * (0.7 + 0.3 * rnd());
       cones.push({ x, y, r, hM: (many ? 600 + 1600 * rnd() : 1300 + 2600 * rnd()) * (0.4 + 0.6 * mountains) * Math.min(1, r / 10 + 0.3) });
     }
   }
@@ -743,11 +905,27 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
   blurGrid(seaKm, w, h, Math.max(1, Math.round(Math.max(30, 0.04 * mapKm) / kmCell)));
   // an inland sea is shallower than the ocean (the Black Sea 2.2 km, the Caspian 1 km)
   const seaFloor = o.layout === 'innerSea' || o.layout === 'crater' ? Math.min(o.maxDepth, 2200) : o.maxDepth;
+  // On a big map the shelf is as wide as the land behind it makes it: broad off a continent
+  // (a hundred km and more), a few tens of km round an island out in the ocean, which drops to the
+  // deep sea on its flanks (Hawaii, the Azores); a region keeps its shelf of 140 km all round.
+  let shelfKm: Float32Array | null = null;
+  if (big) {
+    const share = Float32Array.from(land);
+    blurGrid(share, w, h, Math.max(1, Math.round(200 / kmCell)));
+    shelfKm = new Float32Array(N);
+    const shelfTop = o.layout === 'archipelago' ? 25 : 125;
+    for (let k = 0; k < N; k++) shelfKm[k] = (12 + shelfTop * smoothstep(0.15, 0.55, share[k])) * (0.7 + 0.6 * smoothstep(-0.5, 0.5, n2(xKm(k % w), yKm((k / w) | 0), 400, 2, 61.3)));
+    blurGrid(shelfKm, w, h, Math.max(1, Math.round(60 / kmCell)));
+  }
   for (let k = 0; k < N; k++) {
     if (!land[k]) {
       // shelves: about a metre deeper every km, then down the slope to the deep sea
       const d = coastKm[k] < 20 ? coastKm[k] : coastKm[k] + (seaKm[k] - coastKm[k]) * smoothstep(20, 60, coastKm[k]);
-      height[k] = -Math.min(seaFloor, 3 + 1.1 * Math.min(d, 140) + 18 * Math.max(0, d - 140));
+      if (shelfKm) {
+        // (the shelf ends at about 140 m; the slope below falls about 2.5 % to the deep floor)
+        const sw = shelfKm[k];
+        height[k] = -Math.min(seaFloor, 3 + (137 * Math.min(d, sw)) / sw + 25 * Math.max(0, d - sw) * smoothstep(0, 30, d - sw));
+      } else height[k] = -Math.min(seaFloor, 3 + 1.1 * Math.min(d, 140) + 18 * Math.max(0, d - 140));
       continue;
     }
     let v = surf[k];
