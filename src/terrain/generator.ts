@@ -187,7 +187,7 @@ function splatHotspots(g: Grid, t: Tectonics): Float32Array {
  * cut off. The sea round the map is a frame between a circle and the map's rectangle, its width
  * wandering, so coasts near the edges are their own and do not follow the map's sides.
  */
-function flatEdges(g: Grid, landness: Float32Array, seed: number): Float32Array {
+function flatEdges(g: Grid, landness: Float32Array, seed: number, crust?: Float32Array): Float32Array {
   const n = new Simplex3(subSeed(seed, 61));
   for (let j = 0; j < g.h; j++)
     for (let i = 0; i < g.w; i++) {
@@ -195,7 +195,11 @@ function flatEdges(g: Grid, landness: Float32Array, seed: number): Float32Array 
       const v = (g.y0 + (j + 0.5) * g.step) / g.H;
       const se = ((Math.abs(u - 0.5) / 0.5) ** 6 + (Math.abs(v - 0.5) / 0.5) ** 6) ** (1 / 6);
       const out = se - 0.92 + 0.07 * n.fbm(u * 5, v * 5, 0.5, 1, 3);
-      landness[j * g.w + i] -= 3 * smoothstep(-0.06, 0.05, out);
+      const f = smoothstep(-0.06, 0.05, out);
+      landness[j * g.w + i] -= 3 * f;
+      // (and the continental crust there with it: land cut off by the frame must not leave its
+      // crust behind as a broad shallow shelf)
+      if (crust) crust[j * g.w + i] *= 1 - f;
     }
   return landness;
 }
@@ -256,7 +260,7 @@ function worldShape(p: GenParams, layout: Layout, mid: Grid, R: number, progress
       else if (Math.abs(L - t0) < 0.5) L += 0.4 * n.fbm(x + 2.7, y, z, 5.5, coastOctaves, 0.62);
       shape.landness[k] = L;
     }
-  if (mid.proj) flatEdges(mid, shape.landness, p.seed);
+  if (mid.proj) flatEdges(mid, shape.landness, p.seed, shape.crust);
   return shape;
 }
 
@@ -719,10 +723,12 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
         // sea within tens of km (Hawaii, the Azores), so it stands alone, not in a broad halo; both
         // widths wander along the coast
         const wob = 0.6 + 0.8 * clamp((seaN[k] - 0.93) / 0.24, 0, 1);
-        const shelfW = (12 + 220 * crust * (1 - 0.6 * Math.min(1, s.orogen[k] * 2))) * wob;
+        // (on Earth a shelf is ~80 km wide on average, a few hundred only in places: Siberia, the
+        // North Sea; shelves are about 15 % of the land's area)
+        const shelfW = (12 + 150 * crust * crust * (1 - 0.6 * Math.min(1, s.orogen[k] * 2))) * wob * wob;
         const shelf = 20 + 130 * smoothstep(0, shelfW, d);
         const abyss = abyssBase * seaN[k];
-        let depth = shelf + (abyss - shelf) * smoothstep(shelfW, shelfW + (70 + 350 * crust) * wob, d);
+        let depth = shelf + (abyss - shelf) * smoothstep(shelfW, shelfW + (60 + 240 * crust) * wob, d);
         depth -= 2300 * s.ridge[k] + 2400 * s.hot[k] + 1800 * Math.max(0, s.arc[k]);
         depth += (deepest - abyss) * 0.92 * s.trench[k];
         // seamounts and ridges stay submerged away from the coast (no almost-islands awash at the surface)
