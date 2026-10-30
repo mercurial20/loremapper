@@ -549,10 +549,11 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
       // hill country here and there, gentler land between
       const hills = 0.3 + 0.7 * smoothstep(-0.1, 0.45, n2(x, y, 160, 3, 5.1));
       // tablelands: broad, raised, their margins easing down over tens of km
-      const pl = smoothstep(-0.05, 0.6, n2(x, y, 240, 3, 7.7)) * (1 - foot[k]) * smoothstep(5, 60, coastKm[k]);
+      const pl = smoothstep(-0.05, 0.6, n2(x, y, 300, 2, 7.7)) * (1 - foot[k]) * smoothstep(5, 60, coastKm[k]);
       // swells between the valleys, tens of km across, and a little unevenness that lets the
       // drainage branch instead of running in parallel lines
-      const swell = hillAmp * hills * (0.35 * (0.5 + 0.5 * n2(x, y, 30, 3, 41.3)) + 0.18 * n2(x, y, 10, 2, 45.1) + 0.1 * n2(x, y, 3, 2, 43.9));
+      // (low next to the valleys cut into them: on plains the valleys draw the land, not the swells)
+      const swell = hillAmp * hills * (0.16 * (0.5 + 0.5 * n2(x, y, 30, 3, 41.3)) + 0.1 * n2(x, y, 10, 2, 45.1) + 0.08 * n2(x, y, 3, 2, 43.9));
       cone[k] = cones.length ? coneAt(x, y) : 0;
       // coastal plains rise gently inland (half a metre to a metre a km); islands rise steeply
       // from their shores (an island is the top of a high block, or a volcano's)

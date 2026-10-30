@@ -76,7 +76,7 @@ export interface RangeJob {
 }
 
 /** The uplift of all ranges in the window, 0 … 1. */
-export function rangeUplift(job: RangeJob): Float32Array {
+export function rangeUplift(job: RangeJob, strike?: Float32Array): Float32Array {
   const { w, h, ox, oy, scale } = job;
   const U = new Float32Array(w * h);
   for (const r of job.ranges) {
@@ -114,6 +114,12 @@ export function rangeUplift(job: RangeJob): Float32Array {
     // the edge of the belt is ragged: spurs run out into the land, bays between them
     const ragged = cached((x, y) => (fbm((ox + x * scale) / (0.7 * hw * scale), (oy + y * scale) / (0.7 * hw * scale), job.seed + 53, 3) * 2 - 1) * (0.15 + 0.3 * r.irregularity));
     // and which side is the steep one wanders along it too
+    // the rock lies in bands along the range (its folds and thrust sheets), each band bending and
+    // giving way to the next en échelon; rivers wear the soft ones into valleys along it
+    const bandL = Math.max(5, 0.5 * hw);
+    const bandPhase = tab((a) => fbm(a / (3 * hw * scale), r.seed % 983, job.seed + 71, 2) * 2 * Math.PI * 2);
+    // (in stretches a few widths long, with gaps between: folds die out and others take over)
+    const bandOn = tab((a) => smoothstep(0.38, 0.62, fbm(a / (2.5 * hw * scale), r.seed % 977, job.seed + 73, 2)));
     const asymAt = tab((a) => clamp(r.asymmetry + (fbm(a / (8 * hw * scale), r.seed % 991, job.seed + 61, 2) * 2 - 1) * 0.5 * r.irregularity, -0.9, 0.9));
     const reach = hw * Math.exp(wv * 1.4) * (1 + 0.5 * Math.abs(r.asymmetry) + 0.45 * r.irregularity) * (1 + FOOTHILLS) + 0.35 * hw * r.irregularity + 1;
     for (const line of r.lines) {
@@ -170,7 +176,12 @@ export function rangeUplift(job: RangeJob): Float32Array {
             const e1 = line.freeEnd ? clamp((total - along) / (0.6 * hw), 0, 1) : 1;
             u *= Math.sqrt(Math.min(e0, e1) * (2 - Math.min(e0, e1)));
             const o = y * w + x;
-            if (u > U[o]) U[o] = u;
+            if (u > U[o]) {
+              U[o] = u;
+              // (fading out toward the range's ends, where they would wrap round it in rings)
+              const ends = smoothstep(0, 1, Math.min(along, total - along) / (1.5 * hw));
+              if (strike) strike[o] = Math.cos((2 * Math.PI * sd) / bandL + bandPhase(ox + along * scale)) * (1 - smoothstep(0.75, 1.05, q)) * bandOn(ox + along * scale) * ends;
+            }
           }
       }
     }
@@ -221,8 +232,19 @@ export function rangeRelief(job: RangeJob): { relief: Float32Array; uplift: Floa
           ranges: j.ranges.map((r) => ({ ...r, halfWidth: r.halfWidth / sub, lines: r.lines.map((l) => ({ ...l, pts: l.pts.map((v) => v / sub) })) })),
         };
   const up = (a: Float32Array) => (sub === 1 ? a : upsample(a, sw, sh, w, h, sub));
-  const belts = one.map((j) => up(rangeUplift(coarse(j))));
-  const rock = one.map((j, i) => up(rangeErodibility(coarse(j), R[i].irregularity, R[i].halfWidth / sub)));
+  const strikes = one.map(() => new Float32Array(sw * sh));
+  const belts = one.map((j, i) => up(rangeUplift(coarse(j), strikes[i])));
+  const strikeUp = strikes.map((a) => up(a));
+  // (soft bands wear down about four times as fast as the hard ones beside them)
+  const rock = one.map((j, i) => {
+    const k = up(rangeErodibility(coarse(j), R[i].irregularity, R[i].halfWidth / sub));
+    const st = strikeUp[i];
+    // (on coarse cells, where the small valleys that dissect the bands cannot show, the bands
+    // alone would stand as smooth ribbons: weaker there)
+    const bandK = clamp(0.6 - 0.5 * (job.cellKm - 0.3), 0.15, 0.6);
+    for (let q = 0; q < k.length; q++) k[q] *= Math.exp(bandK * st[q]);
+    return k;
+  });
   const belt = new Float32Array(n);
   for (const b of belts) for (let k = 0; k < n; k++) if (b[k] > belt[k]) belt[k] = b[k];
 
@@ -287,7 +309,9 @@ export function rangeRelief(job: RangeJob): { relief: Float32Array; uplift: Floa
       init0 = zf;
       steps = 12;
     }
-    const zc = upliftRelief({ w: W, h: H, uplift: cc.uplift, cellKm: job.cellKm * 2, peakM: 1, erodibility: cc.erod, initial: init0, raw: true, steps });
+    // (soil creep over about 1.7 km whatever the cell: valleys sit a few km apart, as in real
+    // ranges, not in every other fine cell; passes spread it as their square root)
+    const zc = upliftRelief({ w: W, h: H, uplift: cc.uplift, cellKm: job.cellKm * 2, peakM: 1, erodibility: cc.erod, initial: init0, raw: true, steps, creep: creepFor(job.cellKm * 2) });
     const init = new Float32Array(w * h);
     for (let y = 0; y < h; y++)
       for (let x = 0; x < w; x++) {
@@ -302,7 +326,7 @@ export function rangeRelief(job: RangeJob): { relief: Float32Array; uplift: Floa
         // (with the full grid's own roughness, so its small channels pick their own ways)
         init[y * w + x] = c.uplift[y * w + x] > 0 ? v + c.initial[y * w + x] * 0.05 : 0;
       }
-    const relief = upliftRelief({ w, h, uplift: c.uplift, cellKm: job.cellKm, peakM: job.peakM, erodibility: c.erod, initial: init, steps: job.refineSteps ?? 10 });
+    const relief = upliftRelief({ w, h, uplift: c.uplift, cellKm: job.cellKm, peakM: job.peakM, erodibility: c.erod, initial: init, steps: job.refineSteps ?? 10, creep: creepFor(job.cellKm) });
     return { relief, uplift: belt };
   }
   const relief = upliftRelief({ w, h, uplift: c.uplift, cellKm: job.cellKm, peakM: job.peakM, erodibility: c.erod, initial: c.initial, steps: job.steps });
@@ -329,3 +353,6 @@ function upsample(a: Float32Array, sw: number, sh: number, w: number, h: number,
   }
   return out;
 }
+
+/** Passes of soil creep that spread it over about 1.7 km on cells of `cellKm` (4 … 12). */
+const creepFor = (cellKm: number) => Math.max(4, Math.min(12, Math.round((1.7 / cellKm) ** 2)));
