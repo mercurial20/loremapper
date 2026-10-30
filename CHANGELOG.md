@@ -6,6 +6,37 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.1-alpha.1] — 2026-10-31
+
+### Added
+
+- **A new world generator.** Flat maps up to 10,000 km are made at their true size: a mountain range is 100–200 km wide on a map of any size, and a bigger map shows more of the land's forms, each of its own size, not one blown up.
+  - Plains and hill country are a smooth land with a branching network of valleys cut into it, deeper and wider the more water they carry, flat-floored along big rivers.
+  - Ranges have valleys along them (cut in bands of softer rock), side valleys down their ridges, foothills, and a width that varies along them.
+  - Rivers start in the uplands of their basins, carry water off the map over its edges, and are as wide as the water they carry.
+  - Islands rise steeply from their shores, with a massif or volcanoes cut by gullies; rifts are grabens with narrow lakes.
+  - Big maps have continents of real size with seas between them, shelves as wide as the land behind them, and few seas shut in by the land.
+- **Presets for small maps** (under 3000 km): part of a continent, coast, peninsula, inland, island, island and islets, archipelago, inner sea, meteorite crater.
+- **Wind and climate on flat maps** (*Advanced settings*): where the wind blows from, its strength, humidity and temperature. Slopes facing it are wet, the land behind a range lies in its rain shadow; a region's climate and biomes follow its true size.
+- **Generated mountains are ranges** you can select and edit like drawn ones. New setting *Mountain ranges*: how much of the land they cover. *Width varies* for drawn ranges.
+- **Water from a source** (alpha, River tool → *From a source*): place a source and its water finds its way: rivers follow the slope, meander and leave oxbow lakes, fill hollows into lakes and run on through them, losing water on the way in dry land; marshes can be painted; all sources can be run again after terrain edits.
+- **What's new**: a short tour of a release's news, shown once after an update (and from the top bar).
+
+### Changed
+
+- Generator defaults are in the middle, as on Earth; small maps have lower peaks by default (big maps and planets as before).
+- *Hills* sets the relief between the ranges: from flat plains to rugged hill country.
+- The height view's shading is exaggerated less on flat maps' finer cells, so plains no longer look mountainous.
+- Planets: fewer seas shut in by the land and blotches of shallow sea; shelves as wide as Earth's; a smooth sea floor; *Inner sea* reliably makes one.
+- Generating a small map is about twice as fast.
+
+### Fixed
+
+- Parallel 45° streaks and stepped valley sides in generated relief.
+- Biomes on flat maps measured slopes with a planet's cell size: marshes and fields everywhere.
+- Moist strips of forest across the map along the wind.
+- Coasts on high-detail maps in steps two cells across; ledges and rays on the sea floor round islands.
+
 ## [1.2.3-alpha.3] — 2026-10-16
 
 ### Added
