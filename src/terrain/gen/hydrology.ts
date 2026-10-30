@@ -192,7 +192,7 @@ export function erode(g: Grid, h: Float32Array, rain: Float32Array | null, itera
   const work = h.slice();
   const ws = new DrainWork(N);
   for (let it = 0; it < iterations; it++) {
-    const d = drain(g, work, false, ws);
+    const d = steepest(g, work, drain(g, work, false, ws));
     const A = accumulate(g, d, rain, ws.A);
     for (let n = 0; n < d.count; n++) {
       const k = d.order[n];
@@ -230,12 +230,43 @@ export function steadyState(
   // routing surface: jittered a little so flow over even ground wanders
   // instead of running in the grid's eight straight directions
   const route = new Float32Array(N);
+  // (and unevenly in proportion to the slope, in patches a few cells across: on an even slope
+  // neighbouring paths would run side by side down it; here they gather into branching valleys)
+  const lump = new Float32Array(N);
+  const tmpL = new Float32Array(N);
   const jitter = (src: Float32Array, seed: number) => {
-    for (let k = 0; k < N; k++) route[k] = src[k] > 0 ? src[k] * (1 + 0.04 * (cellJitter(k * 7 + seed) - 0.5)) + 6 * cellJitter(k + seed * 977) + 1e-3 : h[k];
+    for (let k = 0; k < N; k++) lump[k] = cellJitter(k * 13 + seed * 31) - 0.5;
+    for (let p = 0; p < 2; p++) {
+      for (let j = 0; j < g.h; j++)
+        for (let i = 0; i < g.w; i++) {
+          let sum = 0;
+          for (let dj = -1; dj <= 1; dj++) {
+            const jj = Math.min(g.h - 1, Math.max(0, j + dj));
+            for (let di = -1; di <= 1; di++) sum += lump[jj * g.w + (g.wrap ? (i + di + g.w) % g.w : Math.min(g.w - 1, Math.max(0, i + di)))];
+          }
+          tmpL[j * g.w + i] = sum / 9;
+        }
+      lump.set(tmpL);
+    }
+    for (let k = 0; k < N; k++) {
+      if (src[k] <= 0) {
+        route[k] = h[k];
+        continue;
+      }
+      const j = (k / g.w) | 0;
+      const i = k - j * g.w;
+      const l = g.wrap ? j * g.w + ((i - 1 + g.w) % g.w) : j * g.w + Math.max(0, i - 1);
+      const r = g.wrap ? j * g.w + ((i + 1) % g.w) : j * g.w + Math.min(g.w - 1, i + 1);
+      const u = Math.max(0, j - 1) * g.w + i;
+      const dn = Math.min(g.h - 1, j + 1) * g.w + i;
+      const rel = Math.hypot(Math.max(0, src[r]) - Math.max(0, src[l]), Math.max(0, src[dn]) - Math.max(0, src[u])) / 2;
+      // (land stays land: above the sea however uneven)
+      route[k] = Math.max(1e-3, src[k] * (1 + 0.04 * (cellJitter(k * 7 + seed) - 0.5)) + 6 * cellJitter(k + seed * 977) + 1e-3 + 8 * rel * lump[k]);
+    }
   };
   jitter(h, 0);
   for (let pass = 0; pass < o.passes; pass++) {
-    const d = drain(g, route, true, ws);
+    const d = steepest(g, route, drain(g, route, true, ws));
     const A = accumulate(g, d, rain, ws.A);
     out.fill(0);
     for (let n = 0; n < d.count; n++) {
@@ -252,6 +283,79 @@ export function steadyState(
     if (pass + 1 < o.passes) jitter(out, pass + 1);
   }
   return out;
+}
+
+/**
+ * Water takes the steepest way down. Priority-Flood gives each cell the neighbour the flood
+ * reached it from, so over even ground the flow runs in the flood's straight lines (the grid's
+ * eight directions: parallel streaks, and straight edges at 45°). Here each land cell drains to
+ * its steepest strictly lower neighbour on the (filled) surface instead, keeping the flood's way
+ * on flats; neither can make a loop. The order is rebuilt so every receiver comes first.
+ */
+export function steepest(g: Grid, h: Float32Array, d: Drainage): Drainage {
+  const { w } = g;
+  const gh = g.h;
+  const N = w * gh;
+  const rcv = d.rcv;
+  const dx = new Float64Array(gh);
+  const dy = new Float64Array(gh);
+  for (let j = 0; j < gh; j++) {
+    dx[j] = dxKm(g, j);
+    dy[j] = dyKm(g, j);
+  }
+  for (let n = 0; n < d.count; n++) {
+    const k = d.order[n];
+    if (h[k] <= 0 || rcv[k] < 0) continue;
+    const j = (k / w) | 0;
+    const i = k - j * w;
+    let best = -1;
+    let bestS = 0;
+    for (let dj = -1; dj <= 1; dj++) {
+      const jj = j + dj;
+      if (jj < 0 || jj >= gh) continue;
+      for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        let ii = i + di;
+        if (ii < 0 || ii >= w) {
+          if (!g.wrap) continue;
+          ii = (ii + w) % w;
+        }
+        const q = jj * w + ii;
+        if (h[q] >= h[k]) continue;
+        const s = (h[k] - h[q]) / Math.hypot(di * dx[j], dj * dy[j]);
+        if (s > bestS) {
+          bestS = s;
+          best = q;
+        }
+      }
+    }
+    if (best >= 0) rcv[k] = best;
+  }
+  // receivers before their donors: children lists, walked from the outlets (cells that drain
+  // to the sea, off the grid, or to a cell outside the list)
+  const listed = new Uint8Array(N);
+  for (let n = 0; n < d.count; n++) listed[d.order[n]] = 1;
+  const head = new Int32Array(N).fill(-1);
+  const next = new Int32Array(N);
+  const stack: number[] = [];
+  for (let n = d.count - 1; n >= 0; n--) {
+    const k = d.order[n];
+    const r = rcv[k];
+    if (r >= 0 && listed[r]) {
+      next[k] = head[r];
+      head[r] = k;
+    } else stack.push(k);
+  }
+  const order = d.order;
+  const out = new Int32Array(d.count);
+  let count = 0;
+  while (stack.length) {
+    const k = stack.pop()!;
+    out[count++] = k;
+    for (let c = head[k]; c >= 0; c = next[c]) stack.push(c);
+  }
+  order.set(out.subarray(0, count));
+  return { rcv, order, count };
 }
 
 /** Gentle hillslope diffusion on land (softens knife-edge noise between valleys). */

@@ -2,7 +2,7 @@ import { clamp, mulberry32, smoothstep } from '../../core/math';
 import { Simplex3, subSeed } from '../../core/noise3';
 import { rangeRelief, type RangeJobRange } from '../rangeUplift';
 import { distanceField, thresholdForFraction, type Grid } from './grid';
-import { accumulate, drain } from './hydrology';
+import { accumulate, drain, steepest } from './hydrology';
 
 /*
  * A region's land at its true size (a flat map up to a few thousand km across): every form as
@@ -632,7 +632,7 @@ export function regionalRelief(g: Grid, o: RegionalOptions): RegionalRelief {
     for (let kc = 0; kc < NC; kc++) if (sc[kc] > 0) sc[kc] = Math.max(0.5, sc[kc] + add[kc]);
   }
   const routed = Float32Array.from(sc);
-  const dr = drain(gc, routed, true);
+  const dr = steepest(gc, routed, drain(gc, routed, true));
   const area = accumulate(gc, dr, null);
   // a valley begins where this much land drains to it, km²: a few on rugged land, tens on gentle
   const headKm2 = 2 + 22 * (1 - rough) ** 2;

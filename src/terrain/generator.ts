@@ -4,7 +4,7 @@ import { BIOME_CHANNELS } from '../core/planet';
 import { BIOME_DESERT, BIOME_ROCK, BIOME_SNOW, biomeWeights, climate, type Climate, type Wind } from './gen/climate';
 import { sketchClimate, sketchShape, type Shape, type Sketch } from './gen/sketch';
 import { blurKm, cellAreaKm2, components, distanceField, dxKm, dyKm, latOf, lonOf, makeGrid, mercatorPatch, radPerCell, resample, resampleFromSphere, sampleAt, sphereTables, thresholdForFraction, type Grid } from './gen/grid';
-import { accumulate, diffuse, drain, erode, steadyState, traceRivers, type Drainage } from './gen/hydrology';
+import { accumulate, diffuse, drain, erode, steadyState, steepest, traceRivers, type Drainage } from './gen/hydrology';
 import { layoutMismatch, plateBase, tectonics, type Layout, type Tectonics } from './gen/plates';
 import { crestLines } from './gen/crests';
 import { regionalRelief, type RegionLayout } from './gen/region';
@@ -754,7 +754,7 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
   progress('Tracing rivers', 0);
   const midCellKm = (midStep * 2 * Math.PI * R) / p.W;
   const minRiverArea = 24 * midCellKm * midCellKm;
-  const drained = drain(mid, h, true);
+  const drained = steepest(mid, h, drain(mid, h, true));
   const flow = accumulate(mid, drained, clim.rain);
   let maxFlow = 1;
   for (let k = 0; k < N; k++) if (h[k] > 0 && flow[k] > maxFlow) maxFlow = flow[k];
@@ -798,7 +798,7 @@ export function generate(p: GenParams, progress: Progress = () => {}): GenResult
     erode(full, height, rainF, 10, ERODE_K, (i) => progress('Carving fine valleys', (i + 1) / 10));
     progress('Tracing rivers', 0);
     if (p.rivers > 0) {
-      const d = drain(full, height, true);
+      const d = steepest(full, height, drain(full, height, true));
       const A = accumulate(full, d, rainF);
       let mA = 1;
       for (let k = 0; k < A.length; k++) if (height[k] > 0 && A[k] > mA) mA = A[k];
@@ -926,7 +926,7 @@ function generateRegion(p: GenParams, rg: Grid, mid: Grid, full: Grid, progress:
 
   // ---- rivers: as wide as the water they carry (about 4.5·√Q metres; 300 mm a year of runoff)
   progress('Tracing rivers', 0);
-  const drained = drain(mid, h, true);
+  const drained = steepest(mid, h, drain(mid, h, true));
   const flow = accumulate(mid, drained, clim.rain);
   let maxFlow = 1;
   for (let k = 0; k < N; k++) if (h[k] > 0 && flow[k] > maxFlow) maxFlow = flow[k];
