@@ -1,7 +1,7 @@
 import { Container, Graphics, Text, TextStyle } from 'pixi.js';
 import type { Geo } from '../core/geo';
 import { simplifyPath } from '../core/math';
-import { objectCorners, rotateHandle } from '../model/geometry';
+import { objectCorners, objectHandles, rotateHandle } from '../model/geometry';
 import type { MapDocument, SelectionRef, Vec2 } from '../model/types';
 import { brushWeight } from '../terrain/brushes';
 import { FONT_FAMILY } from './fonts';
@@ -111,6 +111,12 @@ export class OverlayLayer implements WorldLayer {
     t.scale.set(1 / this.zoom);
   }
 
+  /** A square resize handle, `r` px from its centre to a side. */
+  private square(x: number, y: number, r: number) {
+    const px = 1 / this.zoom;
+    this.g.rect(x - r * px, y - r * px, 2 * r * px, 2 * r * px).fill({ color: 0xffffff }).stroke({ width: 1.4 * px, color: 0x1b1612 });
+  }
+
   private handle(x: number, y: number, r = 4.5, fill = 0xffffff) {
     const px = 1 / this.zoom;
     this.g.circle(x, y, r * px).fill({ color: fill }).stroke({ width: 1.5 * px, color: 0x1b1612 });
@@ -178,7 +184,9 @@ export class OverlayLayer implements WorldLayer {
             const top: Vec2 = [(c[0][0] + c[1][0]) / 2, (c[0][1] + c[1][1]) / 2];
             g.moveTo(top[0], top[1]).lineTo(rx, ry).stroke({ width: 1.2 * px, color: ACCENT });
             this.handle(rx, ry, 5, ACCENT);
-            for (const [x, y] of c) this.handle(x, y, 4);
+            // corners resize keeping the proportions, sides stretch one way
+            const hs = objectHandles(o, 2 * px);
+            hs.forEach(([x, y], i) => this.square(x, y, i < 4 ? 4 : 3.2));
           }
         } else if (ref.kind === 'path') {
           const p = doc.paths[ref.id];

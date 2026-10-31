@@ -66,6 +66,7 @@ async function renderToPng(x0: number, y0: number, x1: number, y1: number, outW:
   cam.x = (x0 + x1) / 2;
   cam.y = (y0 + y1) / 2;
   L.peaks.cameraOverride = cam;
+  L.names.cameraOverride = cam;
 
   const band = new Uint8Array(outW * BAND * 4);
   let bandY = -1;
@@ -117,6 +118,7 @@ async function renderToPng(x0: number, y0: number, x1: number, y1: number, outW:
   } finally {
     rt.destroy(true);
     L.peaks.cameraOverride = null;
+    L.names.cameraOverride = null;
     L.overlay.container.visible = overlayVisible;
     r.fog.container.visible = fogVisible;
     L.peaks.container.visible = peaksVisible;
@@ -139,7 +141,7 @@ export async function renderWorldPixels(outW: number, outH: number, what: 'terra
   const r = editor.renderer!;
   const L = editor.layers!;
   const m = editor.model!;
-  const vectorRoots = (what === 'map' ? [L.objects, L.labels, L.peaks, L.overlay] : [L.territories, L.paths, L.objects, L.labels, L.peaks, L.overlay]).map((l) => l.container);
+  const vectorRoots = (what === 'map' ? [L.objects, L.names, L.labels, L.peaks, L.overlay] : [L.territories, L.paths, L.objects, L.names, L.labels, L.peaks, L.overlay]).map((l) => l.container);
   // exports include the tracing picture only when asked to; the fog pass never does
   if (what === 'fog' || (what === 'terrain' && !useDoc.getState().doc.reference?.inExport)) vectorRoots.push(L.reference.container);
   if (what === 'map') L.territories.setLabelsVisible(false);

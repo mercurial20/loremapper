@@ -7,14 +7,15 @@ import { BIOMES } from '../../core/planet';
 import { restoreSuppressedPeaks } from '../../editor/commands';
 import { bakeRange, deleteRange, updateRange } from '../../editor/ranges';
 import { editor } from '../../editor/Editor';
-import { TERRITORY_TYPES, TERRITORY_TYPE_LABELS, type BorderStyle, type LabelFont, type MountainRange, type RoadStyle, type TerritoryType } from '../../model/types';
-import { FONT_LABEL } from '../../render/fonts';
+import { TERRITORY_TYPES, TERRITORY_TYPE_LABELS, type BorderStyle, type MountainRange, type RoadStyle, type TerritoryType } from '../../model/types';
 import { STYLE_PRESETS } from '../../render/styles';
 import { useDoc } from '../../store/docStore';
 import { brushGroupOf, TERRAIN_PRESETS, useEditor, type BrushGroup, type TerrainPreset } from '../../store/editorStore';
 import { raiseRate, type BrushParams } from '../../terrain/brushes';
 import { pushTileChange } from '../../tools/ToolController';
 import { WIDTH_VARIATION } from '../../terrain/rangeUplift';
+import { ICON_SHARE_MAX, ICON_SHARE_MIN, mapSpan } from '../../model/names';
+import { NameGroupPicker, NameStylePreview } from './NameStyles';
 import { ALL_TOOLS } from '../toolDefs';
 import { SourceControls } from './SourceControls';
 import { AlphaBadge, ColorField, Hint, MeasureField, Segmented, Select, Slider, Toggle } from '../controls/controls';
@@ -274,10 +275,27 @@ function FogControls() {
   );
 }
 
+/** Label tool: which group new labels join; they take its style. */
+function LabelToolGroup() {
+  const { t } = useTranslation();
+  const group = useEditor((s) => s.labelDefaults.group);
+  const set = useEditor((s) => s.set);
+  return (
+    <>
+      <NameGroupPicker label={t('Style group')} value={group} onChange={(v) => set({ labelDefaults: { group: v } })} />
+      <NameStylePreview group={group} />
+      <Hint>{t('Click the map to write a label. It takes the style of its group; change the group’s style in “Names on the map”, or any property on the label itself.')}</Hint>
+    </>
+  );
+}
+
 function ObjectToolControls() {
   const { t } = useTranslation();
-  const { assetId, stamp, set, activeObjectLayer } = useEditor();
+  const { assetId, stamp, set, activeObjectLayer, units } = useEditor();
   const layers = useDoc((s) => s.doc.objectLayers);
+  // sizes are on the map: a share of its shorter side, shown in km
+  const model = editor.model;
+  const spanKm = model ? mapSpan(model.W, model.H) * model.geo.kmPerCellY : 1000;
   const assets = useAssets((s) => s.assets);
   const a = assets.find((x) => x.id === assetId);
   return (
@@ -312,16 +330,16 @@ function ObjectToolControls() {
         options={layers.map((l) => ({ value: l.id, label: t(l.name) + (l.locked ? ' ' + t('(locked)') : '') }))}
         onChange={(v) => set({ activeObjectLayer: v })}
       />
-      <Slider label={t('Size on screen')} value={stamp.sizePx} min={8} max={400} log onChange={(v) => set({ stamp: { ...stamp, sizePx: v } })} format={(v) => `${Math.round(v)} px`} hint={t('[ and ] keys')} />
+      <Slider label={t('Size on the map')} value={stamp.share} min={ICON_SHARE_MIN} max={ICON_SHARE_MAX} log onChange={(v) => set({ stamp: { ...stamp, share: v } })} format={(v) => formatLength(v * spanKm, units)} hint={t('[ and ] keys')} />
       {stamp.mode === 'stamp' && (
         <>
-          <Slider label={t('Spacing')} value={stamp.spacingPx} min={6} max={300} log onChange={(v) => set({ stamp: { ...stamp, spacingPx: v } })} format={(v) => `${Math.round(v)} px`} />
+          <Slider label={t('Spacing')} value={stamp.spacingShare} min={ICON_SHARE_MIN} max={ICON_SHARE_MAX} log onChange={(v) => set({ stamp: { ...stamp, spacingShare: v } })} format={(v) => formatLength(v * spanKm, units)} />
           <Slider label={t('Random scale')} value={stamp.randomScale} min={0} max={0.9} onChange={(v) => set({ stamp: { ...stamp, randomScale: v } })} format={(v) => `±${Math.round(v * 100)}%`} />
           <Slider label={t('Random rotation')} value={stamp.randomRotation} min={0} max={180} step={1} onChange={(v) => set({ stamp: { ...stamp, randomRotation: v } })} format={(v) => `±${Math.round(v)}°`} />
           <Toggle label={t('Random mirroring')} checked={stamp.randomFlip} onChange={(v) => set({ stamp: { ...stamp, randomFlip: v } })} />
         </>
       )}
-      <Hint>{t('Objects keep their size on the map: size is measured at the zoom where you place them. Drag assets straight from the library onto the map, too.')}</Hint>
+      <Hint>{t('Every object is placed at this size on the map, whatever the zoom. Resize one with the handles on its corners and sides. Drag assets straight from the library onto the map, too.')}</Hint>
     </>
   );
 }
@@ -509,14 +527,7 @@ export function ToolOptions() {
       )}
       {tool === 'label' && (
         <>
-          <Select<LabelFont>
-            label={t('Font')}
-            value={st.labelDefaults.font}
-            options={(Object.keys(FONT_LABEL) as LabelFont[]).map((f) => ({ value: f, label: t(FONT_LABEL[f]) }))}
-            onChange={(v) => st.set({ labelDefaults: { ...st.labelDefaults, font: v } })}
-          />
-          <Slider label={t('Size on screen')} value={st.labelDefaults.sizePx} min={8} max={120} log onChange={(v) => st.set({ labelDefaults: { ...st.labelDefaults, sizePx: v } })} format={(v) => `${Math.round(v)} px`} />
-          <ColorField label={t('Colour')} value={st.labelDefaults.color} swatches={['#2d2216', '#5a2a1a', '#1d2731', '#ffffff', '#8f2a1e', '#2f5d9a']} onChange={(v) => st.set({ labelDefaults: { ...st.labelDefaults, color: v } })} />
+          <LabelToolGroup />
         </>
       )}
       {tool === 'peak' && (

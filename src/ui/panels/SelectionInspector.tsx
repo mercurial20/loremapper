@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, BringToFront, Copy, FlipHorizontal2, Lock, LockOpen, Plus, SendToBack, Trash2, Eye, EyeOff, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, BringToFront, Copy, FlipHorizontal2, Link2, Lock, LockOpen, Plus, RotateCcw, SendToBack, Trash2, Eye, EyeOff, Unlink, X } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import { useAssets } from '../../assets/library';
 import { formatHeight, formatLength } from '../../core/units';
@@ -18,15 +18,19 @@ import {
   TERRITORY_TYPES,
   TERRITORY_TYPE_LABELS,
   type BorderStyle,
-  type LabelFont,
   type MapLabel,
+  type NameStyleKey,
+  type PeakAnnotation,
   type MapObject,
   type PathFeature,
   type RoadStyle,
   type Territory,
   type TerritoryType,
 } from '../../model/types';
-import { FONT_LABEL } from '../../render/fonts';
+import { objectSize } from '../../model/geometry';
+import { labelGroup, labelOwn, labelStyle, mapLong, objectNameGroup, objectNameStyle, pathNameGroup, pathNameStyle, peakNameGroup, peakNameStyle } from '../../model/names';
+import { labelResetPatch, labelStylePatch, ownStylePatch } from '../../editor/names';
+import { ItemNameStyle } from './NameStyles';
 import { useDoc } from '../../store/docStore';
 import { useEditor, useViewInfo } from '../../store/editorStore';
 import { sampleSpline } from '../../render/vectorGeometry';
@@ -41,6 +45,14 @@ const SWATCHES = ['#b5452f', '#2f5d9a', '#3f8f5a', '#c79a2e', '#7a4aa0', '#2a8a8
 
 function geo() {
   return editor.model!.geo;
+}
+
+/** Three significant digits: a size typed in, not a float's tail. */
+const sig = (v: number) => Number(v.toPrecision(3));
+
+/** The map's longer side, cells (what automatic name sizes are a share of). */
+function longSide() {
+  return editor.model ? mapLong(editor.model.W, editor.model.H) : 2048;
 }
 
 function Actions({ locked, hidden, onLock, onHide }: { locked: boolean; hidden: boolean; onLock: () => void; onHide: () => void }) {
@@ -122,7 +134,9 @@ function ObjectInspector({ o }: { o: MapObject }) {
   const selAsset = useEditor((s) => s.assetId);
   const upd = (patch: Partial<MapObject>, key: string) => updateObjects([o.id], patch, t('Edit object'), `${key}:${o.id}`);
   const g = geo();
-  const sizeKm = o.size * o.scale * g.kmPerCellY;
+  const doc = useDoc((s) => s.doc);
+  const { w, h } = objectSize(o);
+  const L = longSide();
   return (
     <>
       <div className="asset-current">
@@ -138,16 +152,53 @@ function ObjectInspector({ o }: { o: MapObject }) {
         )}
       </div>
       <TextField label={t('Name')} value={o.name} placeholder={t('e.g. Kingsford')} onChange={(v) => upd({ name: v }, 'name')} />
+      {o.name.trim() && (
+        <>
+          <Toggle label={t('Show name on map')} checked={o.showName ?? true} onChange={(v) => upd({ showName: v }, 'showname')} />
+          {(o.showName ?? true) && (
+            <>
+              <div className="name-place">
+                <Hint>{t('Drag the name on the map to move it.')}</Hint>
+                {o.nameOffset && (
+                  <button className="btn small" onClick={() => upd({ nameOffset: undefined }, 'nameoffset')}>
+                    <RotateCcw size={13} /> {t('Under the symbol')}
+                  </button>
+                )}
+              </div>
+            <ItemNameStyle
+              group={objectNameGroup(doc, o).id}
+              onGroup={(id) => upd({ nameGroup: id }, 'namegroup')}
+              style={objectNameStyle(doc, o, L)}
+              own={Object.keys(o.nameStyle ?? {}) as NameStyleKey[]}
+              onSet={(k, v) => upd({ nameStyle: ownStylePatch(o.nameStyle, k, v) }, 'ns-' + k)}
+              onReset={(k) => upd({ nameStyle: ownStylePatch(o.nameStyle, k, undefined) }, 'ns-' + k)}
+              onResetAll={() => upd({ nameStyle: undefined }, 'ns-all')}
+              sample={o.name}
+            />
+            </>
+          )}
+        </>
+      )}
       <TextField label={t('Description')} value={o.description} multiline onChange={(v) => upd({ description: v }, 'desc')} />
       <div className="kv">
         <span>{t('Location')}</span>
         <b>{formatPlace(g, o.x, o.y, units)}</b>
       </div>
       <div className="grid2">
-        <MeasureField label={t('Width')} kind="length" value={sizeKm} min={0.01} step={{ metric: 1, imperial: 1 }} onChange={(v) => upd({ size: v / g.kmPerCellY / o.scale }, 'size')} />
-        <NumberField label={t('Rotation')} value={o.rotation} suffix="°" step={5} onChange={(v) => upd({ rotation: v }, 'rot')} />
+        <MeasureField label={t('Width')} kind="length" value={sig(w * g.kmPerCellY)} min={0.01} step={{ metric: 1, imperial: 1 }} onChange={(v) => upd({ scale: v / g.kmPerCellY / o.size }, 'size')} />
+        <MeasureField label={t('Height')} kind="length" value={sig(h * g.kmPerCellY)} min={0.01} step={{ metric: 1, imperial: 1 }} onChange={(v) => upd({ stretch: ((o.stretch ?? 1) * (v / g.kmPerCellY)) / h }, 'height')} />
       </div>
-      <Slider label={t('Scale')} value={o.scale} min={0.05} max={20} log onChange={(v) => upd({ scale: v }, 'scale')} format={(v) => `${v.toFixed(2)}×`} />
+      <div className="grid2">
+        <NumberField label={t('Rotation')} value={o.rotation} suffix="°" step={5} onChange={(v) => upd({ rotation: v }, 'rot')} />
+        {o.stretch !== undefined && Math.abs(o.stretch - 1) > 0.005 ? (
+          <button className="btn small align-end" onClick={() => upd({ stretch: undefined }, 'stretch')} title={t('Give the artwork back its own proportions')}>
+            {t('Restore proportions')}
+          </button>
+        ) : (
+          <span />
+        )}
+      </div>
+      <Hint>{t('Drag a corner to resize, a side to stretch; Shift: free, Alt: from the centre.')}</Hint>
       <Slider label={t('Opacity')} value={o.opacity} min={0} max={1} onChange={(v) => upd({ opacity: v }, 'opacity')} format={(v) => `${Math.round(v * 100)}%`} />
       <Select label={t('Layer')} value={o.layerId} options={layers.map((l) => ({ value: l.id, label: t(l.name) }))} onChange={(v) => updateObjects([o.id], { layerId: v }, t('Move to layer'))} />
       <div className="btn-row">
@@ -218,6 +269,7 @@ function PathInspector({ p }: { p: PathFeature }) {
   const zoom = useViewInfo((s) => s.zoom);
   const upd = (patch: Partial<PathFeature>, key: string) => updateFeature('path', p.id, patch, t('Edit path'), `${key}:${p.id}`);
   const g = geo();
+  const doc = useDoc((s) => s.doc);
   // where it flows changes with the lakes and the coast as well
   useEditor((s) => s.lakeRev);
   useEditor((s) => s.geography);
@@ -228,6 +280,26 @@ function PathInspector({ p }: { p: PathFeature }) {
   return (
     <>
       <TextField label={t('Name')} value={p.name} placeholder={p.kind === 'river' ? t('e.g. River Ael') : t('e.g. King’s Road')} onChange={(v) => upd({ name: v }, 'name')} />
+      {p.name.trim() && !p.oxbow && (
+        <>
+          <Toggle label={t('Show name on map')} checked={p.showName ?? true} onChange={(v) => upd({ showName: v }, 'showname')} />
+          {(p.showName ?? true) && (
+            <>
+              <Slider label={t('Name along it')} value={p.nameAt ?? 0.5} min={0.05} max={0.95} step={0.01} onChange={(v) => upd({ nameAt: v }, 'nameat')} format={(v) => `${Math.round(v * 100)}%`} hint={t('Or drag the name along it on the map.')} />
+              <ItemNameStyle
+                group={pathNameGroup(doc, p).id}
+                onGroup={(id) => upd({ nameGroup: id }, 'namegroup')}
+                style={pathNameStyle(doc, p, longSide())}
+                own={Object.keys(p.nameStyle ?? {}) as NameStyleKey[]}
+                onSet={(k, v) => upd({ nameStyle: ownStylePatch(p.nameStyle, k, v) }, 'ns-' + k)}
+                onReset={(k) => upd({ nameStyle: ownStylePatch(p.nameStyle, k, undefined) }, 'ns-' + k)}
+                onResetAll={() => upd({ nameStyle: undefined }, 'ns-all')}
+                sample={p.name}
+              />
+            </>
+          )}
+        </>
+      )}
       <div className="kv">
         <span>{t('Length')}</span>
         <b>{formatLength(len, units)}</b>
@@ -375,7 +447,6 @@ function TerritoryInspector({ t: terr }: { t: Territory }) {
 
 function LabelInspector({ l }: { l: MapLabel }) {
   const { t } = useTranslation();
-  const zoom = useViewInfo((s) => s.zoom);
   const focus = useEditor((s) => s.focusLabel);
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -388,23 +459,36 @@ function LabelInspector({ l }: { l: MapLabel }) {
     }, 0);
   }, [focus, l.id]);
   const upd = (patch: Partial<MapLabel>, key: string) => updateFeature('label', l.id, patch, t('Edit label'), `${key}:${l.id}`);
+  const doc = useDoc((s) => s.doc);
+  const own = labelOwn(l);
   return (
     <>
-      <TextField label={t('Text')} value={l.text} multiline ref={ref} onChange={(v) => upd({ text: v }, 'text')} />
-      <Select<LabelFont> label={t('Font')} value={l.font} options={(Object.keys(FONT_LABEL) as LabelFont[]).map((f) => ({ value: f, label: t(FONT_LABEL[f]) }))} onChange={(v) => upd({ font: v }, 'font')} />
-      <Slider label={t('Size')} value={l.size * zoom} min={4} max={300} log onChange={(v) => upd({ size: v / zoom }, 'size')} format={(v) => `${Math.round(v)} px`} />
-      <ColorField label={t('Colour')} value={l.color} swatches={['#2d2216', '#5a2a1a', '#1d2731', '#ffffff', '#8f2a1e', '#2f5d9a']} onChange={(v) => upd({ color: v }, 'color')} />
+      {l.anchor && (
+        <div className="linked-note">
+          <Link2 size={14} />
+          <span>{l.anchor.land ? t('Names this land: it goes with it.') : t('Names this water: it goes with it.')} {l.anchor.syncText ? t('The text follows its name.') : ''}</span>
+          <button className="btn small" onClick={() => updateFeature('label', l.id, { anchor: undefined }, t('Unlink label'))} title={t('Make it a free label that stays even if the land or water is gone')}>
+            <Unlink size={13} /> {t('Unlink')}
+          </button>
+        </div>
+      )}
+      <TextField label={t('Text')} value={l.text} multiline ref={ref} onChange={(v) => upd(l.anchor?.syncText ? { text: v, anchor: { ...l.anchor, syncText: false } } : { text: v }, 'text')} />
+      <ItemNameStyle
+        group={labelGroup(doc, l).id}
+        onGroup={(id) => upd({ group: id }, 'group')}
+        style={labelStyle(doc, l, longSide())}
+        own={own}
+        onSet={(k, v) => upd(labelStylePatch(l, k, v), 'ls-' + k)}
+        onReset={(k) => upd(labelResetPatch(l, [k]), 'ls-' + k)}
+        onResetAll={() => upd(labelResetPatch(l), 'ls-all')}
+        sample={l.text}
+      />
       <div className="grid2">
         <NumberField label={t('Rotation')} value={l.rotation} suffix="°" step={5} onChange={(v) => upd({ rotation: v }, 'rot')} />
         <NumberField label={t('Spacing')} value={Math.round(l.letterSpacing * 100)} suffix="%" step={2} onChange={(v) => upd({ letterSpacing: v / 100 }, 'ls')} />
       </div>
       <Slider label={t('Curve')} value={l.curve} min={-1} max={1} step={0.02} onChange={(v) => upd({ curve: Math.abs(v) < 0.03 ? 0 : v }, 'curve')} format={(v) => (v === 0 ? t('straight') : `${Math.round(v * 100)}%`)} />
       <Slider label={t('Opacity')} value={l.opacity} min={0} max={1} onChange={(v) => upd({ opacity: v }, 'opacity')} format={(v) => `${Math.round(v * 100)}%`} />
-      <div className="checks">
-        <Toggle label={t('Capitals')} checked={l.uppercase} onChange={(v) => upd({ uppercase: v }, 'upper')} />
-        <Toggle label={t('Italic')} checked={l.italic} onChange={(v) => upd({ italic: v }, 'italic')} />
-        <Toggle label={t('Halo')} checked={l.halo} onChange={(v) => upd({ halo: v }, 'halo')} />
-      </div>
       <Actions locked={l.locked} hidden={l.hidden} onLock={() => upd({ locked: !l.locked }, 'lock')} onHide={() => upd({ hidden: !l.hidden }, 'hide')} />
     </>
   );
@@ -414,8 +498,15 @@ function PeakInspector({ id }: { id: string }) {
   const { t } = useTranslation();
   const units = useEditor((s) => s.units);
   const peak = useEditor((s) => s.peaks.find((p) => p.id === id));
+  const doc = useDoc((s) => s.doc);
   if (!peak) return <Hint>{t('This peak no longer exists — the terrain changed.')}</Hint>;
   const g = geo();
+  const ann = peak.annotationId ? doc.peaks[peak.annotationId] : undefined;
+  // (a peak given a style is remembered, as a named one is; the selection follows it)
+  const annotateKeep = (patch: Partial<PeakAnnotation>) => {
+    const annId = annotatePeak(peak, patch);
+    if (!peak.annotationId) useEditor.getState().select([{ kind: 'peak', id: annId }]);
+  };
   return (
     <>
       <TextField label={t('Name')} value={peak.name} placeholder={t('e.g. Mount Varr')} onChange={(v) => {
@@ -434,6 +525,16 @@ function PeakInspector({ id }: { id: string }) {
         <span>{t('Status')}</span>
         <b>{peak.designated ? t('Designated (always shown)') : t('Detected automatically')}</b>
       </div>
+      <ItemNameStyle
+        group={peakNameGroup(doc, ann).id}
+        onGroup={(id) => annotateKeep({ nameGroup: id })}
+        style={peakNameStyle(doc, ann, longSide())}
+        own={Object.keys(ann?.nameStyle ?? {}) as NameStyleKey[]}
+        onSet={(k, v) => annotateKeep({ nameStyle: ownStylePatch(ann?.nameStyle, k, v) })}
+        onReset={(k) => annotateKeep({ nameStyle: ownStylePatch(ann?.nameStyle, k, undefined) })}
+        onResetAll={() => annotateKeep({ nameStyle: undefined })}
+        sample={peak.name || formatHeight(peak.elevation, units)}
+      />
       <Hint>{t('The height updates live as you sculpt. Designated peaks follow the summit if it moves slightly.')}</Hint>
       <div className="btn-row">
         {!peak.designated && (

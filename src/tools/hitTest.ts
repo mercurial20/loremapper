@@ -1,6 +1,6 @@
 import type { Geo } from '../core/geo';
 import { distToSegment, pointInPolygon } from '../core/math';
-import { objectCorners, toLocal } from '../model/geometry';
+import { objectHandles, toLocal } from '../model/geometry';
 import type { MapDocument, SelectionRef, Vec2 } from '../model/types';
 import type { ResolvedPeak } from '../terrain/peaks';
 import { sampleSpline } from '../render/vectorGeometry';
@@ -166,7 +166,8 @@ export function objectHandleHit(ctx: HitContext, id: string, x: number, y: numbe
   const px = nearX(ctx.geo, o.x, x);
   const tol = 8 / ctx.zoom;
   if (Math.hypot(px - rotate[0], y - rotate[1]) < tol) return 'rotate';
-  const c = objectCorners(o, 2 / ctx.zoom);
-  for (let i = 0; i < 4; i++) if (Math.hypot(px - c[i][0], y - c[i][1]) < tol) return i;
+  const c = objectHandles(o, 2 / ctx.zoom);
+  // (the corners first: where a small symbol's handles crowd, a corner wins)
+  for (let i = 0; i < 8; i++) if (Math.hypot(px - c[i][0], y - c[i][1]) < tol) return i;
   return null;
 }

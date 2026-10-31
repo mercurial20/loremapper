@@ -13,6 +13,16 @@ export interface MapObject {
   /** Base width in world units (cells). Height follows the asset aspect ratio. */
   size: number;
   scale: number;
+  /** Height stretched against the artwork's own proportions (1 = as drawn). */
+  stretch?: number;
+  /** Write the object's name on the map under it (default: whenever it has a name). */
+  showName?: boolean;
+  /** The name group whose style the name takes (default: the Objects group). */
+  nameGroup?: string;
+  /** Style of this name that differs from its group's. */
+  nameStyle?: Partial<NameStyle>;
+  /** Where the name sits, world units from the object's centre (default: under it). */
+  nameOffset?: Vec2;
   /** Degrees, clockwise. */
   rotation: number;
   flipX: boolean;
@@ -56,6 +66,13 @@ export interface PathFeature {
   name: string;
   hidden: boolean;
   locked: boolean;
+  /** Write the name on the map along it (default: whenever it has a name). */
+  showName?: boolean;
+  /** The name group whose style the name takes (default: Waters for a river, Labels for a road). */
+  nameGroup?: string;
+  nameStyle?: Partial<NameStyle>;
+  /** Where along it the name sits, 0 (start) … 1 (end); default the middle. */
+  nameAt?: number;
 }
 
 /** How a source's water ended: in the sea, a lake, a lake of its own with no outflow, … */
@@ -163,12 +180,23 @@ export interface Territory {
 
 export type LabelFont = 'display' | 'serif' | 'script' | 'sans';
 
+/** What a label names, so it goes with it: a landmass or body of water (by a point inside it). */
+export interface LabelAnchor {
+  kind: 'region';
+  x: number;
+  y: number;
+  /** The region is land (else water). */
+  land: boolean;
+  /** Keep the text equal to the region's name. */
+  syncText: boolean;
+}
+
 export interface MapLabel {
   id: string;
   text: string;
   x: number;
   y: number;
-  /** Cap height in world units. */
+  /** Letter (font) size in world units. */
   size: number;
   font: LabelFont;
   color: string;
@@ -182,6 +210,38 @@ export interface MapLabel {
   opacity: number;
   hidden: boolean;
   locked: boolean;
+  /** The name group whose style it takes (default: Labels; a region's name: Lands or Waters). */
+  group?: string;
+  /** The style properties set on the label itself; the rest come from its group. Missing: all its own (older maps). */
+  own?: NameStyleKey[];
+  /** What it names, so it goes with it. */
+  anchor?: LabelAnchor;
+}
+
+/** The style of a name on the map, shared by a group and overridable item by item. */
+export interface NameStyle {
+  font: LabelFont;
+  /** Letter (font) size in world units (cells); 0 = sized to the map automatically. */
+  size: number;
+  color: string;
+  halo: boolean;
+  uppercase: boolean;
+  italic: boolean;
+}
+export type NameStyleKey = keyof NameStyle;
+export const NAME_STYLE_KEYS: NameStyleKey[] = ['font', 'size', 'color', 'halo', 'uppercase', 'italic'];
+
+export type NameGroupKind = 'peaks' | 'objects' | 'places' | 'waters' | 'labels' | 'custom';
+
+/** A group of names on the map with one style (peaks, objects, places, labels, or the user's own). */
+export interface NameGroup {
+  id: string;
+  name: string;
+  kind: NameGroupKind;
+  style: NameStyle;
+  visible: boolean;
+  /** Shown however small (never hidden when zoomed out). */
+  always: boolean;
 }
 
 export interface PeakAnnotation {
@@ -191,6 +251,8 @@ export interface PeakAnnotation {
   name: string;
   /** designated = always shown (and named); suppressed = hidden automatic peak */
   mode: 'designated' | 'suppressed';
+  nameGroup?: string;
+  nameStyle?: Partial<NameStyle>;
 }
 
 export interface ObjectLayer {
@@ -263,6 +325,8 @@ export interface MapDocument {
   labels: Record<string, MapLabel>;
   peaks: Record<string, PeakAnnotation>;
   regionNames: Record<string, RegionName>;
+  /** Groups of names with a shared style: the built-in ones, then the user's own. */
+  nameGroups: NameGroup[];
   objectLayers: ObjectLayer[];
   systemLayers: Record<SystemLayerId, SystemLayerState>;
   view: ViewSettings;
@@ -313,6 +377,7 @@ export function emptyDocument(): MapDocument {
     labels: {},
     peaks: {},
     regionNames: {},
+    nameGroups: defaultNameGroups(),
     reference: null,
     objectLayers: [
       { id: 'layer-settlements', name: N_('Settlements'), visible: true, locked: false, opacity: 1 },
@@ -332,3 +397,18 @@ export function emptyDocument(): MapDocument {
     view: defaultView(),
   };
 }
+
+export const NAME_GROUP = { peaks: 'names-peaks', objects: 'names-objects', places: 'names-places', waters: 'names-waters', labels: 'names-labels' } as const;
+
+/** The built-in name groups, sized to the map automatically. */
+export function defaultNameGroups(): NameGroup[] {
+  const g = (id: string, name: string, kind: NameGroupKind, style: NameStyle): NameGroup => ({ id, name, kind, style, visible: true, always: false });
+  return [
+    g(NAME_GROUP.places, N_('Lands'), 'places', { font: 'display', size: 0, color: '#2d2216', halo: true, uppercase: true, italic: false }),
+    g(NAME_GROUP.waters, N_('Waters'), 'waters', { font: 'serif', size: 0, color: '#2f5874', halo: true, uppercase: false, italic: true }),
+    g(NAME_GROUP.objects, N_('Objects'), 'objects', { font: 'serif', size: 0, color: '#2d2216', halo: true, uppercase: false, italic: false }),
+    g(NAME_GROUP.peaks, N_('Peaks'), 'peaks', { font: 'serif', size: 0, color: '#2b2016', halo: true, uppercase: false, italic: false }),
+    g(NAME_GROUP.labels, N_('Labels'), 'labels', { font: 'display', size: 0, color: '#2d2216', halo: true, uppercase: false, italic: false }),
+  ];
+}
+

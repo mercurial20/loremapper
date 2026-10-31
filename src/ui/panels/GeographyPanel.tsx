@@ -10,6 +10,7 @@ import {
   freshGeography,
   kindLabel,
   labelRegion,
+  regionLabel,
   realmsOn,
   regionName,
   setRegionName,
@@ -58,6 +59,8 @@ export function RegionInspector({ r }: { r: RegionInfo }) {
   const g = freshGeography();
   const pinned = g ? regionName(g, r, names) : null;
   const placeholder = defaultName(geography, r);
+  useDoc((s) => s.doc.labels);
+  const onMap = !!regionLabel(r);
   const share = r.land ? r.areaKm2 / Math.max(1, geography.landKm2) : r.areaKm2 / geography.mapKm2;
   const peak = r.land ? peaks.find((p) => p.name && Math.hypot(p.x - r.extremeX, p.y - r.extremeY) < 6) : undefined;
   const W = editor.model?.W ?? 1;
@@ -116,8 +119,8 @@ export function RegionInspector({ r }: { r: RegionInfo }) {
       )}
       <div className="btn-row">
         {!readOnly && (
-          <button className="btn small" onClick={() => labelRegion(r, pinned?.name || placeholder)} title={t('Add the name to the map as a label you can move and style')}>
-            <Type size={13} /> {t('Write name on map')}
+          <button className="btn small" onClick={() => labelRegion(r, pinned?.name || placeholder)} title={onMap ? t('Select the name written on the map') : t('Write the name on the map: it follows the name and goes with the land or water it names')}>
+            <Type size={13} /> {onMap ? t('Name on the map') : t('Write name on map')}
           </button>
         )}
         <button className="btn small" onClick={() => useEditor.getState().set({ geoListOpen: true })}>

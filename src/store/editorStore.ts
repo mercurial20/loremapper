@@ -5,7 +5,7 @@ import type { Units } from '../core/units';
 import type { RegionInfo } from '../terrain/geography';
 import type { BrushParams } from '../terrain/brushes';
 import type { ResolvedPeak } from '../terrain/peaks';
-import type { BorderStyle, LabelFont, RoadStyle, SelectionRef, TerritoryType, Vec2 } from '../model/types';
+import type { BorderStyle, RoadStyle, SelectionRef, TerritoryType, Vec2 } from '../model/types';
 import { N_, t } from '../i18n';
 
 export type ToolId =
@@ -48,9 +48,10 @@ export function brushGroupOf(tool: ToolId): BrushGroup | null {
 
 export interface StampSettings {
   mode: 'single' | 'stamp';
-  /** Default object width in screen pixels at placement zoom. */
-  sizePx: number;
-  spacingPx: number;
+  /** Width of a placed symbol, as a share of the map's shorter side: the same on the map at any zoom. */
+  share: number;
+  /** Stamp brush: distance between symbols, the same way. */
+  spacingShare: number;
   randomScale: number;
   randomRotation: number;
   randomFlip: boolean;
@@ -89,7 +90,8 @@ interface EditorState {
   /** Default widths are in screen pixels at the zoom where the path is drawn. */
   pathDefaults: { river: { width: number; color: string; taper: boolean }; road: { width: number; color: string; style: RoadStyle } };
   territoryDefaults: { type: TerritoryType; color: string; borderStyle: BorderStyle };
-  labelDefaults: { font: LabelFont; sizePx: number; color: string };
+  /** Label tool: the name group a new label joins (and takes its style from). */
+  labelDefaults: { group: string };
   selection: SelectionRef[];
   cursor: CursorInfo | null;
   peaks: ResolvedPeak[];
@@ -97,6 +99,8 @@ interface EditorState {
   assetPanelOpen: boolean;
   inspectorOpen: boolean;
   layersOpen: boolean;
+  /** The right panel's Names on the map section is open. */
+  namesOpen: boolean;
   saveStatus: SaveStatus;
   lastSavedAt: number;
   canUndo: boolean;
@@ -236,14 +240,14 @@ export const useEditor = create<EditorState>((set, get) => ({
   fogMode: 'hide',
   fogPreview: true,
   assetId: null,
-  stamp: { mode: 'single', sizePx: 56, spacingPx: 48, randomScale: 0.25, randomRotation: 0, randomFlip: true },
+  stamp: { mode: 'single', share: 1 / 45, spacingShare: 1 / 40, randomScale: 0.25, randomRotation: 0, randomFlip: true },
   activeObjectLayer: 'layer-settlements',
   pathDefaults: {
     river: { width: 5, color: '#4f86ad', taper: true },
     road: { width: 2.2, color: '#7a5532', style: 'dashed' },
   },
   territoryDefaults: { type: 'kingdom', color: '#b5452f', borderStyle: 'dashed' },
-  labelDefaults: { font: 'display', sizePx: 22, color: '#2d2216' },
+  labelDefaults: { group: 'names-labels' },
   selection: [],
   cursor: null,
   peaks: [],
@@ -251,6 +255,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   assetPanelOpen: false,
   inspectorOpen: true,
   layersOpen: true,
+  namesOpen: false,
   saveStatus: 'saved',
   lastSavedAt: 0,
   canUndo: false,

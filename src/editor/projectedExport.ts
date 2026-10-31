@@ -2,7 +2,11 @@ import { assetLibrary } from '../assets/library';
 import { polygonCentroid } from '../core/math';
 import { forwardUnwrapped, makeProjection, type Projection, type ProjectionParams } from '../core/projections';
 import { formatHeight } from '../core/units';
-import type { LabelFont, Vec2 } from '../model/types';
+import type { LabelFont, NameStyle, Vec2 } from '../model/types';
+import { objectSize } from '../model/geometry';
+import { labelGroup, labelStyle, mapLong, MIN_ICON_PX, MIN_NAME_PX, objectNameGroup, objectNameStyle, objectShowsName, pathNameGroup, pathNameStyle, pathShowsName, peakNameGroup, peakNameStyle } from '../model/names';
+import { alongPath } from '../render/NameLayer';
+import { isOpenWater } from '../terrain/lakes';
 import { FONT_STACK } from '../render/fonts';
 import { STYLE_PRESETS, type StylePreset } from '../render/styles';
 import { sampleSpline } from '../render/vectorGeometry';
@@ -466,7 +470,7 @@ export function drawVectors(p: Painter, style: StylePreset, opts: VectorOptions)
       if (!img) continue;
       const aspect = assetLibrary.get(o.assetId)?.aspect ?? img.naturalHeight / Math.max(1, img.naturalWidth);
       const w = o.size * o.scale * p.cell;
-      const h = w * aspect;
+      const h = w * aspect * (o.stretch ?? 1);
       ctx.save();
       ctx.translate(q[0], q[1]);
       ctx.rotate((o.rotation * PI) / 180);
@@ -487,26 +491,71 @@ export function drawVectors(p: Painter, style: StylePreset, opts: VectorOptions)
       ctx.globalAlpha = sys.territories.opacity;
       drawText(ctx, q[0], q[1], { text: t.name, font: 'display', size: t.labelSize * p.cell, color: t.borderColor, halo: style.labelHalo, letterSpacing: 0.18, uppercase: true, italic: false, curve: 0, rotation: 0, alpha: 0.92 });
     }
-  if (sys.labels.visible)
+  const model = editor.model!;
+  const L = mapLong(model.W, model.H);
+  // a name too small to read on the picture is left out, as on screen
+  const readable = (size: number, g: { always: boolean }) => g.always || size * p.cell >= MIN_NAME_PX;
+  // where names are drawn (peak markers keep clear of them)
+  const taken: [number, number, number, number][] = [];
+  if (sys.labels.visible) {
+    // the names of objects and rivers, larger first where they crowd
+    const names: { x: number; y: number; rotation: number; text: string; s: NameStyle; prio: number; always: boolean }[] = [];
+    if (sys.objects.visible)
+      for (const o of Object.values(doc.objects)) {
+        if (o.hidden || !objectShowsName(o) || !(doc.objectLayers.find((l) => l.id === o.layerId)?.visible ?? true)) continue;
+        const g = objectNameGroup(doc, o);
+        const s = objectNameStyle(doc, o, L);
+        const { w, h } = objectSize(o);
+        if (!g.visible || !readable(s.size, g) || w * p.cell < MIN_ICON_PX) continue;
+        const [ox, oy] = o.nameOffset ?? [0, h / 2 + s.size * 0.95];
+        names.push({ x: o.x + ox, y: o.y + oy, rotation: 0, text: o.name, s, prio: w, always: g.always });
+      }
+    if (sys.paths.visible)
+      for (const path of Object.values(doc.paths)) {
+        if (path.hidden || path.oxbow || !pathShowsName(path) || path.points.length < 2) continue;
+        const g = pathNameGroup(doc, path);
+        const s = pathNameStyle(doc, path, L);
+        if (!g.visible || !readable(s.size, g)) continue;
+        const at = alongPath(path, s.size);
+        names.push({ ...at, text: path.name, s, prio: path.width * 4 + s.size, always: g.always });
+      }
+    names.sort((a, b) => Number(b.always) - Number(a.always) || b.prio - a.prio);
+    for (const n of names) {
+      const q = p.at(n.x, n.y);
+      if (!q) continue;
+      const fs = n.s.size * p.cell;
+      const hw = n.text.length * fs * 0.38 + 3;
+      const box: [number, number, number, number] = [q[0] - hw, q[1] - fs * 0.7, q[0] + hw, q[1] + fs * 0.7];
+      if (!n.always && taken.some((b) => b[0] < box[2] && b[2] > box[0] && b[1] < box[3] && b[3] > box[1])) continue;
+      taken.push(box);
+      ctx.globalAlpha = sys.labels.opacity;
+      drawText(ctx, q[0], q[1], { text: n.text, font: n.s.font, size: fs, color: n.s.color, halo: n.s.halo ? style.labelHalo : null, letterSpacing: n.s.uppercase ? 0.1 : 0.02, uppercase: n.s.uppercase, italic: n.s.italic, curve: 0, rotation: n.rotation, alpha: 1 });
+    }
     for (const l of Object.values(doc.labels)) {
       if (l.hidden || !l.text) continue;
+      const g = labelGroup(doc, l);
+      const s = labelStyle(doc, l, L);
+      if (!g.visible || !readable(s.size, g)) continue;
+      // a label naming a landmass or body of water that is gone is left out
+      if (l.anchor && isOpenWater(model, l.anchor.x, l.anchor.y) === l.anchor.land) continue;
       const q = p.at(l.x, l.y);
       if (!q) continue;
       ctx.globalAlpha = sys.labels.opacity;
       drawText(ctx, q[0], q[1], {
         text: l.text,
-        font: l.font,
-        size: l.size * p.cell,
-        color: l.color,
-        halo: l.halo ? style.labelHalo : null,
+        font: s.font,
+        size: s.size * p.cell,
+        color: s.color,
+        halo: s.halo ? style.labelHalo : null,
         letterSpacing: l.letterSpacing,
-        uppercase: l.uppercase,
-        italic: l.italic,
+        uppercase: s.uppercase,
+        italic: s.italic,
         curve: l.curve,
         rotation: l.rotation,
         alpha: l.opacity,
       });
     }
+  }
   ctx.globalAlpha = 1;
 
   // peaks: ▲ name · elevation, decluttered like the editor's markers
@@ -517,41 +566,50 @@ export function drawVectors(p: Painter, style: StylePreset, opts: VectorOptions)
       .peaks.filter((k) => k.designated || k.elevation >= doc.view.peakMinElevation)
       .sort((a, b) => Number(b.designated) - Number(a.designated) || b.elevation - a.elevation);
     const placed: [number, number, number, number][] = [];
-    const fs = 12 * u;
     for (const k of ranked) {
       if (placed.length >= 150) break;
+      const ann = k.annotationId ? doc.peaks[k.annotationId] : undefined;
+      const pg = peakNameGroup(doc, ann);
+      const ps = peakNameStyle(doc, ann, L);
+      if (!pg.visible || (!k.designated && !readable(ps.size, pg))) continue;
+      // the marker's own scale: its letter size on the picture, against the editor's 12 px font
+      const fs = Math.max(ps.size * p.cell, MIN_NAME_PX * 0.7);
+      const ku = fs / 12;
       const q = p.at(k.x, k.y);
       if (!q) continue;
-      const lines = [...(k.name ? [k.name] : []), formatHeight(k.elevation, units)];
-      const bw = Math.max(96 * u, Math.max(...lines.map((l) => l.length)) * 6.6 * u + 24 * u);
-      const box: [number, number, number, number] = [q[0] - bw / 2, q[1] - 24 * u, q[0] + bw / 2, q[1] + (lines.length * 13 + 30) * u];
-      if (!k.designated && placed.some((b) => b[0] < box[2] && b[2] > box[0] && b[1] < box[3] && b[3] > box[1])) continue;
+      const lines = [...(k.name ? [ps.uppercase ? k.name.toUpperCase() : k.name] : []), formatHeight(k.elevation, units)];
+      const bw = Math.max(96 * ku, Math.max(...lines.map((l) => l.length)) * 6.6 * ku + 24 * ku);
+      const box: [number, number, number, number] = [q[0] - bw / 2, q[1] - 24 * ku, q[0] + bw / 2, q[1] + (lines.length * 13 + 30) * ku];
+      // against names, only what the marker covers: its triangle and its text
+      const tw = (Math.max(...lines.map((l) => l.length)) * 6.6 * ku) / 2;
+      const ink: [number, number, number, number] = [q[0] - Math.max(tw, 8 * ku), q[1] - 10 * ku, q[0] + Math.max(tw, 8 * ku), q[1] + (6 + lines.length * 13) * ku];
+      const over = (a: [number, number, number, number]) => (b: [number, number, number, number]) => b[0] < a[2] && b[2] > a[0] && b[1] < a[3] && b[3] > a[1];
+      if (!k.designated && (placed.some(over(box)) || taken.some(over(ink)))) continue;
       // a label running off the map's rim would be cut: leave that peak out
-      const tw = (Math.max(...lines.map((l) => l.length)) * 6.6 * u) / 2;
-      if (!p.inside(q[0] - tw, q[1] + 6 * u) || !p.inside(q[0] + tw, q[1] + (6 + lines.length * 13) * u)) continue;
+      if (!p.inside(q[0] - tw, q[1] + 6 * ku) || !p.inside(q[0] + tw, q[1] + (6 + lines.length * 13) * ku)) continue;
       placed.push(box);
       ctx.save();
       ctx.globalAlpha = sys.peaks.opacity;
       ctx.beginPath();
-      ctx.moveTo(q[0], q[1] - 9 * u);
-      ctx.lineTo(q[0] + 7 * u, q[1] + 3 * u);
-      ctx.lineTo(q[0] - 7 * u, q[1] + 3 * u);
+      ctx.moveTo(q[0], q[1] - 9 * ku);
+      ctx.lineTo(q[0] + 7 * ku, q[1] + 3 * ku);
+      ctx.lineTo(q[0] - 7 * ku, q[1] + 3 * ku);
       ctx.closePath();
-      ctx.fillStyle = k.designated ? '#8f2a1e' : style.ink;
+      ctx.fillStyle = k.designated ? '#8f2a1e' : ps.color;
       ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-      ctx.lineWidth = 1.6 * u;
+      ctx.lineWidth = 1.6 * ku;
       ctx.lineJoin = 'round';
       ctx.stroke();
-      ctx.font = fontCss('serif', fs, false).replace(/^400/, '600');
+      ctx.font = fontCss(ps.font, fs, ps.italic).replace(/^400/, '600');
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.lineWidth = 3.2 * u;
+      ctx.lineWidth = 3.2 * ku;
       ctx.strokeStyle = style.labelHalo;
-      ctx.fillStyle = style.ink;
+      ctx.fillStyle = ps.color;
       lines.forEach((line, i) => {
-        ctx.strokeText(line, q[0], q[1] + 6 * u + i * 13 * u);
-        ctx.fillText(line, q[0], q[1] + 6 * u + i * 13 * u);
+        if (ps.halo) ctx.strokeText(line, q[0], q[1] + 6 * ku + i * 13 * ku);
+        ctx.fillText(line, q[0], q[1] + 6 * ku + i * 13 * ku);
       });
       ctx.restore();
     }

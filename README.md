@@ -10,7 +10,7 @@ A free fantasy map editor that runs in your browser.<br/>
 Sculpt real terrain, paint forests and deserts, draw rivers, roads and borders,<br/>
 drop in castles and dragons, and hide the unexplored under fog of war.
 
-[![Version](https://img.shields.io/badge/version-1.2.2--alpha.1-e6a94f)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.3.1--alpha.2-e6a94f)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-3f8f5a)](LICENSE)
 [![Try it online](https://img.shields.io/badge/try%20it-online-e6a94f?logo=github)](https://mercurial20.github.io/loremapper/)
 [![Self-hosted](https://img.shields.io/badge/self--hosted-docker%20compose%20up-2f5d9a)](#b-docker)
@@ -50,7 +50,7 @@ The fine relief drawn when you zoom in comes from small patches of real land, cu
 [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) dataset (SRTM, GMTED2010, ETOPO1 and
 other public elevation sources; see [public/relief/ATTRIBUTION.md](public/relief/ATTRIBUTION.md)).
 
-> **Still in beta.** Loremapper works and has been tested (see [Testing](#-testing-done-for-this-release)), but expect rough edges.
+> **Still in alpha.** Loremapper works and has been tested (see [Testing](#-testing-done-for-this-release)), but expect rough edges.
 > Please [back up](#-saving-backups-and-export) maps you care about and [tell us](#-reporting-bugs-and-contributing) what breaks.
 
 ---
@@ -278,7 +278,7 @@ The generator builds a planet the way geology and weather would.
 
 1. Press <kbd>O</kbd> to open the asset library.
 2. Click **Import PNG / WebP / SVG**, or **drag files** onto the panel.
-3. Click your asset, then click the map.
+3. Click your asset, then click the map. It is placed at a size on the map (in km), the same at any zoom; drag the handles on its corners and sides to resize or stretch it.
 
 Imports are stored in your browser and survive restarts. From the <b>⋯</b> menu you can rename an asset, move it to another category (make your own with the 📁 button), **replace the image** of any asset, built-in or yours (every copy on the map updates), or delete it. Deleting an asset never removes objects already on your maps.
 
@@ -340,6 +340,7 @@ You can name it there and write the name on the map as a normal label. **Lands &
 
 - **English and Russian**: the app starts in your browser's language, and a menu next to the km/mi switch changes it at any time.
 - **Trace another map**: *Layers → Add reference image…* lays a picture (for example a map from another tool) over yours, faded, so you can redraw its coasts. It is saved with the map and can be kept out of exports.
+- **Names on the map**: objects write their names under them and rivers along them; they move with what they name and go with it. Names come in groups (Lands, Waters, Objects, Peaks, Labels, and your own) that set the font, size, colour and halo of all their names; any name can have a style of its own. Names too small to read hide as you zoom out.
 - **Layers**: show, hide, lock and fade terrain, biomes, borders, rivers, objects, labels, peaks and fog. You can create your own object layers.
 - **Undo / redo** for everything, plus copy, multi-select, z-order, lock and hide.
 - **Many maps**: each is saved separately, with thumbnails, and can be renamed or duplicated.
@@ -494,6 +495,7 @@ So far testing has been on macOS. Windows and Linux reports are very welcome.
 - Phones and tablets (iPhone 13 and iPad Pro 11 emulation): the viewer pans, pinch-zooms and answers taps; the panel starts hidden and opens on tap; lists and cards scroll by touch.
 - The whole interface in Russian, in Chrome: every dialog, tool, panel and selection was opened with a scan for leftover English, and switching the language while drawing keeps the map and the open panels.
 - Painted rivers in Chrome: a river painted across a mountain massif falls steadily from source to mouth through a V-shaped gorge, and one undo restores the ground.
+- Names on the map (1.3.1-alpha.2), in Chrome: symbols placed at different zooms come out the same size; the eight resize handles; group styles, groups of one's own (create, assign, delete, undo); names hiding and showing with zoom; dragging names of objects and rivers; names on a planet across the seam; image exports of the whole map and in the globe projection. Maps from earlier versions open with their labels kept; this release moves the project format to version 6, so maps saved by it need 1.3.1-alpha.2 or later.
 - Projects and browser-saved maps from v1.0.0-beta.2 open unchanged. This release moves the project format to version 3 (painted water), so maps saved by it need 1.2.3 or later.
 
 ## 🐞 Reporting bugs and contributing

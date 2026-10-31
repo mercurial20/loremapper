@@ -1730,7 +1730,7 @@ input[type='range']::-moz-range-thumb {
   color: var(--accent-ink);
 }
 
-.brand .beta {
+.brand .stage {
   font: 600 9.5px/1 var(--font);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -2688,4 +2688,160 @@ input[type='range']::-moz-range-thumb {
 }
 .whats-new-foot a {
   color: var(--accent-2);
+}
+
+/* ---------- names on the map ---------- */
+.name-sample {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: #e9dfc6;
+  background-image: radial-gradient(circle at 30% 20%, #f3ead4, #ddd0b0);
+  overflow: hidden;
+}
+.name-sample span {
+  font-size: 19px;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.name-style {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ns-field {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  border-left: 2px solid transparent;
+  padding-left: 6px;
+  margin-left: -8px;
+}
+.ns-field.own {
+  border-left-color: var(--accent);
+}
+.ns-ctl {
+  flex: 1;
+  min-width: 0;
+}
+.ns-reset {
+  margin-bottom: 2px;
+  color: var(--accent-2);
+}
+.ns-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ns-chip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.ns-chip-wrap.own .chip {
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.ns-chip-reset {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  background: var(--panel);
+  color: var(--accent-2);
+  padding: 0;
+  cursor: pointer;
+}
+.item-name-style {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+}
+.ns-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ns-toggle:hover {
+  color: var(--text);
+}
+.ns-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 7px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  vertical-align: middle;
+}
+.ng-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 6px 10px 32px;
+}
+.ns-pin:not(.on) {
+  opacity: 0.45;
+}
+.ns-pin:not(.on):hover {
+  opacity: 1;
+}
+.name-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.name-groups > .btn {
+  align-self: flex-start;
+}
+.linked-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent-2);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.linked-note span {
+  flex: 1;
+}
+.align-end {
+  align-self: end;
+}
+.ns-name {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.name-place {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }

@@ -17,6 +17,8 @@ import { RiverField } from '../render/riverField';
 import { PeakLayer } from '../render/PeakLayer';
 import { STYLE_PRESETS } from '../render/styles';
 import { LabelLayer, TerritoryLayer } from '../render/TerritoryLayer';
+import { NameLayer } from '../render/NameLayer';
+import { mapLong } from '../model/names';
 import { useDoc } from '../store/docStore';
 import { useEditor, useViewInfo } from '../store/editorStore';
 import { renderThumbnail } from './exporter';
@@ -28,6 +30,7 @@ import { track } from '../analytics';
 import { TerrainModel } from '../terrain/TerrainModel';
 import { i18n, t } from '../i18n';
 import { selectedLake } from './lakes';
+import { isOpenWater } from '../terrain/lakes';
 import { parseReliefLibrary, type ReliefLibrary } from '../terrain/reliefDetail';
 
 export interface Layers {
@@ -35,6 +38,7 @@ export interface Layers {
   paths: PathLayer;
   territories: TerritoryLayer;
   labels: LabelLayer;
+  names: NameLayer;
   peaks: PeakLayer;
   overlay: OverlayLayer;
   reference: ReferenceLayer;
@@ -45,6 +49,7 @@ const SAVE_DELAY = 900;
 let lakeBump = false;
 let lakeGeoTimer = 0;
 let riverTimer = 0;
+let anchorTimer = 0;
 
 /**
  * Editor runtime: owns the active project's raster model and renderer and
@@ -213,13 +218,17 @@ class Editor {
     const objects = new ObjectLayer(() => renderer.requestRender());
     const paths = new PathLayer();
     const territories = new TerritoryLayer();
-    const labels = new LabelLayer();
-    const peaks = new PeakLayer(renderer.camera, model.W);
+    const longSide = () => mapLong(model.W, model.H);
+    // a label naming a landmass or body of water shows while that is still there
+    const labels = new LabelLayer(longSide, (a) => isOpenWater(model, a.x, a.y) !== a.land);
+    const names = new NameLayer(renderer.camera, longSide, model.W);
+    const peaks = new PeakLayer(renderer.camera, model.W, longSide);
+    peaks.avoid = names;
     const overlay = new OverlayLayer(model.geo, (id) => labels.bounds(id));
     // the tracing picture sits on the terrain, under borders, rivers and symbols
     const reference = new ReferenceLayer((id) => assetLibrary.referenceBlob(id), () => renderer.requestRender());
-    renderer.addLayers([reference, territories, paths, objects, labels, peaks], overlay);
-    this.layers = { objects, paths, territories, labels, peaks, overlay, reference };
+    renderer.addLayers([reference, territories, paths, objects, names, labels, peaks], overlay);
+    this.layers = { objects, paths, territories, labels, names, peaks, overlay, reference };
     // rivers are drawn by the terrain shader, as water
     this.rivers = new RiverField(model);
     renderer.terrain.setRivers(this.rivers.grid);
@@ -255,6 +264,9 @@ class Editor {
       useEditor.subscribe((s, prev) => {
         if (s.selection !== prev.selection) {
           overlay.setContext(useDoc.getState().doc, s.selection);
+          const ids = new Set(s.selection.map((r) => r.id));
+          this.layers?.names.setSelected(ids);
+          this.layers?.labels.setSelected(ids);
           this.pushPeaks();
           renderer.requestRender();
         }
@@ -299,6 +311,14 @@ class Editor {
             }
           }, 120);
         }
+        // a label naming a landmass or water body goes while that is gone (and comes back with it)
+        if (layer === 'lake' || layer === 'height') {
+          clearTimeout(anchorTimer);
+          anchorTimer = window.setTimeout(() => {
+            this.layers?.labels.recheckAnchors();
+            this.renderer?.requestRender();
+          }, 200);
+        }
         // lakes split the land into islands and are water bodies of their own
         if (layer === 'lake') {
           clearTimeout(lakeGeoTimer);
@@ -339,7 +359,13 @@ class Editor {
       }
     }
     if (!prev || doc.territories !== prev.territories) L.territories.sync(doc);
-    if (!prev || doc.labels !== prev.labels) L.labels.sync(doc);
+    const groupsChanged = !prev || doc.nameGroups !== prev.nameGroups;
+    if (groupsChanged || doc.labels !== prev.labels) L.labels.sync(doc);
+    if (groupsChanged || doc.objects !== prev.objects || doc.paths !== prev.paths || doc.objectLayers !== prev.objectLayers) L.names.sync(doc);
+    if (groupsChanged || doc.peaks !== prev.peaks) {
+      L.peaks.setDoc(doc);
+      this.renderer.requestRender();
+    }
     if (!prev || doc.reference !== prev.reference) L.reference.sync(doc);
     if (prev && doc.peaks !== prev.peaks) this.resolvePeaksNow();
     if (!prev || doc.view !== prev.view || doc.systemLayers !== prev.systemLayers) this.applyView();
@@ -373,7 +399,12 @@ class Editor {
     L.paths.setStyle(style);
     L.territories.setStyle(style);
     L.labels.setStyle(style);
+    L.names.setStyle(style);
     L.peaks.setStyle(style);
+    // names of objects and rivers are map text: shown with the labels, and with what they name
+    L.names.setShown(doc.systemLayers.objects.visible, doc.systemLayers.paths.visible);
+    L.names.container.visible = doc.systemLayers.labels.visible;
+    L.names.container.alpha = doc.systemLayers.labels.opacity;
     const sl = doc.systemLayers;
     const vis = (c: { visible: boolean; alpha: number }, s: { visible: boolean; opacity: number }) => {
       c.visible = s.visible;

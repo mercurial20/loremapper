@@ -1,5 +1,6 @@
 import { Container, Sprite, Texture } from 'pixi.js';
 import { assetLibrary } from '../assets/library';
+import { MIN_ICON_PX } from '../model/names';
 import type { MapDocument, MapObject } from '../model/types';
 import type { WorldLayer } from './MapRenderer';
 
@@ -81,10 +82,20 @@ export class ObjectLayer implements WorldLayer {
     // set size explicitly through scale to keep flips
     const tw = Math.max(1, s.texture.width);
     const th = Math.max(1, s.texture.height);
-    s.scale.set(((o.flipX ? -1 : 1) * w) / tw, (w * aspect) / th);
+    s.scale.set(((o.flipX ? -1 : 1) * w) / tw, (w * aspect * (o.stretch ?? 1)) / th);
     const layer = this.doc?.objectLayers.find((l) => l.id === o.layerId);
     s.alpha = o.opacity * (e.loaded ? 1 : 0.25);
     s.visible = !o.hidden && (layer?.visible ?? true);
+    s.renderable = w * this.zoom >= MIN_ICON_PX;
+  }
+
+  private zoom = 1;
+
+  /** Symbols too small to make out at this zoom are not drawn. */
+  prepare(zoom: number, zoomChanged: boolean) {
+    if (!zoomChanged) return;
+    this.zoom = zoom;
+    for (const e of this.entries.values()) e.sprite.renderable = e.obj.size * e.obj.scale * zoom >= MIN_ICON_PX;
   }
 
   sync(doc: MapDocument) {

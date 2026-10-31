@@ -264,7 +264,7 @@ export function TopBar() {
       <div className="brand">
         <CompassRose size={26} />
         <span>Loremapper</span>
-        <em className="beta" title={t('Version {v}', { v: APP_VERSION })}>beta</em>
+        <em className="stage" title={t('Version {v}', { v: APP_VERSION })}>alpha</em>
       </div>
       <div className="project-name">
         <input

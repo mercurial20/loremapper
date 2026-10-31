@@ -3,6 +3,7 @@ import { t } from '../i18n';
 import { assetLibrary } from '../assets/library';
 import { addObjects, newObject } from '../editor/commands';
 import { editor } from '../editor/Editor';
+import { mapSpan } from '../model/names';
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import { tools } from '../tools/ToolController';
@@ -51,7 +52,7 @@ export function MapView() {
           return;
         }
         if (!assetLibrary.has(id)) return;
-        const o = newObject({ assetId: id, x: editor.model.geo.wrapX(x), y, size: st.stamp.sizePx / editor.zoom });
+        const o = newObject({ assetId: id, x: editor.model.geo.wrapX(x), y, size: st.stamp.share * mapSpan(editor.model.W, editor.model.H) });
         addObjects([o]);
         st.set({ assetId: id });
         st.select([{ kind: 'object', id: o.id }]);

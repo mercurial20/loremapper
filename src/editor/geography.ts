@@ -1,6 +1,6 @@
 import { polygonCentroid, uid } from '../core/math';
-import type { MapLabel, RegionName, Vec2 } from '../model/types';
-import { STYLE_PRESETS } from '../render/styles';
+import { NAME_GROUP, type MapLabel, type RegionName, type Vec2 } from '../model/types';
+import { groupStyle, mapLong } from '../model/names';
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import type { Geography, RegionInfo, RegionKind } from '../terrain/geography';
@@ -246,34 +246,71 @@ export function setRegionName(r: RegionInfo, name: string) {
       const regionNames = { ...d.regionNames };
       if (name.trim()) regionNames[entry.id] = entry;
       else delete regionNames[entry.id];
-      return { regionNames };
+      // its name written on the map follows (unless that label's text was changed by hand)
+      let labels = d.labels;
+      for (const l of Object.values(d.labels)) {
+        if (!l.anchor?.syncText || !name.trim()) continue;
+        const at = regionAt(g, l.anchor.x, l.anchor.y);
+        if (at && at.land === r.land && at.id === r.id) {
+          if (labels === d.labels) labels = { ...d.labels };
+          labels[l.id] = { ...l, text: name };
+        }
+      }
+      return { regionNames, labels };
     },
     `region-name:${entry.id}`,
   );
 }
 
-/** Write the region's name on the map as a regular, editable label. */
+/** The label on the map that names this region, if there is one. */
+export function regionLabel(r: RegionInfo): MapLabel | null {
+  const g = freshGeography();
+  if (!g) return null;
+  for (const l of Object.values(useDoc.getState().doc.labels)) {
+    if (!l.anchor) continue;
+    const at = regionAt(g, l.anchor.x, l.anchor.y);
+    if (at && at.land === r.land && at.id === r.id) return l;
+  }
+  return null;
+}
+
+/**
+ * Write the region's name on the map: a label that names it, so its text follows the region's
+ * name and it goes while the region is gone. Its style is the Lands or Waters group's, sized to
+ * the region (a large one gets a larger name). A region named on the map already: that label.
+ */
 export function labelRegion(r: RegionInfo, text: string) {
+  const existing = regionLabel(r);
+  if (existing) {
+    useEditor.getState().select([{ kind: 'label', id: existing.id }]);
+    return;
+  }
   const doc = useDoc.getState().doc;
-  const style = STYLE_PRESETS[doc.view.style];
+  const group = doc.nameGroups.find((x) => x.id === (r.land ? NAME_GROUP.places : NAME_GROUP.waters)) ?? doc.nameGroups[0];
+  const model = editor.model!;
+  const gs = groupStyle(group, mapLong(model.W, model.H));
   const span = Math.max(r.x1 - r.x0, (r.y1 - r.y0) * 1.5);
   const l: MapLabel = {
     id: uid('label-'),
     text,
     x: r.cx,
     y: r.cy,
-    size: Math.min(80, Math.max(1.5, span * 0.045)),
-    font: r.land ? 'display' : 'script',
-    color: r.land ? style.labelColor : '#2f5874',
+    size: Math.min(gs.size * 2.2, Math.max(gs.size * 0.45, span * 0.045)),
+    font: gs.font,
+    color: gs.color,
     rotation: 0,
     letterSpacing: r.land ? 0.25 : 0.08,
-    uppercase: r.land,
-    italic: !r.land,
-    halo: true,
+    uppercase: gs.uppercase,
+    italic: gs.italic,
+    halo: gs.halo,
     curve: 0,
     opacity: 1,
     hidden: false,
     locked: false,
+    group: group.id,
+    // sized to the region; the rest follows its group
+    own: ['size'],
+    anchor: { kind: 'region', x: r.anchorX, y: r.anchorY, land: r.land, syncText: true },
   };
   addFeature('label', l, t('Label region'));
   useEditor.getState().select([{ kind: 'label', id: l.id }]);

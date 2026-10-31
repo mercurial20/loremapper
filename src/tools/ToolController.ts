@@ -20,11 +20,12 @@ import {
   setReference,
 } from '../editor/commands';
 import { editor } from '../editor/Editor';
-import { rotateHandle } from '../model/geometry';
+import { handleCursor, HANDLE_DIRS, objectSize, rotateHandle } from '../model/geometry';
 import { territoryLabelPos } from '../render/TerritoryLayer';
 import { history } from '../model/history';
 import { track } from '../analytics';
-import type { MapDocument, MapLabel, PathFeature, PathOutlet, SelectionRef, Territory, Vec2 } from '../model/types';
+import { NAME_GROUP } from '../model/types';
+import type { MapDocument, MapLabel, MapObject, PathFeature, PathOutlet, SelectionRef, Territory, Vec2 } from '../model/types';
 import { hexToNumber, STYLE_PRESETS } from '../render/styles';
 import { useDoc } from '../store/docStore';
 import { brushGroupOf, togglePanel, useEditor, type ToolId } from '../store/editorStore';
@@ -39,6 +40,8 @@ import { addSource, deleteSource, previewSource, setWater, sourceAt, sourcesFoll
 import { crestCurve } from '../terrain/ranges';
 import { sampleSpline } from '../render/vectorGeometry';
 import type { TerrainModel, TileChange } from '../terrain/TerrainModel';
+import { groupStyle, ICON_SHARE_MAX, ICON_SHARE_MIN, mapLong, mapSpan, nameGroup } from '../model/names';
+import { pathFraction } from '../render/NameLayer';
 import { hitAny, hitPeak, hitVertex, insertionIndex, nearX, objectHandleHit, type HitContext } from './hitTest';
 import { i18n, t } from '../i18n';
 
@@ -50,9 +53,12 @@ type Drag =
   | { kind: 'move'; start: Vec2; base: MapDocument; refs: SelectionRef[]; moved: boolean; key: string; toggle?: boolean }
   | { kind: 'marquee'; start: Vec2; additive: boolean }
   | { kind: 'rotate'; id: string; key: string }
-  | { kind: 'scale'; id: string; startDist: number; startScale: number; key: string }
+  // a resize handle (0–3 corners, 4–7 sides) of a symbol, from the symbol as it was
+  | { kind: 'resize'; id: string; handle: number; orig: MapObject; key: string }
   | { kind: 'vertex'; ref: SelectionRef; index: number; key: string }
   | { kind: 'labelAnchor'; id: string; key: string }
+  // the name of the selected symbol (moved beside it) or river or road (slid along it)
+  | { kind: 'name'; ref: SelectionRef; start: Vec2; orig: Vec2; key: string }
   | { kind: 'freehand'; points: Vec2[]; startScreen: Vec2; moved: boolean }
   // River tool, sources: a press on a source (`id`) drags it; elsewhere a click places one
   | { kind: 'source'; id: string | null; at: Vec2; startScreen: Vec2; moved: boolean }
@@ -100,6 +106,8 @@ export class ToolController {
   private measureDone = false;
   private unFrame: (() => void) | null = null;
   private cursorRaf = 0;
+  /** The cursor over a handle of the selected symbol (select tool), if any. */
+  private handleCursor: string | null = null;
 
   attach(canvas: HTMLCanvasElement) {
     this.detach();
@@ -199,7 +207,8 @@ export class ToolController {
       zoom: editor.zoom,
       doc,
       peaks: useEditor.getState().peaks,
-      labelBounds: (id) => editor.layers!.labels.bounds(id),
+      // (a label hidden as too small to read is not under the pointer)
+      labelBounds: (id) => (editor.layers!.labels.shown(id) || useEditor.getState().selection.some((r) => r.id === id) ? editor.layers!.labels.bounds(id) : null),
       peakMin: doc.view.peakMinElevation,
       layersVisible: {
         objects: sl.objects.visible,
@@ -221,7 +230,7 @@ export class ToolController {
     let c = 'crosshair';
     if (useEditor.getState().referenceEdit) c = 'move';
     else if (tool === 'pan') c = this.drag?.kind === 'pan' ? 'grabbing' : 'grab';
-    else if (tool === 'select') c = 'default';
+    else if (tool === 'select') c = this.handleCursor ?? 'default';
     else if (brushGroupOf(tool)) c = 'none';
     else if (tool === 'label') c = 'text';
     this.canvas.style.cursor = c;
@@ -253,7 +262,7 @@ export class ToolController {
       return;
     }
     const info = assetLibrary.get(st.assetId);
-    const w = st.stamp.sizePx / editor.zoom;
+    const w = st.stamp.share * mapSpan(editor.model!.W, editor.model!.H);
     this.overlay().set({ stampPreview: { x: this.pointer.x, y: this.pointer.y, w, h: w * (info?.aspect ?? 1), rotation: 0 } });
   }
 
@@ -447,16 +456,14 @@ export class ToolController {
           updateObjects([d.id], { rotation: Math.round(ang * 10) / 10 }, t('Rotate'), d.key);
           break;
         }
-        case 'scale': {
-          const o = useDoc.getState().doc.objects[d.id];
-          if (!o) break;
-          const dist = Math.hypot(nearX(editor.model.geo, o.x, x) - o.x, y - o.y);
-          const s = clamp((d.startScale * dist) / Math.max(1e-6, d.startDist), 0.05, 40);
-          updateObjects([d.id], { scale: Math.round(s * 1000) / 1000 }, t('Scale'), d.key);
+        case 'resize':
+          updateObjects([d.id], resizeObject(d.orig, d.handle, nearX(editor.model.geo, d.orig.x, x), y, e.shiftKey, e.altKey, 3 / editor.zoom), t('Resize'), d.key);
           break;
-        }
         case 'vertex':
           this.dragVertex(d, x, y);
+          break;
+        case 'name':
+          this.dragName(d, x, y);
           break;
         case 'labelAnchor': {
           const terr = useDoc.getState().doc.territories[d.id];
@@ -489,7 +496,26 @@ export class ToolController {
           break;
       }
     } else {
-      if (this.tool === 'select') this.updateHover(x, y);
+      if (this.tool === 'select') {
+        this.updateHover(x, y);
+        // over a resize or rotate handle of the selected symbol: a cursor that says so
+        const sel = useEditor.getState().selection;
+        let hc: string | null = null;
+        if (sel.length === 1 && sel[0].kind === 'object') {
+          const o = useDoc.getState().doc.objects[sel[0].id];
+          if (o && !o.locked) {
+            const ctx = this.hitCtx();
+            const h = objectHandleHit(ctx, o.id, x, y, rotateHandle(o, ctx.zoom));
+            hc = h === 'rotate' ? 'grab' : typeof h === 'number' ? handleCursor(h, o.rotation) : null;
+          }
+        }
+        // over the name of what is selected: it can be moved
+        if (!hc && this.selectedNameAt(x, y)) hc = 'move';
+        if (hc !== this.handleCursor) {
+          this.handleCursor = hc;
+          this.updateCursorStyle();
+        }
+      }
       if (this.draft) this.showDraft(this.draft.points, [nearX(editor.model.geo, this.draft.points[0][0], x), y]);
       if (this.crestLines()) this.showCrestSnap(x, y);
       if (this.tool === 'river' && useEditor.getState().riverMode !== 'source') this.showRiverSnap(x, y);
@@ -1028,6 +1054,13 @@ export class ToolController {
     // handles of a single selection
     if (sel.length === 1) {
       const ref = sel[0];
+      const named = this.selectedNameAt(x, y);
+      if (named) {
+        const o = named.kind === 'object' ? doc.objects[named.id] : null;
+        const at: Vec2 = o ? editor.layers!.names.offsetOf(o) : [0, 0];
+        this.drag = { kind: 'name', ref: named, start: [x, y], orig: at, key };
+        return;
+      }
       if (ref.kind === 'object' && doc.objects[ref.id] && !doc.objects[ref.id].locked) {
         const o = doc.objects[ref.id];
         const h = objectHandleHit(ctx, ref.id, x, y, rotateHandle(o, ctx.zoom));
@@ -1036,7 +1069,7 @@ export class ToolController {
           return;
         }
         if (typeof h === 'number') {
-          this.drag = { kind: 'scale', id: ref.id, startDist: Math.hypot(nearX(ctx.geo, o.x, x) - o.x, y - o.y), startScale: o.scale, key };
+          this.drag = { kind: 'resize', id: ref.id, handle: h, orig: o, key };
           return;
         }
       }
@@ -1067,7 +1100,8 @@ export class ToolController {
         }
       }
     }
-    const hit = hitAny(ctx, x, y);
+    // (a name on the map stands for what it names)
+    const hit = hitAny(ctx, x, y) ?? editor.layers!.names.hit(x, y);
     if (!hit) {
       if (!e.shiftKey) st.select([]);
       this.drag = { kind: 'marquee', start: [x, y], additive: e.shiftKey };
@@ -1088,8 +1122,36 @@ export class ToolController {
     if (movable.length) this.drag = { kind: 'move', start: [x, y], base: doc, refs: movable, moved: false, key, toggle };
   }
 
+  /** The single selected symbol, river or road, when its name is under the pointer (and it is not locked). */
+  private selectedNameAt(x: number, y: number): SelectionRef | null {
+    const sel = useEditor.getState().selection;
+    if (sel.length !== 1 || (sel[0].kind !== 'object' && sel[0].kind !== 'path')) return null;
+    const doc = useDoc.getState().doc;
+    const item = sel[0].kind === 'object' ? doc.objects[sel[0].id] : doc.paths[sel[0].id];
+    if (!item || item.locked) return null;
+    const hit = editor.layers!.names.hit(x, y);
+    return hit && hit.id === sel[0].id ? sel[0] : null;
+  }
+
+  /** A symbol's name moved beside it; a river's or road's slid along it. */
+  private dragName(d: Extract<Drag, { kind: 'name' }>, x: number, y: number) {
+    const doc = useDoc.getState().doc;
+    if (d.ref.kind === 'object') {
+      const o = doc.objects[d.ref.id];
+      if (!o) return;
+      const px = nearX(editor.model!.geo, d.start[0], x);
+      const off: Vec2 = [Math.round((d.orig[0] + px - d.start[0]) * 10) / 10, Math.round((d.orig[1] + y - d.start[1]) * 10) / 10];
+      updateObjects([o.id], { nameOffset: off }, t('Move name'), d.key);
+    } else {
+      const p = doc.paths[d.ref.id];
+      if (!p) return;
+      const at = Math.round(pathFraction(p, nearX(editor.model!.geo, p.points[0][0], x), y) * 1000) / 1000;
+      updateFeature('path', p.id, { nameAt: Math.min(0.95, Math.max(0.05, at)) }, t('Move name'), d.key);
+    }
+  }
+
   private updateHover(x: number, y: number) {
-    const hit = hitAny(this.hitCtx(), x, y);
+    const hit = hitAny(this.hitCtx(), x, y) ?? editor.layers!.names.hit(x, y);
     const cur = this.overlay().state.hover;
     if ((hit?.id ?? null) !== (cur?.id ?? null)) {
       this.overlay().set({ hover: hit });
@@ -1220,7 +1282,7 @@ export class ToolController {
       st.notify(t('Layer “{name}” is locked', { name: t(layer.name) }));
       return;
     }
-    const o = newObject({ assetId: st.assetId!, x: geo.wrapX(x), y, size: st.stamp.sizePx / editor.zoom, name: '' });
+    const o = newObject({ assetId: st.assetId!, x: geo.wrapX(x), y, size: st.stamp.share * mapSpan(editor.model!.W, editor.model!.H), name: '' });
     addObjects([o]);
     st.select([{ kind: 'object', id: o.id }]);
   }
@@ -1230,7 +1292,8 @@ export class ToolController {
     if (d?.kind !== 'stamp') return;
     const st = useEditor.getState();
     const geo = editor.model!.geo;
-    const spacing = st.stamp.spacingPx / editor.zoom;
+    const span = mapSpan(editor.model!.W, editor.model!.H);
+    const spacing = st.stamp.spacingShare * span;
     if (d.last && Math.hypot(geo.deltaX(d.last[0], x), y - d.last[1]) < spacing) return;
     d.last = [x, y];
     const s = st.stamp;
@@ -1239,7 +1302,7 @@ export class ToolController {
       assetId: st.assetId!,
       x: geo.wrapX(x + (Math.random() - 0.5) * jitter),
       y: y + (Math.random() - 0.5) * jitter,
-      size: s.sizePx / editor.zoom,
+      size: s.share * span,
       scale: 1 + (Math.random() * 2 - 1) * s.randomScale,
       rotation: (Math.random() * 2 - 1) * s.randomRotation,
       flipX: s.randomFlip && Math.random() < 0.5,
@@ -1259,25 +1322,28 @@ export class ToolController {
       this.drag = { kind: 'move', start: [x, y], base: ctx.doc, refs: [existing], moved: false, key: uid('drag-') };
       return;
     }
-    const d = st.labelDefaults;
-    const style = STYLE_PRESETS[ctx.doc.view.style];
+    // a new label joins the chosen group and takes its look (any property can be set on it later)
+    const group = nameGroup(ctx.doc, st.labelDefaults.group, NAME_GROUP.labels);
+    const gs = groupStyle(group, mapLong(editor.model!.W, editor.model!.H));
     const l: MapLabel = {
       id: uid('label-'),
       text: t('New label'),
       x: ctx.geo.wrapX(x),
       y,
-      size: d.sizePx / editor.zoom,
-      font: d.font,
-      color: d.color || style.labelColor,
+      size: gs.size,
+      font: gs.font,
+      color: gs.color,
       rotation: 0,
-      letterSpacing: d.font === 'display' ? 0.12 : 0.02,
-      uppercase: d.font === 'display',
-      italic: d.font === 'script',
-      halo: true,
+      letterSpacing: gs.font === 'display' ? 0.12 : 0.02,
+      uppercase: gs.uppercase,
+      italic: gs.italic,
+      halo: gs.halo,
       curve: 0,
       opacity: 1,
       hidden: false,
       locked: false,
+      group: group.id,
+      own: [],
     };
     addFeature('label', l, t('Add label'));
     st.select([{ kind: 'label', id: l.id }]);
@@ -1722,7 +1788,7 @@ export class ToolController {
         if (e.shiftKey) st.setBrush(g, { strength: clamp(b.strength + (up ? 0.05 : -0.05), 0.01, 1) });
         else st.setBrush(g, { radiusKm: clampRadius(b.radiusKm * (up ? 1.15 : 1 / 1.15), g) });
       } else if (st.tool === 'object') {
-        st.set({ stamp: { ...st.stamp, sizePx: clamp(st.stamp.sizePx * (up ? 1.15 : 1 / 1.15), 8, 600) } });
+        st.set({ stamp: { ...st.stamp, share: clamp(st.stamp.share * (up ? 1.15 : 1 / 1.15), ICON_SHARE_MIN, ICON_SHARE_MAX) } });
         this.updateStampPreview();
         editor.requestRender();
       }
@@ -1876,3 +1942,45 @@ function clampRadius(km: number, group: string): number {
   const r = editor.model ? brushRange(editor.model.geo, group) : { min: 5, max: 6000 };
   return clamp(km, r.min, r.max);
 }
+
+/**
+ * A symbol resized by one of its handles, as in drawing programs: the opposite side or corner stays
+ * put (Alt: the centre); a corner keeps the artwork's proportions (Shift: free), a side stretches it
+ * one way. `x`, `y` is the pointer; `min` the smallest size, world units.
+ */
+function resizeObject(o: MapObject, handle: number, x: number, y: number, free: boolean, fromCentre: boolean, min: number): Partial<MapObject> {
+  const { w, h } = objectSize(o);
+  const [sx, sy] = HANDLE_DIRS[handle];
+  const a = (o.rotation * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  // the pointer in the symbol's own frame
+  const dx = x - o.x;
+  const dy = y - o.y;
+  const px = dx * c + dy * s;
+  const py = -dx * s + dy * c;
+  const ax = fromCentre ? 0 : -sx * (w / 2);
+  const ay = fromCentre ? 0 : -sy * (h / 2);
+  const span = fromCentre ? 2 : 1;
+  let nw = sx ? Math.max(min, (sx * (px - ax)) * (fromCentre ? span : 1)) : w;
+  let nh = sy ? Math.max(min, (sy * (py - ay)) * (fromCentre ? span : 1)) : h;
+  const corner = sx !== 0 && sy !== 0;
+  if (corner && !free) {
+    // proportional: the pointer's reach along the diagonal
+    const k = Math.max(min / Math.min(w, h), (nw / w + nh / h) / 2);
+    nw = w * k;
+    nh = h * k;
+  }
+  // the new centre, in the symbol's frame, then on the map
+  const cx = sx && !fromCentre ? ax + (sx * nw) / 2 : 0;
+  const cy = sy && !fromCentre ? ay + (sy * nh) / 2 : 0;
+  const scale = nw / Math.max(1e-9, o.size);
+  const stretch = (o.stretch ?? 1) * (nh / h) / (nw / w);
+  return {
+    x: o.x + cx * c - cy * s,
+    y: o.y + cx * s + cy * c,
+    scale: Math.round(scale * 10000) / 10000,
+    stretch: Math.abs(stretch - 1) < 0.005 ? undefined : Math.round(stretch * 1000) / 1000,
+  };
+}
+

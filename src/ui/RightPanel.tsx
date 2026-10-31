@@ -10,6 +10,7 @@ import { SelectionInspector } from './panels/SelectionInspector';
 import { LakeControls } from './panels/LakeInspector';
 import { selectionTitle } from './panels/selectionTitle';
 import { ToolOptions } from './panels/ToolOptions';
+import { NameGroupsPanel } from './panels/NameStyles';
 import { ALL_TOOLS } from './toolDefs';
 import { useTranslation } from 'react-i18next';
 
@@ -19,6 +20,7 @@ export function RightPanel() {
   const sel = useEditor((s) => s.selection);
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
   const layersOpen = useEditor((s) => s.layersOpen);
+  const namesOpen = useEditor((s) => s.namesOpen);
   const geoListOpen = useEditor((s) => s.geoListOpen);
   const region = useInspectedRegion();
   const readOnly = useEditor((s) => s.readOnly);
@@ -93,6 +95,9 @@ export function RightPanel() {
         </Section>
         <Section title={t('Lands & seas')} open={geoListOpen} onToggle={(v) => set({ geoListOpen: v })}>
           <LandsList />
+        </Section>
+        <Section title={t('Names on the map')} open={namesOpen} onToggle={(v) => set({ namesOpen: v })}>
+          <NameGroupsPanel />
         </Section>
         <Section title={t('Layers · {n} objects', { n: objectCount })} open={layersOpen} onToggle={(v) => set({ layersOpen: v })}>
           <LayersPanel />

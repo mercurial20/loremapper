@@ -36,4 +36,25 @@ describe('project serialisation', () => {
     expect(m.formatVersion).toBe(FORMAT_VERSION);
     expect(m.doc.sources).toEqual({});
   });
+
+  it('makes a label written beside an object with its name into the object’s own name', () => {
+    const obj = (id: string, name: string, x: number) => ({ id, assetId: 'a', layerId: 'layer-settlements', x, y: 100, size: 40, scale: 1, rotation: 0, flipX: false, opacity: 1, z: 0, locked: false, hidden: false, name, description: '', props: [] });
+    const lab = (id: string, text: string, x: number, y: number, more = {}) => ({ id, text, x, y, size: 20, font: 'script', color: '#123456', rotation: 0, letterSpacing: 0.05, uppercase: false, italic: true, halo: true, curve: 0, opacity: 1, hidden: false, locked: false, ...more });
+    const doc = {
+      objects: { a: obj('a', 'Kingsford', 100), b: obj('b', 'Ashford', 500), c: obj('c', 'Far', 900) },
+      labels: { la: lab('la', 'kingsford ', 100, 140), lb: lab('lb', 'Ashford', 500, 140, { rotation: 20 }), lc: lab('lc', 'Far', 1500, 100), ld: lab('ld', 'Sea of Mist', 300, 300) },
+    };
+    const m = migrateProject({ id: 'x', formatVersion: 5, meta: { name: 'Five' }, doc, rasterDefaults: { height: -3800, biome: 0, fog: 0, water: 0, relief: 0, lake: -32768 }, updatedAt: 0 });
+    // beside it and plain: tied to the object, where it was and as it looked
+    expect(m.doc.labels.la).toBeUndefined();
+    expect(m.doc.objects.a.nameOffset).toEqual([0, 40]);
+    expect(m.doc.objects.a.nameStyle).toEqual({ font: 'script', size: 20, color: '#123456', halo: true, uppercase: false, italic: true });
+    // turned: kept as it is, and the object's own name not written over it
+    expect(m.doc.labels.lb).toBeDefined();
+    expect(m.doc.objects.b.showName).toBe(false);
+    // far away, or another name: left alone
+    expect(m.doc.labels.lc).toBeDefined();
+    expect(m.doc.objects.c.showName).toBeUndefined();
+    expect(m.doc.labels.ld).toBeDefined();
+  });
 });

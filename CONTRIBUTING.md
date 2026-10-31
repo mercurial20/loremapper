@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping with Loremapper! This is an early beta, so bug
+Thanks for helping with Loremapper! This is an early alpha, so bug
 reports with clear reproduction steps are the most valuable contribution right
 now.
 

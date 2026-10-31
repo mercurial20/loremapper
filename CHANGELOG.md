@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.1-alpha.2] — 2026-10-31
+
+### Added
+
+- **Names on the map in groups** (right panel → *Names on the map*): Lands, Waters, Objects, Peaks and Labels, and groups of your own. A group sets the font, size on the map, colour, capitals, italic and halo of all its names; any name can change any of them for itself and go back to its group's. A group can be hidden, or pinned to show even when its names are too small to read.
+- **Objects write their names under them**, and rivers and roads along them, in the style of their group. A name goes where its object or river goes and is gone with it. Drag a selected object's name to move it, a river's to slide it along.
+- **Names tied to what they name**: *Write name on map* for a land or a sea makes a label that follows the region's name and is hidden when the region is gone.
+- **Resize handles on all sides** of a selected symbol, as in a picture editor: a corner keeps its proportions (Shift: free), a side stretches it, Alt works from the centre. Width and height in the panel in km, and *Restore proportions*.
+
+### Changed
+
+- **Symbols are placed at a size on the map** (in km, from the tool's *Size on the map*), the same at any zoom, and keep it.
+- **Names too small to read are hidden** as you zoom out and come back as you zoom in; where they crowd, the more important ones win, and peak markers keep clear of names. Exports show what is readable at their size.
+- Older maps: a label written by hand beside an object with the same name becomes the object's name, where it was and as it looked.
+
+### Fixed
+
+- Peak markers on flat maps could vanish near the edge of the view when it was off the map's centre.
+
 ## [1.3.1-alpha.1] — 2026-10-31
 
 ### Added
@@ -267,7 +286,11 @@ First public beta.
 - Export to PNG (current view or whole planet, complete map or revealed areas only), 16/8-bit heightmap PNG, and `.loremap` project archives with re-import.
 - Docker image (nginx) and `compose.yaml` for one-command self-hosting.
 
-[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.2.3-alpha.1...HEAD
+[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.3.1-alpha.2...HEAD
+[1.3.1-alpha.2]: https://github.com/mercurial20/loremapper/compare/v1.3.1-alpha.1...v1.3.1-alpha.2
+[1.3.1-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.2.3-alpha.3...v1.3.1-alpha.1
+[1.2.3-alpha.3]: https://github.com/mercurial20/loremapper/compare/v1.2.3-alpha.2...v1.2.3-alpha.3
+[1.2.3-alpha.2]: https://github.com/mercurial20/loremapper/compare/v1.2.3-alpha.1...v1.2.3-alpha.2
 [1.2.3-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.2.2-alpha.1...v1.2.3-alpha.1
 [1.2.2-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.2.1-alpha.1...v1.2.2-alpha.1
 [1.2.1-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.2.0-alpha.1...v1.2.1-alpha.1
