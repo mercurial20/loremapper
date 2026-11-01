@@ -336,15 +336,17 @@ export function TopBar() {
       </nav>
       {!readOnly && (
         <>
-          <button className="icon-btn" onClick={() => set({ dialog: 'planet' })} title={t('Map settings')}>
-            <Globe size={18} />
-          </button>
-          <button className="icon-btn" onClick={() => set({ dialog: 'shortcuts' })} title={t('Keyboard shortcuts (?)')}>
-            <Keyboard size={18} />
-          </button>
-          <button className="icon-btn" onClick={() => set({ dialog: 'whatsNew' })} title={t("What's new")}>
-            <Sparkles size={18} />
-          </button>
+          <div className="tb-tools">
+            <button className="icon-btn" onClick={() => set({ dialog: 'planet' })} title={t('Map settings')}>
+              <Globe size={18} />
+            </button>
+            <button className="icon-btn" onClick={() => set({ dialog: 'shortcuts' })} title={t('Keyboard shortcuts (?)')}>
+              <Keyboard size={18} />
+            </button>
+            <button className="icon-btn" onClick={() => set({ dialog: 'whatsNew' })} title={t("What's new")}>
+              <Sparkles size={18} />
+            </button>
+          </div>
           <button className="btn primary" onClick={() => set({ dialog: 'export' })}>
             <Download size={16} /> {t('Export')}
           </button>
