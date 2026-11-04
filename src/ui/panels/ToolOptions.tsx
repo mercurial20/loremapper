@@ -14,12 +14,15 @@ import { brushGroupOf, TERRAIN_PRESETS, useEditor, type BrushGroup, type Terrain
 import { raiseRate, type BrushParams } from '../../terrain/brushes';
 import { pushTileChange } from '../../tools/ToolController';
 import { WIDTH_VARIATION } from '../../terrain/rangeUplift';
-import { ICON_SHARE_MAX, ICON_SHARE_MIN, mapSpan } from '../../model/names';
+import { ICON_SHARE_MAX, ICON_SHARE_MIN, mapSpan, PATH_SHARE_MAX, PATH_SHARE_MIN } from '../../model/names';
 import { NameGroupPicker, NameStylePreview } from './NameStyles';
 import { ALL_TOOLS } from '../toolDefs';
 import { SourceControls } from './SourceControls';
 import { AlphaBadge, ColorField, Hint, MeasureField, Segmented, Select, Slider, Toggle } from '../controls/controls';
 import { useTranslation } from 'react-i18next';
+
+/** The map's shorter side, km (what path widths are a share of). */
+const pathSpanKm = () => (editor.model ? mapSpan(editor.model.W, editor.model.H) * editor.model.geo.kmPerCellY : 1000);
 
 const SWATCHES = ['#b5452f', '#2f5d9a', '#3f8f5a', '#c79a2e', '#7a4aa0', '#2a8a8a', '#8f3a5c', '#5a5a5a'];
 const PATH_SWATCHES = ['#4f86ad', '#2e5f86', '#6aa5c8', '#7a5532', '#4b3a2a', '#9a7b52', '#8a2e2e', '#2b2016'];
@@ -435,7 +438,7 @@ export function ToolOptions() {
       {tool === 'river' && st.riverMode === 'source' && <SourceControls />}
       {tool === 'river' && st.riverMode !== 'source' && (
         <>
-          <Hint>{t('End a river at the sea, a lake or another river and it joins it: the mouth opens into the water, and a river grows wider below each river that flows into it. Drawn from the mouth upstream, it is turned around.')}</Hint>
+          <Hint>{t('End a river at the sea, a lake or another river and it joins it: the mouth opens into the water. A river keeps its width below the rivers that join it, unless you set it to widen in its panel. Drawn from the mouth upstream, it is turned around.')}</Hint>
           <Toggle
             label={t('Carve a valley')}
             checked={st.riverCarve}
@@ -472,14 +475,15 @@ export function ToolOptions() {
       {((tool === 'river' && st.riverMode === 'path') || tool === 'road') && (
         <>
           <Slider
-            label={t('Width')}
-            value={st.pathDefaults[tool].width}
-            min={0.5}
-            max={30}
+            label={t('Width on the map')}
+            value={st.pathDefaults[tool].share}
+            min={PATH_SHARE_MIN}
+            max={PATH_SHARE_MAX}
             log
-            onChange={(v) => st.set({ pathDefaults: { ...st.pathDefaults, [tool]: { ...st.pathDefaults[tool], width: v } } })}
-            format={(v) => `${v.toFixed(1)} px`}
+            onChange={(v) => st.set({ pathDefaults: { ...st.pathDefaults, [tool]: { ...st.pathDefaults[tool], share: v } } })}
+            format={(v) => formatLength(v * pathSpanKm(), st.units)}
           />
+          <Hint>{tool === 'river' ? t('New rivers are this wide on the map, whatever the zoom; one joining another river starts narrower than it. Change a river’s width after in its panel.') : t('New roads are this wide on the map, whatever the zoom.')}</Hint>
           <ColorField
             label={t('Colour')}
             value={st.pathDefaults[tool].color}

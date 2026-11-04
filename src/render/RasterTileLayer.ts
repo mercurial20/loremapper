@@ -13,7 +13,7 @@ interface TileEntry {
   tx: number;
   ty: number;
   mesh: Mesh<Geometry, Shader>;
-  own: Partial<Record<'height' | 'biomeA' | 'biomeB' | 'fog' | 'water' | 'lake' | 'river', BufferImageSource>>;
+  own: Partial<Record<'height' | 'biomeA' | 'biomeB' | 'fog' | 'water' | 'lake' | 'river' | 'river2', BufferImageSource>>;
   hasOwnHeight: boolean;
   hasOwnBiome: boolean;
   hasOwnFog: boolean;
@@ -43,6 +43,11 @@ export class RasterTileLayer {
   readonly container = new Container();
   private tiles = new Map<number, TileEntry>();
   private defaults: Partial<Record<'height' | 'biome' | 'fog' | 'water' | 'lake' | 'river', BufferImageSource>> = {};
+  /** The rivers' field textures: the nearest river, the next nearest (see RiverField). */
+  private static readonly RIVER_TEX = [
+    ['river', 0],
+    ['river2', 4],
+  ] as const;
   /** The rivers' field (see RiverField), drawn as water by the terrain shader. */
   private rivers: TileGrid<Float32Array> | null = null;
   private anyDirty = true;
@@ -179,6 +184,7 @@ export class RasterTileLayer {
           uWater: (own.water ?? this.defaults.water)!,
           uLake: (own.lake ?? this.defaults.lake)!,
           uRiver: (own.river ?? this.defaults.river)!,
+          uRiver2: (own.river2 ?? this.defaults.river)!,
           uRamp: this.ramp!,
           uDetailAtlas: this.detail?.atlas ?? this.standIn(),
           uDetailInfo: this.detail?.info ?? this.standIn(),
@@ -351,15 +357,18 @@ export class RasterTileLayer {
           rebuild = true;
           t.hasOwnRiver = needR;
           (this.tileUniforms.get(key)!.uniforms as Record<string, unknown>).uRiverOn = needR ? 1 : 0;
-          if (needR) t.own.river = this.makeSource('rgba32float', new Float32Array(n * 4), false);
-          else {
-            if (t.own.river) retired.push(t.own.river);
-            delete t.own.river;
+          for (const [name] of RasterTileLayer.RIVER_TEX) {
+            if (needR) t.own[name] = this.makeSource('rgba32float', new Float32Array(n * 4), false);
+            else {
+              if (t.own[name]) retired.push(t.own[name]!);
+              delete t.own[name];
+            }
           }
         }
         if (t.own.river) {
-          this.fill(this.rivers as TileGrid<RasterArray>, t.tx, t.ty, [{ out: t.own.river.resource as Float32Array, chFrom: 0, chCount: 4 }]);
-          t.own.river.update();
+          const segs = RasterTileLayer.RIVER_TEX.map(([name, ch]) => ({ out: t.own[name]!.resource as Float32Array, chFrom: ch, chCount: 4 }));
+          this.fill(this.rivers as TileGrid<RasterArray>, t.tx, t.ty, segs);
+          for (const [name] of RasterTileLayer.RIVER_TEX) t.own[name]!.update();
         }
       }
       if (!full) {

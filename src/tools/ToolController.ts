@@ -40,6 +40,7 @@ import { addSource, deleteSource, previewSource, setWater, sourceAt, sourcesFoll
 import { crestCurve } from '../terrain/ranges';
 import { sampleSpline } from '../render/vectorGeometry';
 import type { TerrainModel, TileChange } from '../terrain/TerrainModel';
+import { curveLengths, riverCurve, riverNet, widthAt } from '../model/rivers';
 import { groupStyle, ICON_SHARE_MAX, ICON_SHARE_MIN, mapLong, mapSpan, nameGroup } from '../model/names';
 import { pathFraction } from '../render/NameLayer';
 import { hitAny, hitPeak, hitVertex, insertionIndex, nearX, objectHandleHit, type HitContext } from './hitTest';
@@ -1512,12 +1513,23 @@ export class ToolController {
       // goes on as a second river flowing out of it
       const snapped: SnappedRiver = tool === 'river' ? snapRiver(editor.model!, useDoc.getState().doc.paths, pts, riverSnapRadius(zoom)) : { points: pts };
       this.overlay().set({ snap: null });
+      // a width on the map, the same whatever the zoom it is drawn at; a tributary starts narrower
+      // than the river it joins, so it does not come out as wide as it, or as a thread
+      const paths = useDoc.getState().doc.paths;
+      const net = riverNet(paths);
+      const widthFor = (r: SnappedRiver) => {
+        const w = def.share * mapSpan(editor.model!.W, editor.model!.H);
+        const main = r.outlet?.kind === 'path' ? paths[r.outlet.id] : undefined;
+        if (!main || r.outlet?.kind !== 'path' || main.kind !== 'river') return w;
+        const mc = riverCurve(main.points);
+        return Math.min(w, 0.6 * widthAt(main, r.outlet.t, net, curveLengths(mc)[mc.length - 1]));
+      };
       const make = (r: SnappedRiver): PathFeature => ({
         id: uid('path-'),
         kind: tool,
         points: r.points,
         ...(r.outlet ? { outlet: r.outlet } : {}),
-        width: def.width / zoom,
+        width: tool === 'river' ? widthFor(r) : def.share * mapSpan(editor.model!.W, editor.model!.H),
         color: def.color,
         style: tool === 'road' ? st.pathDefaults.road.style : 'solid',
         taper: tool === 'river' ? st.pathDefaults.river.taper : false,

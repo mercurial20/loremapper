@@ -57,4 +57,18 @@ describe('project serialisation', () => {
     expect(m.doc.objects.c.showName).toBeUndefined();
     expect(m.doc.labels.ld).toBeDefined();
   });
+
+  it('keeps the look of rivers with tributaries, now that a river’s width is its width at the mouth', () => {
+    const r = (id: string, width: number, outlet?: object) => ({ id, kind: 'river', points: [[0, 0], [10, 0], [20, 0]], width, color: '#4f86ad', style: 'solid', taper: true, name: '', hidden: false, locked: false, ...(outlet ? { outlet } : {}) });
+    const doc = { paths: { main: r('main', 4), trib: r('trib', 3, { kind: 'path', id: 'main', t: 0.5 }), small: r('small', 2, { kind: 'path', id: 'trib', t: 0.5 }), alone: r('alone', 5) } };
+    const m = migrateProject({ id: 'x', formatVersion: 6, meta: { name: 'Six' }, doc, rasterDefaults: { height: -3800, biome: 0, fog: 0, water: 0, relief: 0, lake: -32768 }, updatedAt: 0 });
+    // before: main carried its own 4² and the tributaries' 3² + 2² at its mouth
+    expect(m.doc.paths.main.width).toBeCloseTo(Math.sqrt(16 + 9 + 4), 5);
+    expect(m.doc.paths.trib.width).toBeCloseTo(Math.sqrt(9 + 4), 5);
+    expect(m.doc.paths.small.width).toBe(2);
+    // they go on widening below their tributaries; rivers without any do not
+    expect(m.doc.paths.main.widenBelowTributaries).toBe(true);
+    expect(m.doc.paths.small.widenBelowTributaries).toBeUndefined();
+    expect(m.doc.paths.alone.width).toBe(5);
+  });
 });

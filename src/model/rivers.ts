@@ -5,9 +5,14 @@ import type { PathFeature, Vec2 } from './types';
  * Rivers as a network. A tributary joins another river somewhere along it; below the join the
  * river carries both waters and is wider. Width grows with the square root of the discharge
  * (hydraulic geometry, w ∝ Q^0.5), so discharges add as squared widths.
+ *
+ * By default a river keeps its own width whatever joins it. One set to widen below its tributaries
+ * (`widenBelowTributaries`) reaches its width at its mouth, its tributaries' water included: that
+ * is the width its slider sets, and the tributaries decide where it widens on the way. A river
+ * from a source is as wide as the water it carries, its tributaries' added on when it widens.
  */
 
-/** A river's centre line at a fixed resolution (about half a cell), for joins that stay put at every zoom. */
+/** A river's centre line at a fixed resolution (about a tenth of a cell), for joins that stay put at every zoom. */
 const curves = new WeakMap<Vec2[], Vec2[]>();
 
 export function riverCurve(points: Vec2[]): Vec2[] {
@@ -22,7 +27,8 @@ function sampleRiver(points: Vec2[]): Vec2[] {
   if (points.length < 2) return points.slice();
   let len = 0;
   for (let i = 1; i < points.length; i++) len += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
-  const per = Math.max(2, Math.min(64, Math.ceil((len * 2) / Math.max(1, points.length - 1))));
+  // fine enough that the line is smooth at the scale rivers are drawn close up
+  const per = Math.max(2, Math.min(256, Math.ceil((len * 10) / Math.max(1, points.length - 1))));
   return catmullRom(points, per);
 }
 
@@ -91,6 +97,12 @@ export function flowAt(p: PathFeature, t: number): number {
 /** The widest a river from a source gets: where it carries the most. */
 const peakFlow = (p: PathFeature) => Math.max(1e-6, ...p.flow!);
 
+/** A river from a source: its width follows the water the source sent down it. */
+const fromSource = (p: PathFeature) => !!p.flow && p.flow.length === p.points.length;
+
+/** Whether a river widens below the tributaries that join it. */
+export const widens = (p: PathFeature) => p.widenBelowTributaries === true;
+
 /**
  * How wide a river carrying `q` m³/s is drawn, cells of `cellKm`: as wide as it is (hydraulic
  * geometry, about 4.5·√Q metres), but never thinner than a map would draw it, wider as it
@@ -147,9 +159,11 @@ export function riverNet(paths: Record<string, PathFeature>): RiverNet {
     let sum = ownWidth(paths[id], 1) ** 2;
     for (const f of inflows.get(id) ?? []) {
       f.q = q(f.id);
-      sum += f.q;
+      if (widens(paths[id])) sum += f.q;
     }
     busy.delete(id);
+    // a drawn river is as wide at its mouth as it was set, whatever joined it
+    if (!fromSource(paths[id]) && inflows.has(id)) sum = paths[id].width ** 2;
     mouthQ.set(id, sum);
     return sum;
   };
@@ -159,17 +173,35 @@ export function riverNet(paths: Record<string, PathFeature>): RiverNet {
 }
 
 /**
+ * How a drawn river with tributaries shares its mouth's width between its own water and theirs:
+ * its own part (at least half the width) and the share of the tributaries' water that reaches
+ * the mouth, so the two together make the width it was set to.
+ */
+function mouthShare(p: PathFeature, inflows: Inflow[]): { own: number; trib: number } {
+  const W2 = p.width ** 2;
+  const Q = inflows.reduce((a, f) => a + f.q, 0);
+  const own2 = Math.max(W2 - Q, 0.25 * W2);
+  return { own: Math.sqrt(own2), trib: Q > 0 ? (W2 - own2) / Q : 0 };
+}
+
+/**
  * A river's width `t` of the way along it (world units), with the water of the tributaries that
- * joined above. Each one's water spreads into the river over a few of its own widths below the
- * join, so the river widens smoothly instead of in a step.
+ * joined above. Each one's water spreads into the river over a few of its own widths (and at
+ * least a cell) below the join, so the river widens smoothly instead of in a step.
  */
 export function widthAt(p: PathFeature, t: number, net: RiverNet, length: number): number {
-  let q = ownWidth(p, t) ** 2;
-  for (const f of net.inflows.get(p.id) ?? []) {
+  const inflows = net.inflows.get(p.id) ?? [];
+  if (!inflows.length || !widens(p)) return ownWidth(p, t);
+  // a drawn river ends as wide as it was set: its own water and its tributaries' share that width
+  const share = fromSource(p) ? { own: p.width, trib: 1 } : mouthShare(p, inflows);
+  const ownPart = fromSource(p) ? ownWidth(p, t) : (ownWidth(p, t) / Math.max(1e-6, p.width)) * share.own;
+  let q = ownPart ** 2;
+  for (const f of inflows) {
     if (t <= f.t) continue;
-    const w = Math.sqrt(f.q);
-    const s = clamp(((t - f.t) * length) / Math.max(1e-6, 3 * w), 0, 1);
-    q += f.q * s * s * (3 - 2 * s);
+    // (over a few of its widths, and at least a cell: no step when seen close up)
+    const w = Math.sqrt(f.q * share.trib);
+    const s = clamp(((t - f.t) * length) / Math.max(1, 3 * w), 0, 1);
+    q += f.q * share.trib * s * s * (3 - 2 * s);
   }
   return Math.sqrt(q);
 }
@@ -197,7 +229,10 @@ export function riverShape(p: PathFeature, paths: Record<string, PathFeature>, n
   let mainHw = 0;
   if (o?.kind === 'path' && main?.kind === 'river' && main.points.length >= 2) {
     const mc = riverCurve(main.points);
-    ctrl = [...ctrl.slice(0, -1), alongCurve(mc, o.t).at];
+    const join = alongCurve(mc, o.t).at;
+    ctrl = [...ctrl.slice(0, -1), join];
+    // a point drawn right by the join would hook the tributary's end onto it: it is left out
+    while (ctrl.length > 2 && Math.hypot(ctrl[ctrl.length - 2][0] - join[0], ctrl[ctrl.length - 2][1] - join[1]) < 0.3) ctrl.splice(ctrl.length - 2, 1);
     mainHw = widthAt(main, o.t, net, curveLengths(mc)[mc.length - 1]) / 2;
   }
   const curve = riverCurve(ctrl);

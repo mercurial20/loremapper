@@ -1,14 +1,14 @@
 import { defaultPlanet } from '../core/planet';
 import { NO_WATER } from '../terrain/TerrainModel';
 import type { ProjectRecord } from '../persistence/db';
-import { defaultView, emptyDocument, type MapDocument, type MapLabel, type MapObject, type ProjectMeta } from './types';
+import { defaultView, emptyDocument, type MapDocument, type MapLabel, type MapObject, type PathFeature, type ProjectMeta } from './types';
 import { t } from '../i18n';
 
 /**
  * Project serialisation version. Bump when the stored shape changes and add a
  * step to `MIGRATIONS` that upgrades records from the previous version.
  */
-export const FORMAT_VERSION = 6;
+export const FORMAT_VERSION = 7;
 
 type Migration = (rec: Record<string, unknown>) => Record<string, unknown>;
 
@@ -42,7 +42,46 @@ const MIGRATIONS: Record<number, Migration> = {
   // the same name becomes the object's name (where it was, as it looked), so it is not written twice
   // and goes with the object from now on; a turned or curved one stays, and the object's is not shown.
   5: (rec) => ({ ...rec, formatVersion: 6, doc: tieObjectNames((rec.doc ?? {}) as Record<string, unknown>) }),
+  // 6 → 7: rivers no longer widen below their tributaries unless set to; one that does has its width
+  // at its mouth, its tributaries' water included (before, their water was added on top of it).
+  // Rivers with tributaries are set to widen and take the width they were drawn at there, so they
+  // look as they did.
+  6: (rec) => ({ ...rec, formatVersion: 7, doc: riverWidthsAtMouth((rec.doc ?? {}) as Record<string, unknown>) }),
 };
+
+function riverWidthsAtMouth(doc: Record<string, unknown>): Record<string, unknown> {
+  const paths = { ...((doc.paths ?? {}) as Record<string, PathFeature>) };
+  const isRiver = (p: PathFeature | undefined) => !!p && p.kind === 'river' && p.points.length >= 2;
+  const fromSource = (p: PathFeature) => !!p.flow && p.flow.length === p.points.length;
+  const children = new Map<string, string[]>();
+  for (const p of Object.values(paths)) {
+    const o = p.outlet;
+    if (!isRiver(p) || o?.kind !== 'path' || o.id === p.id || !isRiver(paths[o.id])) continue;
+    children.set(o.id, [...(children.get(o.id) ?? []), p.id]);
+  }
+  // the old rule: a river's water at its mouth, its own (squared width there) and all that joined it
+  const memo = new Map<string, number>();
+  const busy = new Set<string>();
+  const q = (id: string): number => {
+    const known = memo.get(id);
+    if (known !== undefined) return known;
+    const p = paths[id];
+    const own = (fromSource(p) ? p.width * Math.pow(Math.max(0, p.flow![p.flow!.length - 1]) / Math.max(1e-6, ...p.flow!), 0.4) : p.width) ** 2;
+    if (busy.has(id)) return own;
+    busy.add(id);
+    let sum = own;
+    for (const c of children.get(id) ?? []) sum += q(c);
+    busy.delete(id);
+    memo.set(id, sum);
+    return sum;
+  };
+  for (const id of children.keys()) if (!fromSource(paths[id])) q(id);
+  for (const id of children.keys()) {
+    const p = paths[id];
+    paths[id] = fromSource(p) ? { ...p, widenBelowTributaries: true } : { ...p, width: Math.sqrt(q(id)), widenBelowTributaries: true };
+  }
+  return { ...doc, paths };
+}
 
 function tieObjectNames(doc: Record<string, unknown>): Record<string, unknown> {
   const objects = { ...((doc.objects ?? {}) as Record<string, MapObject>) };

@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.1-alpha.3] — 2026-11-04
+
+### Changed
+
+- **Rivers are drawn at a width on the map** (in metres or km, from the tool's *Width on the map*), the same whatever the zoom they are drawn at. A river drawn to join another starts narrower than the river it joins, so tributaries no longer come out as threads or as wide as their river.
+- **Rivers keep their width whatever joins them**, by default. *Widen below tributaries* in a river's panel makes it widen below each one; its width is then its width at the mouth (*Width at the mouth*), so a river with many tributaries can still be made thinner or wider, and they only decide where it widens on the way. Rivers with tributaries on older maps are set to widen, so they look as they did.
+
+### Fixed
+
+- Rivers seen close up: no more spikes, barbs or notches where rivers join or bend, no gaps where a tributary meets its river, and thin rivers follow their bends and loops. Each cell of the map now keeps a short, checked piece of the two nearest rivers, so no water is drawn beside a river however thin it is.
+- Below a confluence a river widens over at least a cell, not in a step.
+- Rivers no longer loop back on themselves where their points are unevenly spaced (for example where a tributary joins).
+
 ## [1.3.1-alpha.2] — 2026-10-31
 
 ### Added
@@ -286,7 +299,8 @@ First public beta.
 - Export to PNG (current view or whole planet, complete map or revealed areas only), 16/8-bit heightmap PNG, and `.loremap` project archives with re-import.
 - Docker image (nginx) and `compose.yaml` for one-command self-hosting.
 
-[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.3.1-alpha.2...HEAD
+[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.3.1-alpha.3...HEAD
+[1.3.1-alpha.3]: https://github.com/mercurial20/loremapper/compare/v1.3.1-alpha.2...v1.3.1-alpha.3
 [1.3.1-alpha.2]: https://github.com/mercurial20/loremapper/compare/v1.3.1-alpha.1...v1.3.1-alpha.2
 [1.3.1-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.2.3-alpha.3...v1.3.1-alpha.1
 [1.2.3-alpha.3]: https://github.com/mercurial20/loremapper/compare/v1.2.3-alpha.2...v1.2.3-alpha.3

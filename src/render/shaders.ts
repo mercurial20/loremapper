@@ -109,10 +109,12 @@ uniform sampler2D uWater;
 uniform sampler2D uLake;
 // whether this tile has any lake near it
 uniform float uLakeOn;
-// rivers: per cell, the nearest bank's river point (offset from the cell's middle), half width
-// (negative at an end), direction and width slope packed; whether this tile has any; how
-// visible rivers are
+// rivers: per cell, for the nearest river (uRiver) and the next nearest (uRiver2), a piece of it:
+// its point's offset from the cell's middle with how far its arcs reach ahead and behind, and the
+// width slope's bits; half width and the curvature ahead; direction and the curvature behind, all
+// packed (see RiverField); whether this tile has any; how visible rivers are
 uniform sampler2D uRiver;
+uniform sampler2D uRiver2;
 uniform float uRiverOn;
 uniform float uRiverVis;
 // the selected lake: its level, and its bounds (world cells)
@@ -609,40 +611,64 @@ void main() {
   float riverPx = 1e6;
   float riverHwPx = 0.0;
   if (uRiverOn > 0.5 && uRiverVis > 0.0) {
-    // the nearest bank among the cells around: distance across each river's line, or to its end.
-    // Each cell's estimate is close but not exact on a bend, so the estimates of the cells near
-    // the pixel are blended smoothly, those close to the nearest bank most (at a join, the other
-    // river's bank barely counts)
+    // the nearest bank among the cells around: each holds a piece of a river (two arcs from a point
+    // of it, as far as they stay on it); the distance is to the nearest point of the arcs, found by
+    // a few Newton steps, or to their ends; estimates near the nearest are blended (over about the
+    // arcs' tolerance), never adding water. The same as riverDistance in riverField.ts.
     vec2 rc = floor(w - uTexOrigin);
-    float sds[9];
-    float wts[9];
+    float sds[18];
+    float wts[18];
+    float hws[18];
     float sd = 1e6;
     float rhw = 0.0;
     // never thinner than a fine line when zoomed out
     float minHw = 0.7 * px * (uPixel > 0.0 ? uPixel : 1.0);
-    for (int k = 0; k < 9; k++) {
+    for (int k = 0; k < 18; k++) {
       sds[k] = 1e6;
       wts[k] = 0.0;
-      ivec2 p = ivec2(clamp(rc + vec2(float(k % 3 - 1), float(k / 3 - 1)), vec2(0.0), vec2(uTexSize - 1.0)));
-      vec4 v = texelFetch(uRiver, p, 0);
+      hws[k] = 0.0;
+      int cellK = k / 2;
+      ivec2 p = ivec2(clamp(rc + vec2(float(cellK % 3 - 1), float(cellK / 3 - 1)), vec2(0.0), vec2(uTexSize - 1.0)));
+      vec4 v = (k % 2 == 0) ? texelFetch(uRiver, p, 0) : texelFetch(uRiver2, p, 0);
       if (v.z == 0.0) continue;
-      vec2 cc = uTexOrigin + vec2(p) + 0.5;
-      vec2 q = cc + v.xy;
-      bool isEnd = v.z < 0.0;
-      // direction and width slope, packed (see RiverField)
+      // offsets with the arcs' reach and the slope's bits (see packOffset)
+      float ax = floor((v.x + 0.5) / 8.0);
+      float bx = v.x - ax * 8.0;
+      float ox = floor((ax + 0.5) / 32.0);
+      float ahead = (ax - ox * 32.0) / 31.0;
+      float ay = floor((v.y + 0.5) / 8.0);
+      float by = v.y - ay * 8.0;
+      float oy = floor((ay + 0.5) / 32.0);
+      float behind = (ay - oy * 32.0) / 31.0;
+      vec2 off = (vec2(ox, oy) - 32768.0) / 1024.0;
+      // half width (log scale) and the curvature ahead (see packWidth)
+      float pw = v.z - 1.0;
+      float hq = floor((pw + 0.5) / 4096.0);
+      float hw0 = exp2(hq / 128.0) / 1024.0;
+      float kA = (pw - hq * 4096.0) / 4094.0 * 32.0 - 16.0;
+      // direction and the curvature behind (see packDirKappa)
       float aq = floor((v.w + 0.5) / 2048.0);
       float a = aq / 1000.0 - 3.14159265;
-      float slope = (v.w - aq * 2048.0) / 500.0 - 2.0;
+      float kB = (v.w - aq * 2048.0) / 2046.0 * 32.0 - 16.0;
+      // the width slope (see slopeOf)
+      float sq = (min(bx * 8.0 + by, 62.0) - 31.0) / 31.0;
+      float slope = 8.0 * sq * sq * sq * hw0;
+      vec2 cc = uTexOrigin + vec2(p) + 0.5;
+      vec2 d = w - cc - off;
       vec2 t = vec2(cos(a), sin(a));
-      vec2 d = w - q;
-      float along = dot(d, t);
-      float dist = isEnd && along < 0.0 ? length(d) : abs(dot(d, vec2(-t.y, t.x)));
-      // the width there, as it grows or narrows along the river
-      float hw0 = abs(v.z);
-      // (only near the point: further on, the next cell knows better, and guessing on would cut
-      // straight edges where the cells holding the river end)
-      float h = max(max(hw0 + slope * clamp(isEnd ? max(along, 0.0) : along, -1.0, 1.0), 0.0), minHw);
-      sds[k] = dist - h;
+      float x = dot(d, t);
+      float y = dot(d, vec2(-t.y, t.x));
+      float u = clamp(x, -behind, ahead);
+      for (int i = 0; i < 3; i++) {
+        float kk = u >= 0.0 ? kA : kB;
+        float e = 0.5 * kk * u * u - y;
+        float g = u - x + e * kk * u;
+        float hh = 1.0 + kk * kk * u * u + e * kk;
+        u = clamp(u - g / max(hh, 0.3), -behind, ahead);
+      }
+      float kk = u >= 0.0 ? kA : kB;
+      sds[k] = length(vec2(x - u, y - 0.5 * kk * u * u)) - max(hw0 + slope * u, minHw);
+      hws[k] = hw0;
       vec2 o = abs(w - cc);
       float r = max(0.0, 1.0 - max(o.x, o.y) / 1.5);
       wts[k] = r * r;
@@ -653,10 +679,11 @@ void main() {
     }
     float acc = 0.0;
     float wsum = 0.0;
-    for (int k = 0; k < 9; k++) {
-      // estimates far from the nearest one fade out smoothly (a hard cut-off would step)
-      float wk = wts[k] * exp(-max(0.0, sds[k] - sd) / 0.25);
-      acc += min(sds[k], sd + 2.0) * wk;
+    for (int k = 0; k < 18; k++) {
+      if (wts[k] <= 0.0) continue;
+      float fade = clamp(0.1 * min(rhw, hws[k]), 0.003, 0.05);
+      float wk = wts[k] * exp(-max(0.0, sds[k] - sd) / fade);
+      acc += min(sds[k], sd + 8.0 * fade) * wk;
       wsum += wk;
     }
     if (wsum > 1e-5) sd = acc / wsum;

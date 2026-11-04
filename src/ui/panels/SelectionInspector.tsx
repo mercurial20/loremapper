@@ -28,7 +28,7 @@ import {
   type TerritoryType,
 } from '../../model/types';
 import { objectSize } from '../../model/geometry';
-import { labelGroup, labelOwn, labelStyle, mapLong, objectNameGroup, objectNameStyle, pathNameGroup, pathNameStyle, peakNameGroup, peakNameStyle } from '../../model/names';
+import { labelGroup, labelOwn, labelStyle, mapLong, mapSpan, PATH_SHARE_MAX, PATH_SHARE_MIN, objectNameGroup, objectNameStyle, pathNameGroup, pathNameStyle, peakNameGroup, peakNameStyle } from '../../model/names';
 import { labelResetPatch, labelStylePatch, ownStylePatch } from '../../editor/names';
 import { ItemNameStyle } from './NameStyles';
 import { useDoc } from '../../store/docStore';
@@ -274,6 +274,7 @@ function PathInspector({ p }: { p: PathFeature }) {
   useEditor((s) => s.lakeRev);
   useEditor((s) => s.geography);
   const tribs = p.kind === 'river' ? tributaries(useDoc.getState().doc.paths, p.id) : [];
+  const span = editor.model ? mapSpan(editor.model.W, editor.model.H) : 1000;
   let len = 0;
   const pts = sampleSpline(p.points, 1, false, 2);
   for (let i = 1; i < pts.length; i++) len += g.distanceKm(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]);
@@ -304,7 +305,16 @@ function PathInspector({ p }: { p: PathFeature }) {
         <span>{t('Length')}</span>
         <b>{formatLength(len, units)}</b>
       </div>
-      <Slider label={t('Width')} value={p.width * zoom} min={0.3} max={60} log onChange={(v) => upd({ width: v / zoom }, 'width')} format={(v) => `${v.toFixed(1)} px · ${formatLength((v / zoom) * g.kmPerCellY, units)}`} />
+      <Slider
+        label={p.kind === 'river' && tribs.length > 0 && !p.flow && p.widenBelowTributaries ? t('Width at the mouth') : t('Width')}
+        value={p.width}
+        min={Math.min(p.width, PATH_SHARE_MIN * span)}
+        max={Math.max(p.width, PATH_SHARE_MAX * span)}
+        log
+        onChange={(v) => upd({ width: v }, 'width')}
+        format={(v) => `${formatLength(v * g.kmPerCellY, units)} · ${(v * zoom).toFixed(1)} px`}
+        hint={p.kind === 'river' && tribs.length > 0 && !p.flow && p.widenBelowTributaries ? t('How wide the river is where it ends, its tributaries’ water included; above them it is narrower.') : undefined}
+      />
       {p.kind === 'river' ? (
         // a river is the map's water, so it has no colour of its own
         <>
@@ -341,7 +351,17 @@ function PathInspector({ p }: { p: PathFeature }) {
         />
       ) : (
         // a river from a source is as wide as the water it carries, and runs the way the water does
-        !p.flow && <Toggle label={t('Taper from source to mouth')} checked={p.taper} onChange={(v) => upd({ taper: v }, 'taper')} />
+        <>
+          {!p.flow && <Toggle label={t('Taper from source to mouth')} checked={p.taper} onChange={(v) => upd({ taper: v }, 'taper')} />}
+          {tribs.length > 0 && (
+            <Toggle
+              label={t('Widen below tributaries')}
+              checked={p.widenBelowTributaries === true}
+              onChange={(v) => upd({ widenBelowTributaries: v || undefined }, 'widen')}
+              hint={t('Off: the river keeps its width whatever joins it. On: it widens below each tributary, and its width is the width at its mouth.')}
+            />
+          )}
+        </>
       )}
       {!p.source && (
         <button className="btn" onClick={() => updateFeature('path', p.id, { points: p.points.slice().reverse() }, t('Reverse path'))}>

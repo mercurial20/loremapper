@@ -28,6 +28,9 @@ export const mapLong = (W: number, H: number) => Math.max(W, H);
 /** The range of a placed symbol's width, as a share of the map's shorter side. */
 export const ICON_SHARE_MIN = 1 / 1000;
 export const ICON_SHARE_MAX = 1 / 6;
+/** The range of a river's or road's width, as a share of the map's shorter side. */
+export const PATH_SHARE_MIN = 1 / 40000;
+export const PATH_SHARE_MAX = 1 / 40;
 
 export function autoSize(kind: NameGroupKind, longSide: number): number {
   return Math.max(0.5, longSide * AUTO_SHARE[kind]);

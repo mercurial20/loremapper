@@ -175,27 +175,39 @@ export function catmullRom(pts: [number, number][], samplesPerSeg = 8, closed = 
   if (n < 2) return pts.slice();
   if (n === 2 && !closed) return pts.slice();
   const out: [number, number][] = [];
-  const get = (i: number) => {
+  // past an open end, the line goes on straight (a mirrored point), so the curve leaves it smoothly
+  const get = (i: number): [number, number] => {
     if (closed) return pts[((i % n) + n) % n];
-    return pts[clamp(i, 0, n - 1)];
+    if (i < 0) return [2 * pts[0][0] - pts[1][0], 2 * pts[0][1] - pts[1][1]];
+    if (i > n - 1) return [2 * pts[n - 1][0] - pts[n - 2][0], 2 * pts[n - 1][1] - pts[n - 2][1]];
+    return pts[i];
   };
+  // centripetal parametrisation (knots spaced by the square root of the distance): the curve
+  // never loops or overshoots where control points are unevenly spaced, as a uniform one does
+  const knot = (a: [number, number], b: [number, number]) => Math.max(1e-4, Math.sqrt(Math.hypot(b[0] - a[0], b[1] - a[1])));
   const segs = closed ? n : n - 1;
   for (let i = 0; i < segs; i++) {
     const p0 = get(i - 1);
     const p1 = get(i);
     const p2 = get(i + 1);
     const p3 = get(i + 2);
+    const t1 = knot(p0, p1);
+    const t2 = t1 + knot(p1, p2);
+    const t3 = t2 + knot(p2, p3);
     for (let s = 0; s < samplesPerSeg; s++) {
-      const t = s / samplesPerSeg;
-      const t2 = t * t;
-      const t3 = t2 * t;
-      const x =
-        0.5 *
-        (2 * p1[0] + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3);
-      const y =
-        0.5 *
-        (2 * p1[1] + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3);
-      out.push([x, y]);
+      const t = t1 + (s / samplesPerSeg) * (t2 - t1);
+      // Barry–Goldman pyramid
+      const a1x = ((t1 - t) * p0[0] + t * p1[0]) / t1;
+      const a1y = ((t1 - t) * p0[1] + t * p1[1]) / t1;
+      const a2x = ((t2 - t) * p1[0] + (t - t1) * p2[0]) / (t2 - t1);
+      const a2y = ((t2 - t) * p1[1] + (t - t1) * p2[1]) / (t2 - t1);
+      const a3x = ((t3 - t) * p2[0] + (t - t2) * p3[0]) / (t3 - t2);
+      const a3y = ((t3 - t) * p2[1] + (t - t2) * p3[1]) / (t3 - t2);
+      const b1x = ((t2 - t) * a1x + t * a2x) / t2;
+      const b1y = ((t2 - t) * a1y + t * a2y) / t2;
+      const b2x = ((t3 - t) * a2x + (t - t1) * a3x) / (t3 - t1);
+      const b2y = ((t3 - t) * a2y + (t - t1) * a3y) / (t3 - t1);
+      out.push([((t2 - t) * b1x + (t - t1) * b2x) / (t2 - t1), ((t2 - t) * b1y + (t - t1) * b2y) / (t2 - t1)]);
     }
   }
   if (!closed) out.push(pts[n - 1]);

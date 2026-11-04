@@ -28,11 +28,11 @@ function coast() {
 }
 
 describe('river network', () => {
-  const main = river('main', [
+  const main = { ...river('main', [
     [100, 500],
     [300, 500],
     [500, 500],
-  ], 4);
+  ], 4), widenBelowTributaries: true };
   const trib = river('trib', [
     [300, 300],
     [300, 400],
@@ -40,17 +40,59 @@ describe('river network', () => {
   ], 3, { kind: 'path', id: 'main', t: 0.5 });
   const paths = { main, trib };
 
-  it('adds a tributary’s water to its river below the join, smoothly', () => {
+  it('widens a river below a tributary’s join, smoothly, to the width it was set to at its mouth', () => {
     const net = riverNet(paths);
     expect(net.inflows.get('main')?.map((f) => f.id)).toEqual(['trib']);
     const len = 400;
     const above = widthAt(main, 0.49, net, len);
     const below = widthAt(main, 0.6, net, len);
-    // well below the join: both rivers' discharge (w ∝ √Q)
-    expect(widthAt(main, 1, net, len)).toBeCloseTo(Math.sqrt(4 * 4 + 3 * 3), 5);
-    expect(below).toBeGreaterThan(above + 1);
+    // at the mouth: the width the river was set to, its tributary's water included
+    expect(widthAt(main, 1, net, len)).toBeCloseTo(4, 5);
+    expect(below).toBeGreaterThan(above + 0.5);
     // no step at the join itself
     expect(widthAt(main, 0.5005, net, len) - widthAt(main, 0.4995, net, len)).toBeLessThan(0.05);
+  });
+
+  it('lets the width of a river with many tributaries be set, and keeps it no thinner than half above them', () => {
+    const feeders: Record<string, PathFeature> = {};
+    for (let i = 0; i < 6; i++)
+      feeders['f' + i] = river('f' + i, [
+        [120 + i * 60, 300],
+        [120 + i * 60, 498],
+      ], 3, { kind: 'path', id: 'main', t: 0.1 + i * 0.15 });
+    for (const w of [2, 4, 12]) {
+      const m = { ...main, width: w, taper: false, widenBelowTributaries: true };
+      const net = riverNet({ main: m, ...feeders });
+      expect(widthAt(m, 1, net, 400)).toBeCloseTo(w, 5);
+      // above every join the river carries its own water: at least half its width
+      const top = widthAt(m, 0.05, net, 400);
+      expect(top).toBeGreaterThanOrEqual(w / 2 - 1e-9);
+      expect(top).toBeLessThan(w);
+      // and it only widens downstream
+      let last = 0;
+      for (let t = 0; t <= 1; t += 0.05) {
+        const x = widthAt(m, t, net, 400);
+        expect(x).toBeGreaterThanOrEqual(last - 1e-9);
+        last = x;
+      }
+    }
+  });
+
+  it('keeps a river from a source as wide as the water it carries, tributaries added', () => {
+    const src = { ...main, flow: [1, 5, 10], widenBelowTributaries: true };
+    const tr = { ...trib, flow: [1, 2, 4] };
+    const net = riverNet({ main: src, trib: tr });
+    expect(widthAt(src, 1, net, 400)).toBeCloseTo(Math.sqrt(ownWidth(src, 1) ** 2 + ownWidth(tr, 1) ** 2), 5);
+  });
+
+  it('keeps a river as wide as it is set whatever joins it, unless set to widen', () => {
+    const plain = { ...main, widenBelowTributaries: undefined, taper: false };
+    const net = riverNet({ main: plain, trib });
+    for (const t of [0, 0.3, 0.5, 0.7, 1]) expect(widthAt(plain, t, net, 400)).toBeCloseTo(4, 9);
+    const src = { ...plain, flow: [1, 5, 10] };
+    const tr = { ...trib, flow: [1, 2, 4] };
+    const net2 = riverNet({ main: src, trib: tr });
+    expect(widthAt(src, 1, net2, 400)).toBeCloseTo(ownWidth(src, 1), 9);
   });
 
   it('carries a tributary’s own tributaries down to the river it joins', () => {
@@ -59,8 +101,10 @@ describe('river network', () => {
       [298, 350],
     ], 2, { kind: 'path', id: 'trib', t: 0.3 });
     const net = riverNet({ main, trib, small });
-    expect(net.mouthQ.get('trib')).toBeCloseTo(3 * 3 + 2 * 2, 5);
-    expect(net.mouthQ.get('main')).toBeCloseTo(4 * 4 + 3 * 3 + 2 * 2, 5);
+    // drawn rivers reach their mouths as wide as they were set
+    expect(net.mouthQ.get('trib')).toBeCloseTo(3 * 3, 5);
+    expect(net.mouthQ.get('main')).toBeCloseTo(4 * 4, 5);
+    expect(net.inflows.get('main')?.[0].q).toBeCloseTo(9, 5);
   });
 
   it('ignores a loop of rivers flowing into each other', () => {

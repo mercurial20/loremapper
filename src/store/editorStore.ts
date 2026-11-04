@@ -88,7 +88,8 @@ interface EditorState {
   stamp: StampSettings;
   activeObjectLayer: string;
   /** Default widths are in screen pixels at the zoom where the path is drawn. */
-  pathDefaults: { river: { width: number; color: string; taper: boolean }; road: { width: number; color: string; style: RoadStyle } };
+  /** New rivers and roads: their width on the map, as a share of its shorter side (the same at any zoom). */
+  pathDefaults: { river: { share: number; color: string; taper: boolean }; road: { share: number; color: string; style: RoadStyle } };
   territoryDefaults: { type: TerritoryType; color: string; borderStyle: BorderStyle };
   /** Label tool: the name group a new label joins (and takes its style from). */
   labelDefaults: { group: string };
@@ -243,8 +244,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   stamp: { mode: 'single', share: 1 / 45, spacingShare: 1 / 40, randomScale: 0.25, randomRotation: 0, randomFlip: true },
   activeObjectLayer: 'layer-settlements',
   pathDefaults: {
-    river: { width: 5, color: '#4f86ad', taper: true },
-    road: { width: 2.2, color: '#7a5532', style: 'dashed' },
+    river: { share: 1 / 800, color: '#4f86ad', taper: true },
+    road: { share: 1 / 1500, color: '#7a5532', style: 'dashed' },
   },
   territoryDefaults: { type: 'kingdom', color: '#b5452f', borderStyle: 'dashed' },
   labelDefaults: { group: 'names-labels' },

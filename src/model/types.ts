@@ -51,6 +51,8 @@ export interface PathFeature {
   style: RoadStyle;
   /** Rivers: taper from source (thin) to mouth (wide). */
   taper: boolean;
+  /** Rivers: wider below each tributary that joins it, its `width` being the width at its mouth (default: no, as wide as it is set all along). */
+  widenBelowTributaries?: boolean;
   /**
    * Rivers: where the river ends. In the sea or a lake (its mouth is drawn running into the water),
    * or in another river (a tributary: it joins that river `t` of the way along it, 0 … 1, and
