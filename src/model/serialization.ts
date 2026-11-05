@@ -1,7 +1,7 @@
 import { defaultPlanet } from '../core/planet';
 import { NO_WATER } from '../terrain/TerrainModel';
 import type { ProjectRecord } from '../persistence/db';
-import { defaultView, emptyDocument, type MapDocument, type MapLabel, type MapObject, type PathFeature, type ProjectMeta } from './types';
+import { ADAPTIVE_DEFAULT, ADAPTIVE_PX, defaultView, emptyDocument, type MapDocument, type NameStyle, type MapLabel, type MapObject, type PathFeature, type ProjectMeta } from './types';
 import { t } from '../i18n';
 
 /**
@@ -150,7 +150,16 @@ export function normalizeDoc(d: Partial<MapDocument> | undefined): MapDocument {
     peaks: d.peaks ?? {},
     regionNames: d.regionNames ?? {},
     // (older maps: the built-in name groups; a group added since is put in)
-    nameGroups: [...(d.nameGroups ?? []), ...e.nameGroups.filter((g) => !d.nameGroups?.some((x) => x.id === g.id))],
+    // groups from older maps get what groups have had since (adaptive names: their kind's sizes)
+    nameGroups: [
+      ...(d.nameGroups ?? []).map((g) => ({
+        ...g,
+        minPx: g.minPx ?? ADAPTIVE_PX[g.kind].minPx,
+        maxPx: g.maxPx ?? ADAPTIVE_PX[g.kind].maxPx,
+        style: { ...g.style, adaptive: (g.style as Partial<NameStyle>).adaptive ?? ADAPTIVE_DEFAULT[g.kind] },
+      })),
+      ...e.nameGroups.filter((g) => !d.nameGroups?.some((x) => x.id === g.id)),
+    ],
     reference: d.reference ?? null,
     objectLayers: d.objectLayers?.length ? d.objectLayers : e.objectLayers,
     systemLayers: { ...e.systemLayers, ...(d.systemLayers ?? {}) },

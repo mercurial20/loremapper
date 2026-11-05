@@ -73,7 +73,7 @@ export const labelOwn = (l: MapLabel): NameStyleKey[] => l.own ?? NAME_STYLE_KEY
 export function labelStyle(doc: MapDocument, l: MapLabel, longSide: number): NameStyle {
   const g = groupStyle(labelGroup(doc, l), longSide);
   const own = labelOwn(l);
-  const mine: NameStyle = { font: l.font, size: l.size, color: l.color, halo: l.halo, uppercase: l.uppercase, italic: l.italic };
+  const mine: NameStyle = { font: l.font, size: l.size, color: l.color, halo: l.halo, uppercase: l.uppercase, italic: l.italic, adaptive: l.adaptive ?? false };
   const out = { ...g };
   for (const k of own) (out as Record<string, unknown>)[k] = mine[k];
   return out;
@@ -88,6 +88,22 @@ export const pathShowsName = (p: PathFeature) => (p.showName ?? true) && !!p.nam
 export const MIN_NAME_PX = 9;
 /** Symbols smaller than this on screen (px) are hidden. */
 export const MIN_ICON_PX = 3;
+
+/**
+ * A name's letter size on screen (px) at a zoom (screen pixels per cell): its size on the map, or
+ * for an adaptive name that size kept within its group's sizes on screen.
+ */
+export function screenPx(style: NameStyle, group: NameGroup, zoom: number): number {
+  const px = style.size * zoom;
+  return style.adaptive ? Math.min(group.maxPx, Math.max(group.minPx, px)) : px;
+}
+
+/** Whether a name is big enough to read at a zoom (an adaptive one always is; it hides with what it names). */
+export const readableAt = (style: NameStyle, group: NameGroup, zoom: number) => style.adaptive || group.always || style.size * zoom >= MIN_NAME_PX;
+
+/** Two styles the same. */
+export const sameStyle = (a: NameStyle, b: NameStyle) =>
+  a.font === b.font && a.size === b.size && a.color === b.color && a.halo === b.halo && a.uppercase === b.uppercase && a.italic === b.italic && a.adaptive === b.adaptive;
 
 /** A group's name as shown: the built-in ones are translated. */
 export function groupName(g: NameGroup, t: (s: string) => string): string {

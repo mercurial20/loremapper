@@ -23,7 +23,7 @@ export function updateNameGroup(id: string, patch: Partial<Omit<NameGroup, 'styl
 export function addNameGroup(name: string, from?: NameGroup): string {
   const id = uid('names-');
   const base = from ?? useDoc.getState().doc.nameGroups.find((g) => g.kind === 'labels')!;
-  commit(t('New name group'), (d) => ({ nameGroups: [...d.nameGroups, { id, name, kind: 'custom', style: { ...base.style }, visible: true, always: false }] }));
+  commit(t('New name group'), (d) => ({ nameGroups: [...d.nameGroups, { id, name, kind: 'custom', style: { ...base.style }, visible: true, always: false, minPx: base.minPx, maxPx: base.maxPx }] }));
   return id;
 }
 

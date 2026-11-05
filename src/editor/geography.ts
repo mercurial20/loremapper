@@ -310,7 +310,7 @@ export function labelRegion(r: RegionInfo, text: string) {
     group: group.id,
     // sized to the region; the rest follows its group
     own: ['size'],
-    anchor: { kind: 'region', x: r.anchorX, y: r.anchorY, land: r.land, syncText: true },
+    anchor: { kind: 'region', x: r.anchorX, y: r.anchorY, land: r.land, syncText: true, w: r.x1 - r.x0, h: r.y1 - r.y0 },
   };
   addFeature('label', l, t('Label region'));
   useEditor.getState().select([{ kind: 'label', id: l.id }]);

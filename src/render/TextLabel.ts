@@ -60,6 +60,16 @@ export class TextLabel extends Container {
 
   private measuredWidth = 0;
 
+  /** Change only the size (world units): scaled, not laid out again. */
+  setSize(size: number, zoom: number) {
+    if (!this.opts || this.opts.size === size) return;
+    this.opts = { ...this.opts, size };
+    this.scale.set(size / BASE);
+    this.worldWidth = (this.measuredWidth * size) / BASE;
+    this.worldHeight = size * 1.25;
+    this.setZoom(zoom);
+  }
+
   private build(zoom: number) {
     const o = this.opts!;
     for (const g of this.glyphs) g.destroy();

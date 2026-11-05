@@ -1,6 +1,6 @@
 import { assetLibrary } from '../assets/library';
 import { ANNOUNCEMENT, ANNOUNCEMENT_KEY } from '../announcement';
-import { refreshGeographyIfShown, resetGeography } from './geography';
+import { freshGeography, refreshGeographyIfShown, regionAt, resetGeography } from './geography';
 import { brushRange } from '../ui/format';
 import { defaultPlanet, surfaceAreaKm2, type GridPreset } from '../core/planet';
 import { history } from '../model/history';
@@ -220,8 +220,22 @@ class Editor {
     const territories = new TerritoryLayer();
     const longSide = () => mapLong(model.W, model.H);
     // a label naming a landmass or body of water shows while that is still there
-    const labels = new LabelLayer(longSide, (a) => isOpenWater(model, a.x, a.y) !== a.land);
+    // (and an adaptive one hides when it is smaller on screen than the name: its size as measured,
+    // or as it was when the label was made)
+    const labels = new LabelLayer(
+      renderer.camera,
+      longSide,
+      (a) => isOpenWater(model, a.x, a.y) !== a.land,
+      (a) => {
+        const g = freshGeography();
+        const r = g ? regionAt(g, a.x, a.y) : null;
+        if (r && r.land === a.land) return [r.x1 - r.x0, r.y1 - r.y0];
+        return a.w ? [a.w, a.h ?? a.w] : null;
+      },
+    );
     const names = new NameLayer(renderer.camera, longSide, model.W);
+    // names keep clear of labels, peak markers of both
+    names.labels = labels;
     const peaks = new PeakLayer(renderer.camera, model.W, longSide);
     peaks.avoid = names;
     const overlay = new OverlayLayer(model.geo, (id) => labels.bounds(id));

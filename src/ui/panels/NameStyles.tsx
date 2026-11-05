@@ -9,7 +9,7 @@ import { type LabelFont, type NameStyle, type NameStyleKey } from '../../model/t
 import { FONT_LABEL, FONT_STACK } from '../../render/fonts';
 import { useDoc } from '../../store/docStore';
 import { useEditor } from '../../store/editorStore';
-import { Hint, Select, Slider } from '../controls/controls';
+import { Hint, NumberField, Select, Slider } from '../controls/controls';
 
 /*
  * Styles of names on the map: a group's style (Names on the map) and an item's own properties over
@@ -96,7 +96,7 @@ export function NameStyleEditor({
         <Select<LabelFont> label={t('Font')} value={style.font} options={(Object.keys(FONT_LABEL) as LabelFont[]).map((f) => ({ value: f, label: t(FONT_LABEL[f]) }))} onChange={(v) => onSet('font', v)} />
       </Field>
       <Field own={is('size')} onReset={reset('size')}>
-        <Slider label={t('Size on the map')} value={style.size} min={L / 2500} max={L / 10} log onChange={(v) => onSet('size', v)} format={(v) => formatLength(v * kmPerCell(), units)} hint={t('Size of the letters on the map. Names too small to read at the current zoom are hidden.')} />
+        <Slider label={t('Size on the map')} value={style.size} min={L / 2500} max={L / 10} log onChange={(v) => onSet('size', v)} format={(v) => formatLength(v * kmPerCell(), units)} hint={style.adaptive ? t('Size of the letters on the map, kept within the group’s sizes on screen.') : t('Size of the letters on the map. Names too small to read at the current zoom are hidden.')} />
       </Field>
       <Field own={is('color')} onReset={reset('color')}>
         <div className="ctl color">
@@ -114,13 +114,14 @@ export function NameStyleEditor({
       <div className="ns-chips">
         {(
           [
-            ['uppercase', t('Capitals')],
-            ['italic', t('Italic')],
-            ['halo', t('Halo')],
+            ['uppercase', t('Capitals'), ''],
+            ['italic', t('Italic'), ''],
+            ['halo', t('Halo'), ''],
+            ['adaptive', t('Adaptive size'), t('Kept readable on screen: it does not grow past its group’s size when you zoom in, so the land shows, nor shrink away when you zoom out; it hides when what it names is too small to see.')],
           ] as const
-        ).map(([k, label]) => (
+        ).map(([k, label, tip]) => (
           <span key={k} className={'ns-chip-wrap' + (is(k) ? ' own' : '')}>
-            <button className={'chip' + (style[k] ? ' on' : '')} onClick={() => onSet(k, !style[k])} aria-pressed={style[k]}>
+            <button className={'chip' + (style[k] ? ' on' : '')} onClick={() => onSet(k, !style[k])} aria-pressed={style[k]} title={tip || undefined}>
               {label}
             </button>
             {is(k) && onReset && (
@@ -227,6 +228,12 @@ export function NameGroupsPanel() {
                     </label>
                   )}
                   <NameStyleEditor style={st} onSet={(k, v) => updateNameGroup(g.id, { style: { [k]: v } }, `group-${k}:${g.id}`)} />
+                  {st.adaptive && (
+                    <div className="grid2">
+                      <NumberField label={t('Smallest on screen')} value={g.minPx} min={6} max={g.maxPx} step={1} suffix="px" onChange={(v) => updateNameGroup(g.id, { minPx: Math.max(6, Math.min(g.maxPx, Math.round(v))) }, 'group-min:' + g.id)} />
+                      <NumberField label={t('Largest on screen')} value={g.maxPx} min={g.minPx} max={96} step={1} suffix="px" onChange={(v) => updateNameGroup(g.id, { maxPx: Math.min(96, Math.max(g.minPx, Math.round(v))) }, 'group-max:' + g.id)} />
+                    </div>
+                  )}
                   {g.style.size > 0 && (
                     <button className="btn small" onClick={() => updateNameGroup(g.id, { style: { size: 0 } })}>
                       <RotateCcw size={13} /> {t('Size to the map')}

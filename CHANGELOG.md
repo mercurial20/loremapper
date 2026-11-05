@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.1-alpha.4] — 2026-11-05
+
+### Added
+
+- **Adaptive size for names** (*Adaptive size* in a name group's style, or a name's own): an adaptive name keeps its group's size on screen. Zoomed in, it does not grow past it, so the land shows (peaks are small markers again); zoomed out, it stays readable, and hides when what it names, an island, a lake or a river, is smaller on screen than the name. Where adaptive names crowd, larger lands and waters come first, then rivers, then peaks. On by default for lands, waters (with rivers) and peaks; off for objects and free labels. Each group sets its smallest and largest size on screen.
+
 ## [1.3.1-alpha.3] — 2026-11-04
 
 ### Changed
@@ -299,7 +305,8 @@ First public beta.
 - Export to PNG (current view or whole planet, complete map or revealed areas only), 16/8-bit heightmap PNG, and `.loremap` project archives with re-import.
 - Docker image (nginx) and `compose.yaml` for one-command self-hosting.
 
-[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.3.1-alpha.3...HEAD
+[Unreleased]: https://github.com/mercurial20/loremapper/compare/v1.3.1-alpha.4...HEAD
+[1.3.1-alpha.4]: https://github.com/mercurial20/loremapper/compare/v1.3.1-alpha.3...v1.3.1-alpha.4
 [1.3.1-alpha.3]: https://github.com/mercurial20/loremapper/compare/v1.3.1-alpha.2...v1.3.1-alpha.3
 [1.3.1-alpha.2]: https://github.com/mercurial20/loremapper/compare/v1.3.1-alpha.1...v1.3.1-alpha.2
 [1.3.1-alpha.1]: https://github.com/mercurial20/loremapper/compare/v1.2.3-alpha.3...v1.3.1-alpha.1

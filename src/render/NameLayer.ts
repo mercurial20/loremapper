@@ -1,10 +1,11 @@
 import { Container } from 'pixi.js';
 import { objectSize } from '../model/geometry';
-import { MIN_ICON_PX, MIN_NAME_PX, objectNameGroup, objectNameStyle, objectShowsName, pathNameGroup, pathNameStyle, pathShowsName } from '../model/names';
+import { MIN_ICON_PX, MIN_NAME_PX, objectNameGroup, objectNameStyle, objectShowsName, pathNameGroup, pathNameStyle, pathShowsName, readableAt, sameStyle, screenPx } from '../model/names';
 import type { MapDocument, MapObject, NameGroup, NameStyle, PathFeature, Vec2 } from '../model/types';
 import type { Camera } from './Camera';
 import type { WorldLayer } from './MapRenderer';
 import type { StylePreset } from './styles';
+import type { LabelLayer } from './TerritoryLayer';
 import { TextLabel } from './TextLabel';
 import { sampleSpline } from './vectorGeometry';
 
@@ -16,10 +17,14 @@ interface Entry {
   src: MapObject | PathFeature;
   group: NameGroup;
   style: NameStyle;
-  /** Anchor on the map and turn (degrees). */
+  /** Where it is drawn now, and its turn (degrees). */
   x: number;
   y: number;
   rotation: number;
+  /** Where it goes for a letter size (an adaptive name's size changes with the zoom). */
+  place: (size: number) => { x: number; y: number };
+  /** How long what it names is (rivers and roads, cells): an adaptive name hides when it is shorter on screen. */
+  length: number;
   /** Larger first when names crowd. */
   priority: number;
   /** The symbol it names is drawn at this world width (objects). */
@@ -53,6 +58,8 @@ export class NameLayer implements WorldLayer {
   private selected = new Set<string>();
 
   private worldW: number;
+  /** The labels of lands and waters: names keep clear of them. */
+  labels: LabelLayer | null = null;
 
   constructor(camera: Camera, longSide: () => number, worldW: number) {
     this.camera = camera;
@@ -105,32 +112,38 @@ export class NameLayer implements WorldLayer {
     this.doc = doc;
     const L = this.longSide();
     const seen = new Set<string>();
-    const put = (key: string, kind: Entry['kind'], src: MapObject | PathFeature, group: NameGroup, style: NameStyle, at: { x: number; y: number; rotation: number }, priority: number, iconW: number) => {
+    const put = (key: string, kind: Entry['kind'], src: MapObject | PathFeature, group: NameGroup, style: NameStyle, rotation: number, place: Entry['place'], length: number, priority: number, iconW: number) => {
       seen.add(key);
+      const { x, y } = place(style.size);
       let e = this.entries.get(key);
       if (!e) {
-        e = { kind, id: src.id, node: new TextLabel(), src, group, style, ...at, priority, iconW };
+        e = { kind, id: src.id, node: new TextLabel(), src, group, style, x, y, rotation, place, length, priority, iconW };
         this.entries.set(key, e);
         this.container.addChild(e.node);
         this.build(e);
         return;
       }
       const changed = e.src !== src || e.group !== group || !sameStyle(e.style, style);
-      Object.assign(e, { src, group, style, ...at, priority, iconW });
+      Object.assign(e, { src, group, style, x, y, rotation, place, length, priority, iconW });
       if (changed) this.build(e);
+      else e.node.position.set(x, y);
     };
     for (const o of Object.values(doc.objects)) {
       if (!objectShowsName(o)) continue;
       const style = objectNameStyle(doc, o, L);
       const { w, h } = objectSize(o);
       // under the symbol, a little clear of it, unless it was moved
-      const [ox, oy] = o.nameOffset ?? defaultOffset(h, style.size);
-      put('o:' + o.id, 'object', o, objectNameGroup(doc, o), style, { x: o.x + ox, y: o.y + oy, rotation: 0 }, w * (1 + (o.layerId === 'layer-settlements' ? 1 : 0)), w);
+      const place = (size: number) => {
+        const [ox, oy] = o.nameOffset ?? defaultOffset(h, size);
+        return { x: o.x + ox, y: o.y + oy };
+      };
+      put('o:' + o.id, 'object', o, objectNameGroup(doc, o), style, 0, place, 0, w * (1 + (o.layerId === 'layer-settlements' ? 1 : 0)), w);
     }
     for (const p of Object.values(doc.paths)) {
       if (!pathShowsName(p) || p.points.length < 2 || p.oxbow) continue;
       const style = pathNameStyle(doc, p, L);
-      put('p:' + p.id, 'path', p, pathNameGroup(doc, p), style, alongPath(p, style.size), p.width * 4 + style.size, 0);
+      const at = pathAnchor(p);
+      put('p:' + p.id, 'path', p, pathNameGroup(doc, p), style, at.rotation, (size) => besidePath(p, at, size), at.length, p.width * 4 + at.length * 0.02, 0);
     }
     for (const [key, e] of this.entries)
       if (!seen.has(key)) {
@@ -144,7 +157,7 @@ export class NameLayer implements WorldLayer {
   offsetOf(o: MapObject): Vec2 {
     if (o.nameOffset) return o.nameOffset;
     const e = this.entries.get('o:' + o.id);
-    return defaultOffset(objectSize(o).h, e ? e.style.size : 0);
+    return defaultOffset(objectSize(o).h, e ? e.node.worldHeight / 1.25 : 0);
   }
 
   /** The object or river whose name (as drawn now) is under a map point. */
@@ -167,37 +180,54 @@ export class NameLayer implements WorldLayer {
 
   prepare(zoom: number, zoomChanged: boolean) {
     this.zoom = zoom;
+    // labels first: names keep clear of them
+    this.labels?.prepare(zoom, zoomChanged);
     const cam = this.cameraOverride ?? this.camera;
-    const key = `${zoom.toFixed(5)},${cam.x.toFixed(1)},${cam.y.toFixed(1)},${cam.viewW},${cam.viewH}`;
+    const key = `${zoom.toFixed(5)},${cam.x.toFixed(1)},${cam.y.toFixed(1)},${cam.viewW},${cam.viewH},${MIN_NAME_PX},${this.labels?.version ?? 0}`;
     if (key === this.lastKey) return;
     this.lastKey = key;
     const doc = this.doc;
     if (!doc) return;
-    // what can show: shown groups, readable sizes, symbols that are drawn
+    // sizes on screen, and what can show: shown groups, readable sizes, symbols that are drawn
     const layerShown = new Map(doc.objectLayers.map((l) => [l.id, l.visible]));
     const cand: Entry[] = [];
     for (const e of this.entries.values()) {
+      const px = screenPx(e.style, e.group, zoom);
+      if (e.style.adaptive) {
+        e.node.setSize(px / zoom, zoom);
+        const at = e.place(px / zoom);
+        e.x = at.x;
+        e.y = at.y;
+        e.node.position.set(at.x, at.y);
+      }
       if (zoomChanged) e.node.setZoom(zoom);
-      let ok = e.group.visible && (e.group.always || this.selected.has(e.id) || e.style.size * zoom >= MIN_NAME_PX);
+      const sure = e.group.always || this.selected.has(e.id);
+      let ok = e.group.visible && (sure || readableAt(e.style, e.group, zoom));
       if (ok && e.kind === 'object') {
         const o = e.src as MapObject;
         ok = this.objectsShown && !o.hidden && (layerShown.get(o.layerId) ?? true) && e.iconW * zoom >= MIN_ICON_PX;
       }
       if (ok && e.kind === 'path') ok = this.pathsShown && !(e.src as PathFeature).hidden;
+      // an adaptive name hides when what it names is shorter on screen than it
+      if (ok && !sure && e.style.adaptive && e.kind === 'path' && e.length * zoom < 1.2 * e.node.worldWidth * zoom) ok = false;
       e.node.renderable = false;
       if (ok) cand.push(e);
     }
-    // where names crowd, the more important ones win (a group shown always is never dropped)
+    // where names crowd, the more important ones win (a group shown always is never dropped); all
+    // keep clear of the labels
     const sure = (e: Entry) => e.group.always || this.selected.has(e.id);
     cand.sort((a, b) => Number(this.selected.has(b.id)) - Number(this.selected.has(a.id)) || Number(b.group.always) - Number(a.group.always) || b.priority - a.priority);
-    const placed: [number, number, number, number][] = [];
+    const placed: [number, number, number, number][] = [...(this.labels?.boxes ?? [])];
     this.boxes = placed;
     this.version++;
     const W = doc && (this.cameraOverride ?? this.camera);
     for (const e of cand) {
       const [sx, sy] = W.worldToScreen(e.x, e.y);
-      const hw = (e.node.worldWidth * zoom) / 2 + 3;
-      const hh = (e.node.worldHeight * zoom) / 2 + 1;
+      const r = (e.rotation * Math.PI) / 180;
+      const hw0 = (e.node.worldWidth * zoom) / 2;
+      const hh0 = (e.node.worldHeight * zoom) / 2;
+      const hw = Math.abs(hw0 * Math.cos(r)) + Math.abs(hh0 * Math.sin(r)) + 3;
+      const hh = Math.abs(hw0 * Math.sin(r)) + Math.abs(hh0 * Math.cos(r)) + 1;
       if (sx + hw < -40 || sy + hh < -40 || sx - hw > W.viewW + 40 || sy - hh > W.viewH + 40) continue;
       const box: [number, number, number, number] = [sx - hw, sy - hh, sx + hw, sy + hh];
       if (!sure(e) && placed.some((b) => b[0] < box[2] && b[2] > box[0] && b[1] < box[3] && b[3] > box[1])) continue;
@@ -205,15 +235,13 @@ export class NameLayer implements WorldLayer {
       e.node.renderable = true;
       // fade in as it grows readable
       const px = e.style.size * zoom;
-      e.node.alpha = sure(e) ? 1 : Math.min(1, (px - MIN_NAME_PX) / 2 + 0.35);
+      e.node.alpha = sure(e) || e.style.adaptive ? 1 : Math.min(1, (px - MIN_NAME_PX) / 2 + 0.35);
     }
   }
 }
 
 const defaultOffset = (h: number, size: number): Vec2 => [0, h / 2 + size * 0.95];
 
-const sameStyle = (a: NameStyle, b: NameStyle) =>
-  a.font === b.font && a.size === b.size && a.color === b.color && a.halo === b.halo && a.uppercase === b.uppercase && a.italic === b.italic;
 
 /** How far along a river or road (0–1) the point nearest a map point is. */
 export function pathFraction(p: PathFeature, x: number, y: number): number {
@@ -232,8 +260,8 @@ export function pathFraction(p: PathFeature, x: number, y: number): number {
   return total > 0 ? at / total : 0.5;
 }
 
-/** Where a river's or road's name sits: `nameAt` of the way along it, turned with it, a little to one side. */
-export function alongPath(p: PathFeature, size: number): { x: number; y: number; rotation: number } {
+/** Where along a river or road its name goes: the point `nameAt` of the way, its direction there (never upside down), and its length. */
+export function pathAnchor(p: PathFeature): { x: number; y: number; rotation: number; length: number } {
   const pts: Vec2[] = sampleSpline(p.points, 1, false, 2);
   let total = 0;
   const cum = [0];
@@ -254,8 +282,17 @@ export function alongPath(p: PathFeature, size: number): { x: number; y: number;
   // never upside down
   if (ang > 90) ang -= 180;
   if (ang < -90) ang += 180;
-  const r = (ang * Math.PI) / 180;
-  // beside the line, above it as read
+  return { x: ax + (bx - ax) * t, y: ay + (by - ay) * t, rotation: ang, length: total };
+}
+
+/** A river's or road's name of letter size `size` beside its line at `at`, above it as read. */
+export function besidePath(p: PathFeature, at: { x: number; y: number; rotation: number }, size: number): { x: number; y: number; rotation: number } {
+  const r = (at.rotation * Math.PI) / 180;
   const off = p.width / 2 + size * 0.85;
-  return { x: ax + (bx - ax) * t + Math.sin(r) * off, y: ay + (by - ay) * t - Math.cos(r) * off, rotation: ang };
+  return { x: at.x + Math.sin(r) * off, y: at.y - Math.cos(r) * off, rotation: at.rotation };
+}
+
+/** Where a river's or road's name sits: `nameAt` of the way along it, turned with it, a little to one side. */
+export function alongPath(p: PathFeature, size: number): { x: number; y: number; rotation: number } {
+  return besidePath(p, pathAnchor(p), size);
 }

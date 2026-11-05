@@ -67,6 +67,7 @@ async function renderToPng(x0: number, y0: number, x1: number, y1: number, outW:
   cam.y = (y0 + y1) / 2;
   L.peaks.cameraOverride = cam;
   L.names.cameraOverride = cam;
+  L.labels.cameraOverride = cam;
 
   const band = new Uint8Array(outW * BAND * 4);
   let bandY = -1;
@@ -119,6 +120,7 @@ async function renderToPng(x0: number, y0: number, x1: number, y1: number, outW:
     rt.destroy(true);
     L.peaks.cameraOverride = null;
     L.names.cameraOverride = null;
+    L.labels.cameraOverride = null;
     L.overlay.container.visible = overlayVisible;
     r.fog.container.visible = fogVisible;
     L.peaks.container.visible = peaksVisible;

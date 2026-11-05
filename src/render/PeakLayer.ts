@@ -1,6 +1,6 @@
 import { Container, Graphics, Text, TextStyle } from 'pixi.js';
 import { formatHeight } from '../core/units';
-import { MIN_NAME_PX, peakNameGroup, peakNameStyle } from '../model/names';
+import { MIN_NAME_PX, peakNameGroup, peakNameStyle, readableAt, screenPx } from '../model/names';
 import type { MapDocument, NameGroup, NameStyle } from '../model/types';
 import { useEditor } from '../store/editorStore';
 import type { ResolvedPeak } from '../terrain/peaks';
@@ -111,7 +111,7 @@ export class PeakLayer implements WorldLayer {
 
   private styleOf(p: ResolvedPeak): { style: NameStyle; group: NameGroup | null } {
     const doc = this.doc;
-    if (!doc) return { style: { font: 'serif', size: this.longSide() / 200, color: this.style?.ink ?? '#2b2016', halo: true, uppercase: false, italic: false }, group: null };
+    if (!doc) return { style: { font: 'serif', size: this.longSide() / 200, color: this.style?.ink ?? '#2b2016', halo: true, uppercase: false, italic: false, adaptive: true }, group: null };
     const ann = p.annotationId ? doc.peaks[p.annotationId] : undefined;
     return { style: peakNameStyle(doc, ann, this.longSide()), group: peakNameGroup(doc, ann) };
   }
@@ -135,9 +135,11 @@ export class PeakLayer implements WorldLayer {
       const { style, group } = this.styleOf(p);
       if (group && !group.visible) continue;
       const sel = p.id === this.selected;
-      // the letter size on screen: too small to read, the peak is left out (unless it must show)
-      const px = style.size * zoom;
-      if (px < MIN_NAME_PX && !p.designated && !sel && !group?.always) continue;
+      // the letter size on screen (an adaptive name's kept within its group's): too small to read,
+      // the peak is left out (unless it must show)
+      const px = group ? screenPx(style, group, zoom) : style.size * zoom;
+      const readable = group ? readableAt(style, group, zoom) : px >= MIN_NAME_PX;
+      if (!readable && !p.designated && !sel) continue;
       const f = Math.max(px, MIN_NAME_PX * 0.7) / BASE;
       const [sx, sy] = cam.worldToScreen(p.x, p.y);
       if (sx < -60 * f || sy < -40 * f || sx > cam.viewW + 60 * f || sy > cam.viewH + 40 * f) continue;
@@ -191,7 +193,7 @@ export class PeakLayer implements WorldLayer {
       const dx = cam.wrap ? ((((p.x - cam.x) % this.worldW) + this.worldW * 1.5) % this.worldW) - this.worldW / 2 : p.x - cam.x;
       m.node.position.set(cam.x + dx, p.y);
       m.node.scale.set(f / zoom);
-      m.node.alpha = px >= MIN_NAME_PX || p.designated || sel || group?.always ? 1 : 0.6;
+      m.node.alpha = readable || p.designated || sel ? 1 : 0.6;
       m.node.visible = true;
     }
     for (const [id, m] of this.markers) {

@@ -2,10 +2,10 @@ import { assetLibrary } from '../assets/library';
 import { polygonCentroid } from '../core/math';
 import { forwardUnwrapped, makeProjection, type Projection, type ProjectionParams } from '../core/projections';
 import { formatHeight } from '../core/units';
-import type { LabelFont, NameStyle, Vec2 } from '../model/types';
+import type { LabelFont, MapLabel, NameGroup, NameStyle, Vec2 } from '../model/types';
 import { objectSize } from '../model/geometry';
-import { labelGroup, labelStyle, mapLong, MIN_ICON_PX, MIN_NAME_PX, objectNameGroup, objectNameStyle, objectShowsName, pathNameGroup, pathNameStyle, pathShowsName, peakNameGroup, peakNameStyle } from '../model/names';
-import { alongPath } from '../render/NameLayer';
+import { labelGroup, labelStyle, mapLong, MIN_ICON_PX, MIN_NAME_PX, objectNameGroup, objectNameStyle, objectShowsName, pathNameGroup, pathNameStyle, pathShowsName, peakNameGroup, peakNameStyle, readableAt, screenPx } from '../model/names';
+import { besidePath, pathAnchor } from '../render/NameLayer';
 import { isOpenWater } from '../terrain/lakes';
 import { FONT_STACK } from '../render/fonts';
 import { STYLE_PRESETS, type StylePreset } from '../render/styles';
@@ -13,6 +13,7 @@ import { sampleSpline } from '../render/vectorGeometry';
 import { useDoc } from '../store/docStore';
 import { useEditor } from '../store/editorStore';
 import { editor } from './Editor';
+import { freshGeography, regionAt } from './geography';
 import { renderWorldPixels, type FogExport } from './exporter';
 import { downloadBlob, safeFileName } from './png';
 import { t } from '../i18n';
@@ -493,58 +494,48 @@ export function drawVectors(p: Painter, style: StylePreset, opts: VectorOptions)
     }
   const model = editor.model!;
   const L = mapLong(model.W, model.H);
-  // a name too small to read on the picture is left out, as on screen
-  const readable = (size: number, g: { always: boolean }) => g.always || size * p.cell >= MIN_NAME_PX;
-  // where names are drawn (peak markers keep clear of them)
+  // a name too small to read on the picture is left out, as on screen; an adaptive one keeps its
+  // group's size on the picture, and is left out when what it names is smaller than it there
+  const fsOf = (st: NameStyle, g: NameGroup) => screenPx(st, g, p.cell);
+  const readable = (st: NameStyle, g: NameGroup) => readableAt(st, g, p.cell);
+  const textW = (text: string, fs: number, spacing: number) => text.length * fs * (0.62 + spacing);
+  const meets = (a: number[], b: number[]) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
+  // where names are drawn (names and peak markers keep clear of what is drawn first)
   const taken: [number, number, number, number][] = [];
   if (sys.labels.visible) {
-    // the names of objects and rivers, larger first where they crowd
-    const names: { x: number; y: number; rotation: number; text: string; s: NameStyle; prio: number; always: boolean }[] = [];
-    if (sys.objects.visible)
-      for (const o of Object.values(doc.objects)) {
-        if (o.hidden || !objectShowsName(o) || !(doc.objectLayers.find((l) => l.id === o.layerId)?.visible ?? true)) continue;
-        const g = objectNameGroup(doc, o);
-        const s = objectNameStyle(doc, o, L);
-        const { w, h } = objectSize(o);
-        if (!g.visible || !readable(s.size, g) || w * p.cell < MIN_ICON_PX) continue;
-        const [ox, oy] = o.nameOffset ?? [0, h / 2 + s.size * 0.95];
-        names.push({ x: o.x + ox, y: o.y + oy, rotation: 0, text: o.name, s, prio: w, always: g.always });
-      }
-    if (sys.paths.visible)
-      for (const path of Object.values(doc.paths)) {
-        if (path.hidden || path.oxbow || !pathShowsName(path) || path.points.length < 2) continue;
-        const g = pathNameGroup(doc, path);
-        const s = pathNameStyle(doc, path, L);
-        if (!g.visible || !readable(s.size, g)) continue;
-        const at = alongPath(path, s.size);
-        names.push({ ...at, text: path.name, s, prio: path.width * 4 + s.size, always: g.always });
-      }
-    names.sort((a, b) => Number(b.always) - Number(a.always) || b.prio - a.prio);
-    for (const n of names) {
-      const q = p.at(n.x, n.y);
-      if (!q) continue;
-      const fs = n.s.size * p.cell;
-      const hw = n.text.length * fs * 0.38 + 3;
-      const box: [number, number, number, number] = [q[0] - hw, q[1] - fs * 0.7, q[0] + hw, q[1] + fs * 0.7];
-      if (!n.always && taken.some((b) => b[0] < box[2] && b[2] > box[0] && b[1] < box[3] && b[3] > box[1])) continue;
-      taken.push(box);
-      ctx.globalAlpha = sys.labels.opacity;
-      drawText(ctx, q[0], q[1], { text: n.text, font: n.s.font, size: fs, color: n.s.color, halo: n.s.halo ? style.labelHalo : null, letterSpacing: n.s.uppercase ? 0.1 : 0.02, uppercase: n.s.uppercase, italic: n.s.italic, curve: 0, rotation: n.rotation, alpha: 1 });
-    }
+    // labels of lands and waters, and free labels: fixed ones always, adaptive ones larger regions first
+    const geo = freshGeography();
+    const labels: { l: MapLabel; s: NameStyle; fs: number; prio: number; fixed: boolean }[] = [];
     for (const l of Object.values(doc.labels)) {
       if (l.hidden || !l.text) continue;
       const g = labelGroup(doc, l);
       const s = labelStyle(doc, l, L);
-      if (!g.visible || !readable(s.size, g)) continue;
+      if (!g.visible || !readable(s, g)) continue;
       // a label naming a landmass or body of water that is gone is left out
       if (l.anchor && isOpenWater(model, l.anchor.x, l.anchor.y) === l.anchor.land) continue;
+      const fs = fsOf(s, g);
+      const fixed = !s.adaptive || g.always;
+      let span = 0;
+      if (!fixed && l.anchor) {
+        const r = geo ? regionAt(geo, l.anchor.x, l.anchor.y) : null;
+        span = r && r.land === l.anchor.land ? Math.max(r.x1 - r.x0, r.y1 - r.y0) : Math.max(l.anchor.w ?? 0, l.anchor.h ?? 0);
+        if (span && span * p.cell < 0.8 * textW(l.text, fs, l.letterSpacing)) continue;
+      }
+      labels.push({ l, s, fs, prio: fixed ? Infinity : (span || fs) * (l.anchor?.land ? 1.3 : 1), fixed });
+    }
+    labels.sort((a, b) => b.prio - a.prio);
+    for (const { l, s, fs, fixed } of labels) {
       const q = p.at(l.x, l.y);
       if (!q) continue;
+      const hw = textW(l.text, fs, l.letterSpacing) / 2 + 2;
+      const box: [number, number, number, number] = [q[0] - hw, q[1] - fs * 0.7, q[0] + hw, q[1] + fs * 0.7];
+      if (!fixed && taken.some((b) => meets(b, box))) continue;
+      taken.push(box);
       ctx.globalAlpha = sys.labels.opacity;
       drawText(ctx, q[0], q[1], {
         text: l.text,
         font: s.font,
-        size: s.size * p.cell,
+        size: fs,
         color: s.color,
         halo: s.halo ? style.labelHalo : null,
         letterSpacing: l.letterSpacing,
@@ -554,6 +545,42 @@ export function drawVectors(p: Painter, style: StylePreset, opts: VectorOptions)
         rotation: l.rotation,
         alpha: l.opacity,
       });
+    }
+    // the names of objects and rivers, larger first where they crowd
+    const names: { x: number; y: number; rotation: number; text: string; s: NameStyle; fs: number; prio: number; always: boolean }[] = [];
+    if (sys.objects.visible)
+      for (const o of Object.values(doc.objects)) {
+        if (o.hidden || !objectShowsName(o) || !(doc.objectLayers.find((l) => l.id === o.layerId)?.visible ?? true)) continue;
+        const g = objectNameGroup(doc, o);
+        const s = objectNameStyle(doc, o, L);
+        const { w, h } = objectSize(o);
+        if (!g.visible || !readable(s, g) || w * p.cell < MIN_ICON_PX) continue;
+        const fs = fsOf(s, g);
+        const [ox, oy] = o.nameOffset ?? [0, h / 2 + (fs / p.cell) * 0.95];
+        names.push({ x: o.x + ox, y: o.y + oy, rotation: 0, text: o.name, s, fs, prio: w, always: g.always });
+      }
+    if (sys.paths.visible)
+      for (const path of Object.values(doc.paths)) {
+        if (path.hidden || path.oxbow || !pathShowsName(path) || path.points.length < 2) continue;
+        const g = pathNameGroup(doc, path);
+        const s = pathNameStyle(doc, path, L);
+        if (!g.visible || !readable(s, g)) continue;
+        const fs = fsOf(s, g);
+        const at = pathAnchor(path);
+        if (s.adaptive && !g.always && at.length * p.cell < 1.2 * textW(path.name, fs, 0.02)) continue;
+        names.push({ ...besidePath(path, at, fs / p.cell), text: path.name, s, fs, prio: path.width * 4 + at.length * 0.02, always: g.always });
+      }
+    names.sort((a, b) => Number(b.always) - Number(a.always) || b.prio - a.prio);
+    for (const n of names) {
+      const q = p.at(n.x, n.y);
+      if (!q) continue;
+      const fs = n.fs;
+      const hw = n.text.length * fs * 0.38 + 3;
+      const box: [number, number, number, number] = [q[0] - hw, q[1] - fs * 0.7, q[0] + hw, q[1] + fs * 0.7];
+      if (!n.always && taken.some((b) => meets(b, box))) continue;
+      taken.push(box);
+      ctx.globalAlpha = sys.labels.opacity;
+      drawText(ctx, q[0], q[1], { text: n.text, font: n.s.font, size: fs, color: n.s.color, halo: n.s.halo ? style.labelHalo : null, letterSpacing: n.s.uppercase ? 0.1 : 0.02, uppercase: n.s.uppercase, italic: n.s.italic, curve: 0, rotation: n.rotation, alpha: 1 });
     }
   }
   ctx.globalAlpha = 1;
@@ -571,9 +598,9 @@ export function drawVectors(p: Painter, style: StylePreset, opts: VectorOptions)
       const ann = k.annotationId ? doc.peaks[k.annotationId] : undefined;
       const pg = peakNameGroup(doc, ann);
       const ps = peakNameStyle(doc, ann, L);
-      if (!pg.visible || (!k.designated && !readable(ps.size, pg))) continue;
+      if (!pg.visible || (!k.designated && !readable(ps, pg))) continue;
       // the marker's own scale: its letter size on the picture, against the editor's 12 px font
-      const fs = Math.max(ps.size * p.cell, MIN_NAME_PX * 0.7);
+      const fs = Math.max(fsOf(ps, pg), MIN_NAME_PX * 0.7);
       const ku = fs / 12;
       const q = p.at(k.x, k.y);
       if (!q) continue;

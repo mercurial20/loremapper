@@ -191,6 +191,9 @@ export interface LabelAnchor {
   land: boolean;
   /** Keep the text equal to the region's name. */
   syncText: boolean;
+  /** The region's size when the label was made (cells; its extent is looked up again once the map is measured). */
+  w?: number;
+  h?: number;
 }
 
 export interface MapLabel {
@@ -207,6 +210,8 @@ export interface MapLabel {
   uppercase: boolean;
   italic: boolean;
   halo: boolean;
+  /** Adaptive size (see NameStyle), when the label sets it itself. */
+  adaptive?: boolean;
   /** Arc the text: 0 = straight, ±1 = strong curve. */
   curve: number;
   opacity: number;
@@ -229,9 +234,15 @@ export interface NameStyle {
   halo: boolean;
   uppercase: boolean;
   italic: boolean;
+  /**
+   * Adaptive size: kept within its group's sizes on screen (not growing past them when zoomed in,
+   * so the land shows; not shrinking below them when zoomed out), and hidden when what it names is
+   * too small on screen. Otherwise its size is on the map, hidden when too small to read.
+   */
+  adaptive: boolean;
 }
 export type NameStyleKey = keyof NameStyle;
-export const NAME_STYLE_KEYS: NameStyleKey[] = ['font', 'size', 'color', 'halo', 'uppercase', 'italic'];
+export const NAME_STYLE_KEYS: NameStyleKey[] = ['font', 'size', 'color', 'halo', 'uppercase', 'italic', 'adaptive'];
 
 export type NameGroupKind = 'peaks' | 'objects' | 'places' | 'waters' | 'labels' | 'custom';
 
@@ -244,6 +255,9 @@ export interface NameGroup {
   visible: boolean;
   /** Shown however small (never hidden when zoomed out). */
   always: boolean;
+  /** Adaptive names: the smallest and largest letter size on screen, px. */
+  minPx: number;
+  maxPx: number;
 }
 
 export interface PeakAnnotation {
@@ -404,13 +418,24 @@ export const NAME_GROUP = { peaks: 'names-peaks', objects: 'names-objects', plac
 
 /** The built-in name groups, sized to the map automatically. */
 export function defaultNameGroups(): NameGroup[] {
-  const g = (id: string, name: string, kind: NameGroupKind, style: NameStyle): NameGroup => ({ id, name, kind, style, visible: true, always: false });
+  const g = (id: string, name: string, kind: NameGroupKind, style: NameStyle): NameGroup => ({ id, name, kind, style, visible: true, always: false, ...ADAPTIVE_PX[kind] });
   return [
-    g(NAME_GROUP.places, N_('Lands'), 'places', { font: 'display', size: 0, color: '#2d2216', halo: true, uppercase: true, italic: false }),
-    g(NAME_GROUP.waters, N_('Waters'), 'waters', { font: 'serif', size: 0, color: '#2f5874', halo: true, uppercase: false, italic: true }),
-    g(NAME_GROUP.objects, N_('Objects'), 'objects', { font: 'serif', size: 0, color: '#2d2216', halo: true, uppercase: false, italic: false }),
-    g(NAME_GROUP.peaks, N_('Peaks'), 'peaks', { font: 'serif', size: 0, color: '#2b2016', halo: true, uppercase: false, italic: false }),
-    g(NAME_GROUP.labels, N_('Labels'), 'labels', { font: 'display', size: 0, color: '#2d2216', halo: true, uppercase: false, italic: false }),
+    g(NAME_GROUP.places, N_('Lands'), 'places', { font: 'display', size: 0, color: '#2d2216', halo: true, uppercase: true, italic: false, adaptive: true }),
+    g(NAME_GROUP.waters, N_('Waters'), 'waters', { font: 'serif', size: 0, color: '#2f5874', halo: true, uppercase: false, italic: true, adaptive: true }),
+    g(NAME_GROUP.objects, N_('Objects'), 'objects', { font: 'serif', size: 0, color: '#2d2216', halo: true, uppercase: false, italic: false, adaptive: false }),
+    g(NAME_GROUP.peaks, N_('Peaks'), 'peaks', { font: 'serif', size: 0, color: '#2b2016', halo: true, uppercase: false, italic: false, adaptive: true }),
+    g(NAME_GROUP.labels, N_('Labels'), 'labels', { font: 'display', size: 0, color: '#2d2216', halo: true, uppercase: false, italic: false, adaptive: false }),
   ];
 }
+
+/** Each kind of group's sizes on screen for adaptive names (letter size, px), and whether its names are adaptive at first. */
+export const ADAPTIVE_PX: Record<NameGroupKind, { minPx: number; maxPx: number }> = {
+  places: { minPx: 13, maxPx: 28 },
+  waters: { minPx: 11, maxPx: 22 },
+  objects: { minPx: 11, maxPx: 16 },
+  peaks: { minPx: 10, maxPx: 13 },
+  labels: { minPx: 12, maxPx: 24 },
+  custom: { minPx: 11, maxPx: 20 },
+};
+export const ADAPTIVE_DEFAULT: Record<NameGroupKind, boolean> = { places: true, waters: true, objects: false, peaks: true, labels: false, custom: false };
 
